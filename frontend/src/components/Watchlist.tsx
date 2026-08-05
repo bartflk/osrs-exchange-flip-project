@@ -51,12 +51,18 @@ export function Watchlist({
           {rows.map((item) => {
             const entry = watched[item.id];
             const aboveTriggered = entry.alertAbove != null && (item.high ?? 0) >= entry.alertAbove;
-            const belowTriggered = entry.alertBelow != null && (item.low ?? Infinity) <= entry.alertBelow;
+            const belowTriggered =
+              entry.alertBelow != null && (item.low ?? Infinity) <= entry.alertBelow;
             return (
               <tr key={item.id} className="border-b border-white/5 hover:bg-white/5">
                 <td className="px-3 py-2 flex items-center gap-2 whitespace-nowrap">
-                  {item.icon && <img src={iconUrl(item.icon)} alt="" className="w-5 h-5 object-contain" />}
-                  <button onClick={() => onSelectItem(item)} className="text-gray-100 hover:text-white hover:underline">
+                  {item.icon && (
+                    <img src={iconUrl(item.icon)} alt="" className="w-5 h-5 object-contain" />
+                  )}
+                  <button
+                    onClick={() => onSelectItem(item)}
+                    className="text-gray-100 hover:text-white hover:underline"
+                  >
                     {item.name}
                   </button>
                 </td>
@@ -70,7 +76,7 @@ export function Watchlist({
                       setWatched(
                         updateWatchAlert(watched, item.id, {
                           alertAbove: e.target.value ? Number(e.target.value) : null,
-                        })
+                        }),
                       )
                     }
                     className={`glass rounded-lg px-2 py-1 text-sm w-28 outline-none ${
@@ -87,7 +93,7 @@ export function Watchlist({
                       setWatched(
                         updateWatchAlert(watched, item.id, {
                           alertBelow: e.target.value ? Number(e.target.value) : null,
-                        })
+                        }),
                       )
                     }
                     className={`glass rounded-lg px-2 py-1 text-sm w-28 outline-none ${

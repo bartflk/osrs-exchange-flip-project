@@ -61,10 +61,15 @@ export interface TimeseriesPoint {
 
 export type Lookback = "6h" | "24h" | "7d" | "30d" | "6m" | "1y" | "all";
 
-export async function fetchTimeseries(itemId: number, lookback: Lookback): Promise<TimeseriesPoint[]> {
+export async function fetchTimeseries(
+  itemId: number,
+  lookback: Lookback,
+): Promise<TimeseriesPoint[]> {
   // Note: the actual granularity ("timestep") returned for a given lookback is chosen by
   // the API server and isn't guaranteed/selectable -- only `lookback` is a valid param.
-  const data = await get<{ data: TimeseriesPoint[] }>(`/timeseries?id=${itemId}&lookback=${lookback}`);
+  const data = await get<{ data: TimeseriesPoint[] }>(
+    `/timeseries?id=${itemId}&lookback=${lookback}`,
+  );
   return data.data;
 }
 
@@ -99,5 +104,9 @@ export async function fetchAllTimeHistory(itemId: number): Promise<LongRangePoin
   }
   const data = (await res.json()) as Record<string, WeirdglooPoint[]>;
   const points = data[String(itemId)] ?? [];
-  return points.map((p) => ({ timestamp: Math.round(p.timestamp / 1000), price: p.price, volume: p.volume }));
+  return points.map((p) => ({
+    timestamp: Math.round(p.timestamp / 1000),
+    price: p.price,
+    volume: p.volume,
+  }));
 }

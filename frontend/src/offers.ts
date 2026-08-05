@@ -44,7 +44,12 @@ export function parseOffersText(text: string): { offers: Offer[]; skipped: strin
     const type = cols[0].toLowerCase();
     const price = Number(cols[2]);
     const qty = Number(cols[3]);
-    if ((type !== "buy" && type !== "sell") || !cols[1] || !Number.isFinite(price) || !Number.isFinite(qty)) {
+    if (
+      (type !== "buy" && type !== "sell") ||
+      !cols[1] ||
+      !Number.isFinite(price) ||
+      !Number.isFinite(qty)
+    ) {
       skipped.push(line);
       continue;
     }

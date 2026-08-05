@@ -6,10 +6,14 @@ export interface MarketItem {
   icon: string;
   high: number | null;
   low: number | null;
-  vol_high_5m: number;
-  vol_low_5m: number;
-  vol_high_1h: number;
-  vol_low_1h: number;
+  // Nullable, not just 0-or-positive: /api/lookup (used by GlobalSearch, and item detail
+  // opened from a lookup result) LEFT JOINs latest_snapshot, so items with no recent trade
+  // data come back with these genuinely null -- found live via a real crash opening
+  // "Corrupted twisted bow" (a rarely-traded item) in the item detail modal, see ItemDetailModal.tsx.
+  vol_high_5m: number | null;
+  vol_low_5m: number | null;
+  vol_high_1h: number | null;
+  vol_low_1h: number | null;
   updated_at: number | null;
   net_margin: number | null;
   roi_pct: number | null;
@@ -25,12 +29,13 @@ export interface ItemsResponse {
 }
 
 export async function fetchItems(
-  params: { minVolume?: number; search?: string; ids?: number[] } = {}
+  params: { minVolume?: number; search?: string; ids?: number[]; membersOnly?: boolean } = {},
 ): Promise<ItemsResponse> {
   const qs = new URLSearchParams();
   if (params.minVolume) qs.set("minVolume", String(params.minVolume));
   if (params.search) qs.set("search", params.search);
   if (params.ids && params.ids.length) qs.set("ids", params.ids.join(","));
+  if (params.membersOnly === false) qs.set("membersOnly", "false");
   const res = await fetch(`/api/items?${qs.toString()}`);
   if (!res.ok) throw new Error(`Failed to fetch items: ${res.status}`);
   return res.json();
@@ -68,7 +73,10 @@ export interface TimeseriesResponse {
   blended?: boolean;
 }
 
-export async function fetchTimeseries(itemId: number, lookback: Lookback): Promise<TimeseriesResponse> {
+export async function fetchTimeseries(
+  itemId: number,
+  lookback: Lookback,
+): Promise<TimeseriesResponse> {
   const res = await fetch(`/api/items/${itemId}/timeseries?lookback=${lookback}`);
   if (!res.ok) throw new Error(`Failed to fetch timeseries: ${res.status}`);
   return res.json();
@@ -88,7 +96,7 @@ export interface BankValueItem {
   qty: number;
   unitValue: number;
   value: number;
-  // Tax-adjusted (1% GE tax, capped at 5m/item, waived under 100gp): what you'd actually
+  // Tax-adjusted (2% GE tax, capped at 5m/item, waived under 50gp): what you'd actually
   // walk away with if you instant-sold this stack right now.
   netUnitValue: number;
   netValue: number;
@@ -106,7 +114,7 @@ export interface BankValueResponse {
 }
 
 export async function postBankValue(
-  entries: { id: number; qty: number; name?: string }[]
+  entries: { id: number; qty: number; name?: string }[],
 ): Promise<BankValueResponse> {
   const res = await fetch("/api/bank/value", {
     method: "POST",
@@ -123,7 +131,7 @@ export interface BankImportResponse extends BankValueResponse {
 }
 
 export async function saveBankImport(
-  entries: { id: number; qty: number; name?: string }[]
+  entries: { id: number; qty: number; name?: string }[],
 ): Promise<BankImportResponse> {
   const res = await fetch("/api/bank/import", {
     method: "POST",
@@ -156,4 +164,132 @@ export async function getBankImport(id: number): Promise<BankImportResponse> {
 export async function deleteBankImport(id: number): Promise<void> {
   const res = await fetch(`/api/bank/imports/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`Failed to delete bank import: ${res.status}`);
+}
+
+// DESIGN.md §11.3 items 5-6 -- market-wide crash/spike detection (kind: "price") and
+// manipulation/bot-activity volume anomaly detection (kind: "volume"), not just Watchlist-pinned
+// items, and not just price moves.
+export type AlertDirection = "crash" | "spike";
+export type AlertKind = "price" | "volume";
+export type AlertSeverity = "notable" | "major";
+
+export interface PriceAlert {
+  id: string;
+  itemId: number;
+  name: string;
+  icon: string;
+  kind: AlertKind;
+  direction: AlertDirection;
+  severity: AlertSeverity;
+  changePct: number;
+  fromPrice: number;
+  toPrice: number;
+  windowMinutes: number;
+  triggeredAt: number;
+  zScore?: number;
+}
+
+export async function fetchAlerts(): Promise<{ alerts: PriceAlert[] }> {
+  const res = await fetch("/api/alerts");
+  if (!res.ok) throw new Error(`Failed to fetch alerts: ${res.status}`);
+  return res.json();
+}
+
+// DESIGN.md §10 item 1 -- recommendation scorekeeping: the app logs its own top Buy Signals
+// periodically and checks back 4h later against real prices, so "is this thing actually good"
+// has an answer beyond gut feel.
+export interface TrackRecordSummary {
+  resolvedCount: number;
+  pendingCount: number;
+  wins: number;
+  losses: number;
+  winRate: number | null;
+  avgNetMargin: number | null;
+  avgRoiPct: number | null;
+}
+
+export type TrackRecordOutcome = "win" | "loss" | "flat" | null;
+
+export interface TrackRecordEntry {
+  id: number;
+  itemId: number;
+  name: string;
+  icon: string;
+  takenAt: number;
+  rank: number;
+  score: number;
+  buyPrice: number;
+  sellPrice: number;
+  netMargin: number;
+  roiPct: number;
+  resolveAt: number;
+  resolvedAt: number | null;
+  resolvedHigh: number | null;
+  realizedNetMargin: number | null;
+  realizedRoiPct: number | null;
+  outcome: TrackRecordOutcome;
+}
+
+export async function fetchTrackRecord(): Promise<{
+  summary: TrackRecordSummary;
+  recent: TrackRecordEntry[];
+}> {
+  const res = await fetch("/api/track-record");
+  if (!res.ok) throw new Error(`Failed to fetch track record: ${res.status}`);
+  return res.json();
+}
+
+// DESIGN.md §6.4 -- official OSRS news feed. Reddit sentiment and Claude's item-linking aren't
+// wired in yet (Reddit needs app pre-approval, Claude is blocked on Anthropic API billing --
+// §14.8), so every entry is currently source: "official" with no item tags.
+export interface NewsEvent {
+  id: number;
+  eventDate: string;
+  title: string;
+  summary: string;
+  source: string;
+  link: string | null;
+  tags: string | null;
+}
+
+export async function fetchNews(): Promise<{ events: NewsEvent[] }> {
+  const res = await fetch("/api/news");
+  if (!res.ok) throw new Error(`Failed to fetch news: ${res.status}`);
+  return res.json();
+}
+
+// DESIGN.md §10 items 15-16: Set Conversion Arbitrage and Barrows Repair Flip -- fully
+// deterministic against data already local, no new external source.
+export interface SetArbitrageResult {
+  setName: string;
+  pieceNames: string[];
+  setBuy: number;
+  setSell: number;
+  pieceCost: number;
+  pieceRevenue: number;
+  combineProfit: number;
+  decombineProfit: number;
+  bestDirection: "combine" | "decombine";
+  bestProfit: number;
+}
+
+export async function fetchSetArbitrage(): Promise<{ sets: SetArbitrageResult[] }> {
+  const res = await fetch("/api/sets/arbitrage");
+  if (!res.ok) throw new Error(`Failed to fetch set arbitrage: ${res.status}`);
+  return res.json();
+}
+
+export interface BarrowsRepairResult {
+  degradedName: string;
+  repairedName: string;
+  degradedBuy: number;
+  repairCost: number;
+  repairedSell: number;
+  profit: number;
+}
+
+export async function fetchBarrowsRepair(): Promise<{ flips: BarrowsRepairResult[] }> {
+  const res = await fetch("/api/sets/barrows-repair");
+  if (!res.ok) throw new Error(`Failed to fetch barrows repair flips: ${res.status}`);
+  return res.json();
 }

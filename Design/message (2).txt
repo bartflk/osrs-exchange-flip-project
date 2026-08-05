@@ -1,0 +1,767 @@
+# OSRS Quant Intelligence Platform (V6)
+
+## Master Specification
+
+### Part 2 — Alternative Data Infrastructure, Attention Intelligence, Community Monitoring & Event Intelligence
+
+---
+
+# Objective
+
+Part 1 established the market data and research warehouse.
+
+Part 2 introduces the first proprietary data moat.
+
+The purpose is to collect information that exists before price movement occurs.
+
+The hypothesis:
+
+Community attention and official announcements often precede market movement.
+
+---
+
+# Alternative Data Philosophy
+
+Traditional flipping tools only observe:
+
+* Price
+* Volume
+* Margins
+
+These are lagging indicators.
+
+This platform will collect leading indicators.
+
+Leading indicators include:
+
+* Community discussion
+* Content creator discussion
+* Wiki activity
+* Poll activity
+* Update announcements
+* Creator influence
+
+---
+
+# Information Hierarchy
+
+Not all information sources are equal.
+
+## Tier S
+
+Highest Signal
+
+* Jagex News
+* Poll Blogs
+* Poll Questions
+* Official Announcements
+
+Reason:
+
+These events directly change the game.
+
+---
+
+## Tier A
+
+Strong Signal
+
+* YouTube
+* Public Discord Communities
+* Reddit
+
+Reason:
+
+These sources influence player behavior.
+
+---
+
+## Tier B
+
+Moderate Signal
+
+* Wiki Page Views
+* Search Trends
+* Creator Discussions
+
+Reason:
+
+Reflect growing attention.
+
+---
+
+## Tier C
+
+Weak Signal
+
+* Twitter/X
+
+Reason:
+
+Limited OSRS discussion relative to Discord and YouTube.
+
+---
+
+# Community Intelligence Layer
+
+Purpose:
+
+Continuously monitor the OSRS information ecosystem.
+
+Architecture:
+
+Sources
+
+↓
+
+Raw Events
+
+↓
+
+Entity Extraction
+
+↓
+
+Signal Generation
+
+↓
+
+Attention Engine
+
+---
+
+# Reddit Collection System
+
+## Purpose
+
+Capture public discussion trends.
+
+---
+
+## Sources
+
+Potential Targets
+
+* r/2007scape
+* r/OSRSflipping
+* r/ironscape
+
+---
+
+## Data Collected
+
+Posts
+
+* title
+* body
+* score
+* comments
+* timestamp
+
+Comments
+
+* text
+* score
+* timestamp
+
+---
+
+## Entity Extraction
+
+Every post is processed through NLP.
+
+Extract:
+
+Items
+
+Bosses
+
+Skills
+
+Updates
+
+Activities
+
+Example
+
+Input
+
+"Scythe seems undervalued before the new raid."
+
+Output
+
+Item: Scythe
+
+Topic: Raid Speculation
+
+Sentiment: Bullish
+
+Confidence: 0.81
+
+---
+
+## Derived Metrics
+
+### Mention Count
+
+Raw mentions.
+
+---
+
+### Mention Velocity
+
+Mentions Today
+
+/
+
+7-Day Average
+
+---
+
+### Mention Acceleration
+
+Current Velocity
+
+*
+
+Previous Velocity
+
+---
+
+### Weighted Mention Count
+
+Mention Count × Post Score
+
+Purpose:
+
+Prioritize important discussions.
+
+---
+
+# YouTube Intelligence System
+
+## Objective
+
+Monitor creator influence.
+
+---
+
+## Sources
+
+Target Creators
+
+* B0aty
+* SoloMission
+* Theoatrix
+* A Friend
+* RiceCup
+* Soup
+
+Additional creators may be added.
+
+---
+
+# Data Collection
+
+Capture:
+
+* Title
+* Description
+* Upload Time
+* Views
+* Comments
+* Transcript
+
+---
+
+# Transcript Processing
+
+Every transcript becomes structured data.
+
+Example
+
+Input
+
+"I think Dragon Claws are going to rise if the raid reward passes."
+
+Output
+
+Item
+
+Dragon Claws
+
+Sentiment
+
+Bullish
+
+Topic
+
+Raid Reward
+
+Confidence
+
+0.88
+
+---
+
+# Creator Influence Score
+
+Every creator receives a dynamic score.
+
+Inputs
+
+* Average Views
+* Subscriber Count
+* Historical Market Impact
+
+Formula
+
+Influence Score
+
+0-100
+
+---
+
+# Impact Model
+
+Mentions from creators are weighted.
+
+Example
+
+Mention from:
+
+Small Creator
+
+Weight = 1
+
+Large Creator
+
+Weight = 8
+
+---
+
+# Discord Intelligence System
+
+## Objective
+
+Monitor public community discussion.
+
+---
+
+# Collection Strategy
+
+Public channels only.
+
+Primary Focus
+
+* PvM communities
+* Raid communities
+* Theorycrafting communities
+* Flipping communities
+
+---
+
+# Data Collected
+
+* Message Text
+* Timestamp
+* Server
+* Channel
+
+---
+
+# Processing
+
+Entity Extraction
+
+Topic Classification
+
+Attention Scoring
+
+Trend Detection
+
+---
+
+# High Value Topics
+
+* New Raid Discussion
+* Meta Shifts
+* Reward Speculation
+* Gear Recommendations
+* Boss Strategies
+
+---
+
+# Discord Attention Signals
+
+Examples
+
+Scythe Mentions
+
+Today
+
+220
+
+Normal
+
+35
+
+Velocity
+
+6.3x
+
+Signal Generated
+
+Unusual Attention
+
+---
+
+# Wiki Intelligence System
+
+## Objective
+
+Capture informational demand.
+
+---
+
+# Data Sources
+
+Wiki Page Views
+
+Page Edits
+
+New Pages
+
+Category Changes
+
+---
+
+# Why This Matters
+
+Players often research items before purchasing them.
+
+Research activity may occur before price movement.
+
+---
+
+# Wiki Attention Metrics
+
+Page View Velocity
+
+Today's Views
+
+/
+
+30-Day Average
+
+---
+
+Page View Acceleration
+
+Current Velocity
+
+*
+
+Prior Velocity
+
+---
+
+# Unified Attention Engine
+
+All sources are merged.
+
+Sources
+
+* Reddit
+* Discord
+* YouTube
+* Wiki
+
+---
+
+# Attention Data Model
+
+For each item:
+
+Attention Score
+
+Attention Velocity
+
+Attention Acceleration
+
+Attention Z-Score
+
+---
+
+# Attention Score Formula
+
+Version 1
+
+30% Discord
+
+25% Reddit
+
+25% YouTube
+
+20% Wiki
+
+Weights may be optimized later.
+
+---
+
+# Attention Velocity Formula
+
+Current Attention
+
+/
+
+7-Day Average Attention
+
+---
+
+# Attention Z-Score
+
+Purpose
+
+Identify anomalies.
+
+Formula
+
+(Current - Mean)
+
+/
+
+Standard Deviation
+
+---
+
+# Attention Alerts
+
+Generate alerts when:
+
+Velocity > 5
+
+or
+
+Z-Score > 3
+
+---
+
+Example
+
+Blood Shard
+
+Attention Velocity
+
+8.4
+
+Z-Score
+
+5.2
+
+Signal
+
+High Attention Event
+
+---
+
+# Event Intelligence Engine
+
+Purpose
+
+Convert updates into market predictions.
+
+---
+
+# Data Sources
+
+Official Sources
+
+* News Posts
+* Poll Blogs
+* Poll Questions
+* Update Posts
+
+---
+
+# Processing Pipeline
+
+New Update
+
+↓
+
+LLM Processing
+
+↓
+
+Entity Extraction
+
+↓
+
+Impact Classification
+
+↓
+
+Historical Search
+
+↓
+
+Prediction
+
+---
+
+# Entity Extraction
+
+Identify
+
+Items
+
+Bosses
+
+Skills
+
+Activities
+
+Rewards
+
+---
+
+Example
+
+Input
+
+"New raid introduces powerful crush weapon."
+
+Output
+
+Raid
+
+Crush
+
+Weapon
+
+PvM
+
+---
+
+# Impact Classification
+
+Determine:
+
+Bullish
+
+Bearish
+
+Neutral
+
+For every item.
+
+---
+
+# Update Exposure Model
+
+Every item receives exposure scores.
+
+Examples
+
+Raid Exposure
+
+Prayer Exposure
+
+PvP Exposure
+
+Skilling Exposure
+
+Magic Exposure
+
+Melee Exposure
+
+Ranged Exposure
+
+---
+
+# Exposure Graph
+
+Example
+
+New Raid
+
+↓
+
+Scythe
+
+↓
+
+Blood Fury
+
+↓
+
+Blood Shard
+
+---
+
+Impact can propagate through graph relationships.
+
+---
+
+# Event Confidence Model
+
+Factors
+
+Historical Similarity
+
+LLM Confidence
+
+Discussion Intensity
+
+Update Specificity
+
+---
+
+# Event Prediction Output
+
+Example
+
+Raid Announcement
+
+Most Affected
+
+1. Scythe
+
+2. Dragon Claws
+
+3. Blood Fury
+
+Expected Horizon
+
+7-30 Days
+
+Confidence
+
+78%
+
+---
+
+# Research Objectives
+
+Part 2 Deliverables
+
+✓ Reddit Intelligence
+
+✓ YouTube Intelligence
+
+✓ Discord Intelligence
+
+✓ Wiki Intelligence
+
+✓ Attention Engine
+
+✓ Event Intelligence Engine
+
+✓ Exposure Graph
+
+✓ Alert System
+
+After completion proceed to:
+
+Part 3 — Historical Analog Engine, Quantitative Factors, Alpha Models, Statistical Arbitrage & Regime Detection.

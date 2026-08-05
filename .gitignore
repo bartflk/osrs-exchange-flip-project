@@ -18,11 +18,18 @@ lerna-debug.log*
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+*.duckdb
+*.duckdb.wal
 
 # Env
 .env
 .env.local
 *.local
+
+# Python
+.venv
+__pycache__
+*.pyc
 
 # Editor
 .vscode/*

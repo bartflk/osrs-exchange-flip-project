@@ -11,9 +11,11 @@ export interface ParsedBankEntry {
  * Falls back to a couple of other common shapes (bare "id\tqty" TSV/CSV lines, or a
  * JSON array of {id|itemId, qty|quantity}) since exact plugin output can vary/change.
  */
-export function parseBankText(
-  text: string
-): { entries: ParsedBankEntry[]; error: string | null; skipped: string[] } {
+export function parseBankText(text: string): {
+  entries: ParsedBankEntry[];
+  error: string | null;
+  skipped: string[];
+} {
   const trimmed = text.trim();
   if (!trimmed) return { entries: [], error: "Paste something first.", skipped: [] };
 
@@ -30,7 +32,11 @@ export function parseBankText(
         })
         .filter((e) => Number.isFinite(e.id) && Number.isFinite(e.qty) && e.qty > 0);
       if (entries.length === 0)
-        return { entries: [], error: "Couldn't find id/quantity fields in that JSON.", skipped: [] };
+        return {
+          entries: [],
+          error: "Couldn't find id/quantity fields in that JSON.",
+          skipped: [],
+        };
       return { entries, error: null, skipped: [] };
     } catch {
       return { entries: [], error: "That looked like JSON but didn't parse.", skipped: [] };

@@ -1,0 +1,908 @@
+# OSRS Quant Intelligence Platform (V6)
+
+## Master Specification
+
+### Part 3 — Historical Analog Engine, Quantitative Factors, Alpha Models, Statistical Arbitrage & Regime Detection
+
+---
+
+# Objective
+
+Part 1 built the market data foundation.
+
+Part 2 built the information and attention layer.
+
+Part 3 transforms information into prediction.
+
+This section defines the quantitative research framework that converts:
+
+* Market data
+* Community attention
+* Update intelligence
+
+into actionable investment opportunities.
+
+---
+
+# Quantitative Philosophy
+
+The objective is not:
+
+Predict exact future prices.
+
+The objective is:
+
+Identify situations where expected value is positive.
+
+This is the same philosophy used by professional quantitative funds.
+
+---
+
+# Alpha Definition
+
+Alpha represents excess return relative to the market.
+
+In OSRS:
+
+Alpha = Outperformance
+
+Example
+
+Market Average
+
++2%
+
+Item Return
+
++10%
+
+Alpha
+
++8%
+
+---
+
+# Alpha Research Framework
+
+Every signal must answer:
+
+Does this predict future outperformance?
+
+No signal should exist without historical validation.
+
+---
+
+# Signal Lifecycle
+
+Signal Created
+
+↓
+
+Backtested
+
+↓
+
+Validated
+
+↓
+
+Production
+
+↓
+
+Continuously Monitored
+
+↓
+
+Retired if Performance Degrades
+
+---
+
+# Historical Analog Engine
+
+## Objective
+
+Find similar historical situations.
+
+Humans naturally reason through analogies.
+
+The system should do the same.
+
+---
+
+# Event Archive
+
+Store:
+
+Every
+
+* Poll
+* Update
+* Blog
+* Announcement
+* Raid Release
+* Boss Release
+* League
+* Seasonal Event
+
+---
+
+# Event Schema
+
+Event ID
+
+Title
+
+Date
+
+Entities
+
+Affected Items
+
+Market Outcome
+
+Community Attention
+
+---
+
+# Event Embeddings
+
+Every event receives a semantic representation.
+
+Generated using:
+
+Sentence Transformers
+
+OpenAI Embeddings
+
+Claude Summaries
+
+---
+
+# Similarity Search
+
+Input
+
+New Raid Proposal
+
+↓
+
+Embedding Search
+
+↓
+
+Top Similar Events
+
+Output
+
+1. Tombs of Amascut
+
+2. Theatre of Blood Rework
+
+3. Desert Treasure II
+
+---
+
+# Historical Outcome Tracking
+
+For every event:
+
+Store returns.
+
+1 Day
+
+7 Day
+
+30 Day
+
+90 Day
+
+180 Day
+
+---
+
+# Analog Prediction
+
+Example
+
+New Raid
+
+Most Similar:
+
+TOA
+
+DT2
+
+Leagues 4
+
+Historical Winners:
+
+Dragon Darts
+
+Scythe
+
+Dragon Claws
+
+Prediction Confidence:
+
+82%
+
+---
+
+# Quantitative Factor Library
+
+The platform should maintain a growing collection of factors.
+
+Each factor receives:
+
+Factor ID
+
+Description
+
+Performance
+
+Validation Status
+
+---
+
+# Momentum Factor
+
+## Research Origin
+
+Jegadeesh & Titman (1993)
+
+---
+
+## Hypothesis
+
+Recent winners continue winning.
+
+---
+
+# Features
+
+24h Return
+
+7d Return
+
+30d Return
+
+Volume Growth
+
+Spread Compression
+
+---
+
+# Momentum Formula
+
+Momentum Score
+
+40% Price Momentum
+
+40% Volume Momentum
+
+20% Spread Momentum
+
+---
+
+# Attention Factor
+
+## Hypothesis
+
+Attention precedes demand.
+
+---
+
+# Inputs
+
+Discord
+
+Reddit
+
+YouTube
+
+Wiki
+
+---
+
+# Features
+
+Attention Score
+
+Velocity
+
+Acceleration
+
+Z-Score
+
+---
+
+# Attention Formula
+
+Current Attention
+
+/
+
+Historical Average
+
+---
+
+# Attention Signal
+
+Example
+
+Dragon Claws
+
+Attention Velocity
+
+7.3
+
+Signal Strength
+
+High
+
+---
+
+# Update Exposure Factor
+
+## Hypothesis
+
+Items exposed to future content appreciate.
+
+---
+
+# Exposure Categories
+
+Raid
+
+PvM
+
+PvP
+
+Prayer
+
+Skilling
+
+Magic
+
+Melee
+
+Ranged
+
+Economy
+
+---
+
+# Example
+
+Scythe
+
+Raid Exposure
+
+95
+
+Melee Exposure
+
+100
+
+Prayer Exposure
+
+20
+
+---
+
+# Liquidity Factor
+
+## Objective
+
+Avoid traps.
+
+---
+
+# Inputs
+
+Volume
+
+Spread
+
+Buy Limit
+
+Trade Frequency
+
+---
+
+# Outputs
+
+Liquidity Score
+
+0-100
+
+---
+
+# Volatility Factor
+
+## Objective
+
+Measure opportunity and risk.
+
+---
+
+# Metrics
+
+Standard Deviation
+
+Average True Range
+
+Drawdown
+
+Price Variance
+
+---
+
+# Volatility Classification
+
+Low
+
+Medium
+
+High
+
+Extreme
+
+---
+
+# Creator Influence Factor
+
+## Hypothesis
+
+Large creators influence player behavior.
+
+---
+
+# Inputs
+
+Views
+
+Subscribers
+
+Historical Impact
+
+Mentions
+
+---
+
+# Output
+
+Creator Influence Score
+
+---
+
+# Composite Alpha Engine
+
+## Purpose
+
+Combine all factors.
+
+---
+
+# Version 1 Formula
+
+Alpha
+
+30% Momentum
+
+25% Attention
+
+20% Update Exposure
+
+15% Volume Growth
+
+10% Liquidity
+
+---
+
+# Future Versions
+
+Machine learning optimized weights.
+
+---
+
+# Alpha Rankings
+
+Output
+
+Top Alpha Opportunities
+
+Example
+
+1. Blood Shard
+
+2. Dragon Claws
+
+3. Scythe
+
+---
+
+# Time Horizons
+
+Alpha should be calculated separately for:
+
+24 Hours
+
+7 Days
+
+30 Days
+
+90 Days
+
+---
+
+# Statistical Arbitrage
+
+## Research Origin
+
+Avellaneda & Lee
+
+---
+
+# Hypothesis
+
+Related assets revert toward expected relationships.
+
+---
+
+# Example Relationships
+
+Blood Fury ↔ Blood Shard
+
+Prayer Potion ↔ Ranarr
+
+Scythe ↔ Blood Runes
+
+Dragon Darts ↔ PvM Activity
+
+---
+
+# Relationship Database
+
+Store:
+
+Correlation
+
+Cointegration
+
+Spread
+
+Relationship Strength
+
+---
+
+# Relationship Score
+
+Example
+
+Blood Fury
+
+Expected
+
+20M
+
+Actual
+
+23M
+
+Deviation
+
+15%
+
+Signal
+
+Potential Reversion
+
+---
+
+# Graph-Based Market Model
+
+Build a dependency graph.
+
+---
+
+# Nodes
+
+Items
+
+Bosses
+
+Activities
+
+Resources
+
+Rewards
+
+Updates
+
+---
+
+# Example Graph
+
+New Raid
+
+↓
+
+Scythe
+
+↓
+
+Blood Fury
+
+↓
+
+Blood Shards
+
+---
+
+# Impact Propagation
+
+When one node changes:
+
+Effects flow through connected nodes.
+
+---
+
+# Market Regime Detection
+
+## Objective
+
+Different strategies work in different markets.
+
+---
+
+# Regimes
+
+Stable Market
+
+Update Market
+
+Speculation Market
+
+Leagues Market
+
+Panic Market
+
+Bear Market
+
+Bull Market
+
+---
+
+# Detection Features
+
+Volatility
+
+Attention
+
+Update Frequency
+
+Trading Activity
+
+Market Breadth
+
+---
+
+# Clustering Methods
+
+K-Means
+
+Gaussian Mixtures
+
+Hidden Markov Models
+
+Bayesian Switching Models
+
+---
+
+# Regime Outputs
+
+Current Regime
+
+Confidence
+
+Recommended Strategies
+
+---
+
+# Example
+
+Current Regime
+
+Update Speculation
+
+Confidence
+
+88%
+
+Best Strategies
+
+Momentum
+
+Event Trading
+
+Attention Trading
+
+---
+
+# Market Breadth
+
+## Objective
+
+Determine if movement is concentrated or broad.
+
+---
+
+# Metrics
+
+Items Rising
+
+Items Falling
+
+Volume Participation
+
+Sector Participation
+
+---
+
+# Sector Framework
+
+Create item sectors.
+
+Examples
+
+Raid Gear
+
+Melee Gear
+
+Magic Gear
+
+Ranged Gear
+
+Resources
+
+Herblore
+
+Construction
+
+PvP
+
+---
+
+# Sector Momentum
+
+Measure:
+
+Sector Return
+
+Sector Attention
+
+Sector Volume
+
+---
+
+# Sector Rotation
+
+Detect capital movement.
+
+Example
+
+Melee Sector Weakening
+
+Magic Sector Strengthening
+
+---
+
+# Predictive Modeling Layer
+
+## Objective
+
+Forecast expected returns.
+
+---
+
+# Model Inputs
+
+Momentum
+
+Attention
+
+Exposure
+
+Liquidity
+
+Volatility
+
+Creator Influence
+
+Regime
+
+Historical Analogs
+
+---
+
+# Candidate Models
+
+Linear Regression
+
+Gradient Boosting
+
+XGBoost
+
+LightGBM
+
+Random Forests
+
+---
+
+# Prediction Targets
+
+24h Return
+
+7d Return
+
+30d Return
+
+Probability of Outperformance
+
+---
+
+# Confidence Scores
+
+Every prediction receives:
+
+Expected Return
+
+Confidence
+
+Risk Rating
+
+---
+
+# Quant Research Dashboard
+
+Internal Research Interface
+
+Displays:
+
+Factor Performance
+
+Signal Performance
+
+Win Rates
+
+Sharpe-Like Metrics
+
+Model Performance
+
+---
+
+# Part 3 Deliverables
+
+✓ Historical Analog Engine
+
+✓ Event Similarity Search
+
+✓ Factor Library
+
+✓ Alpha Engine
+
+✓ Statistical Arbitrage
+
+✓ Relationship Graph
+
+✓ Regime Detection
+
+✓ Predictive Models
+
+✓ Research Dashboard
+
+After completion proceed to:
+
+Part 4 — Backtesting Infrastructure, LLM Architecture, Explainability Engine, Recommendation System & Portfolio Intelligence.

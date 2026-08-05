@@ -20,7 +20,10 @@ export function saveWatchlist(entries: Record<number, WatchEntry>) {
   localStorage.setItem(KEY, JSON.stringify(entries));
 }
 
-export function toggleWatch(entries: Record<number, WatchEntry>, itemId: number): Record<number, WatchEntry> {
+export function toggleWatch(
+  entries: Record<number, WatchEntry>,
+  itemId: number,
+): Record<number, WatchEntry> {
   const next = { ...entries };
   if (next[itemId]) {
     delete next[itemId];
@@ -34,7 +37,7 @@ export function toggleWatch(entries: Record<number, WatchEntry>, itemId: number)
 export function updateWatchAlert(
   entries: Record<number, WatchEntry>,
   itemId: number,
-  patch: Partial<Pick<WatchEntry, "alertAbove" | "alertBelow">>
+  patch: Partial<Pick<WatchEntry, "alertAbove" | "alertBelow">>,
 ): Record<number, WatchEntry> {
   const existing = entries[itemId];
   if (!existing) return entries;

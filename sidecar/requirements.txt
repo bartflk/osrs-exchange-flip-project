@@ -1,0 +1,10 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-dotenv>=1.0
+
+# Reddit collector (DESIGN.md §6.4) -- needs Reddit's app pre-approval before it can authenticate.
+praw>=7.7
+
+# Discord self-bot collector (DESIGN.md §11.3.1) -- authenticates as a personal/alt user account,
+# not an official bot application. Confirmed approach; the ToS/account-action risk is accepted.
+discord.py-self>=2.0

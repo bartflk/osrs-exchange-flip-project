@@ -51,17 +51,38 @@ function netOf(unitValue: number, qty: number): { netUnitValue: number; netValue
 // before the generic name-stripping fallback below, since these aren't simple suffix variations
 // of the same name. Verified against the OSRS Wiki (see DESIGN.md / README for the research
 // this table is built from) -- each note says what the estimate is actually based on.
-const VALUE_ALIASES: Record<number, { components: { aliasId: number; qty: number }[]; note: string }> = {
-  25865: { components: [{ aliasId: 25862, qty: 1 }], note: "valued as Bow of faerdhinen (inactive)" },
+const VALUE_ALIASES: Record<
+  number,
+  { components: { aliasId: number; qty: number }[]; note: string }
+> = {
+  25865: {
+    components: [{ aliasId: 25862, qty: 1 }],
+    note: "valued as Bow of faerdhinen (inactive)",
+  },
   12926: { components: [{ aliasId: 12924, qty: 1 }], note: "valued as Toxic blowpipe (empty)" },
-  12006: { components: [{ aliasId: 4151, qty: 1 }], note: "valued as Abyssal whip (degrades back to this)" },
+  12006: {
+    components: [{ aliasId: 4151, qty: 1 }],
+    note: "valued as Abyssal whip (degrades back to this)",
+  },
   // Eye of ayak is only tradeable fully uncharged (id 31115).
   31113: { components: [{ aliasId: 31115, qty: 1 }], note: "valued as Eye of ayak (uncharged)" },
   // Crystal equipment dismantles back into crystal armour/weapon seeds (wiki-confirmed counts).
-  23975: { components: [{ aliasId: 23956, qty: 3 }], note: "valued as 3x Crystal armour seed (dismantle value)" },
-  23979: { components: [{ aliasId: 23956, qty: 2 }], note: "valued as 2x Crystal armour seed (dismantle value)" },
-  23971: { components: [{ aliasId: 23956, qty: 1 }], note: "valued as Crystal armour seed (dismantle value)" },
-  23987: { components: [{ aliasId: 4207, qty: 1 }], note: "valued as Crystal weapon seed (revertible via Ilfeen)" },
+  23975: {
+    components: [{ aliasId: 23956, qty: 3 }],
+    note: "valued as 3x Crystal armour seed (dismantle value)",
+  },
+  23979: {
+    components: [{ aliasId: 23956, qty: 2 }],
+    note: "valued as 2x Crystal armour seed (dismantle value)",
+  },
+  23971: {
+    components: [{ aliasId: 23956, qty: 1 }],
+    note: "valued as Crystal armour seed (dismantle value)",
+  },
+  23987: {
+    components: [{ aliasId: 4207, qty: 1 }],
+    note: "valued as Crystal weapon seed (revertible via Ilfeen)",
+  },
   // Neitiznot faceguard is a combination of these two tradeable pieces -- not a strict "revert"
   // mechanic, but a real floor on its value since you could always disassemble the idea into them.
   24271: {
@@ -73,7 +94,10 @@ const VALUE_ALIASES: Record<number, { components: { aliasId: number; qty: number
   },
   // Ferocious gloves are crafted from Hydra leather -- not a revert, just the closest tradeable
   // value reference available (flagged as looser than the others via the note).
-  22981: { components: [{ aliasId: 22983, qty: 1 }], note: "rough estimate only: valued as its Hydra leather cost" },
+  22981: {
+    components: [{ aliasId: 22983, qty: 1 }],
+    note: "rough estimate only: valued as its Hydra leather cost",
+  },
 };
 
 // Generic fallback for the broader pattern: many degraded/imbued/charged items share a name
@@ -85,7 +109,10 @@ function nameFallbackCandidates(name: string): { candidate: string; note: string
   const out: { candidate: string; note: string }[] = [];
   const chargeMatch = name.match(/^(.*)\s\d{1,3}$/);
   if (chargeMatch) {
-    out.push({ candidate: chargeMatch[1], note: `valued as ${chargeMatch[1]} (base/uncharged form)` });
+    out.push({
+      candidate: chargeMatch[1],
+      note: `valued as ${chargeMatch[1]} (base/uncharged form)`,
+    });
   }
   if (/\(i\)$/i.test(name)) {
     const base = name.replace(/\s*\(i\)$/i, "");
@@ -102,7 +129,11 @@ const nameLookupStmt = db.prepare(`
   LIMIT 1
 `);
 
-function valueEntries(entries: BankEntry[]): { totalValue: number; totalNetValue: number; items: ValuedItem[] } {
+function valueEntries(entries: BankEntry[]): {
+  totalValue: number;
+  totalNetValue: number;
+  items: ValuedItem[];
+} {
   const ids = entries.map((e) => e.id);
   if (ids.length === 0) return { totalValue: 0, totalNetValue: 0, items: [] };
 
@@ -116,7 +147,7 @@ function valueEntries(entries: BankEntry[]): { totalValue: number; totalNetValue
     FROM items i
     LEFT JOIN latest_snapshot s ON s.item_id = i.id
     WHERE i.id IN (${placeholders})
-  `
+  `,
     )
     .all(...allIds) as BankRow[];
 
@@ -223,7 +254,9 @@ function valueEntries(entries: BankEntry[]): { totalValue: number; totalNetValue
       // Still worth a high alch lookup by name if we can find one -- an untradeable item
       // occasionally still has a real high alch value (most don't, alchemy will just say
       // "this item cannot be alchemised", but this covers the ones that do).
-      const byNameFallback = e.name ? (nameLookupStmt.get(e.name) as BankRow | undefined) : undefined;
+      const byNameFallback = e.name
+        ? (nameLookupStmt.get(e.name) as BankRow | undefined)
+        : undefined;
       const highAlch = byNameFallback?.highalch ?? null;
       return {
         id: e.id,
@@ -281,7 +314,7 @@ export async function bankRoutes(app: FastifyInstance) {
   app.get("/api/bank/imports", async () => {
     const rows = db
       .prepare(
-        `SELECT id, imported_at, total_value, item_count FROM bank_imports ORDER BY imported_at DESC LIMIT 100`
+        `SELECT id, imported_at, total_value, item_count FROM bank_imports ORDER BY imported_at DESC LIMIT 100`,
       )
       .all();
     return { imports: rows };
@@ -290,7 +323,13 @@ export async function bankRoutes(app: FastifyInstance) {
   app.get("/api/bank/imports/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
     const row = db.prepare(`SELECT * FROM bank_imports WHERE id = ?`).get(Number(id)) as
-      | { id: number; imported_at: number; total_value: number; item_count: number; result_json: string }
+      | {
+          id: number;
+          imported_at: number;
+          total_value: number;
+          item_count: number;
+          result_json: string;
+        }
       | undefined;
     if (!row) return reply.code(404).send({ error: "not found" });
     return {

@@ -1,0 +1,301 @@
+You're thinking in the right direction, but I'd go much further than "Claude summarizes update rumors."
+
+Looking at current OSRS flipping tools, most of them compete on:
+
+Price tracking
+Margin finding
+Alerts
+Charts
+Personalized flip recommendations
+RuneLite integration
+Profit tracking
+
+That's already crowded. Tools like FlipSmart, GE Tracker, and others are already offering AI recommendations, alerts, market flux detection, and analytics.
+
+The opportunity is probably not better dashboards. It's better prediction.
+
+If I were building an OSRS quant platform
+
+I'd build a "market intelligence engine" rather than a flip finder.
+
+Think Renaissance Technologies for RuneScape.
+
+1. Update Impact Forecasting
+
+Instead of:
+
+"Here's today's blog post"
+
+Do:
+
+"These 17 items are likely to rise 5-20% if this proposal passes."
+
+Pipeline:
+
+Monitor Jagex news
+Monitor polls
+Monitor developer comments
+Monitor livestream transcripts
+Monitor Reddit discussions
+Monitor Discord discussions
+Monitor YouTube creator transcripts
+
+Then classify:
+
+Event	Impacted Items	Confidence
+New Slayer Boss	Scythe, Blood Fury, Divine pots	72%
+Prayer rebalance	Ranarr, Snapdragon	84%
+New skilling method	Relevant supplies	91%
+
+This is much more valuable than summarization.
+
+2. Event Similarity Engine
+
+One thing I never see in OSRS tools:
+
+When a new update is announced:
+
+"The closest historical update was Desert Treasure 2."
+
+Then show:
+
+What items moved
+How far
+How quickly
+How long the move lasted
+
+Example:
+
+Project Zanaris announcement
+
+Most similar events:
+1. Leagues 4 (83%)
+2. Sailing poll (77%)
+3. DMM announcement (71%)
+
+Historically:
+Teleport items +12%
+Bond demand +7%
+Skilling resources -4%
+
+This is quant-style analysis.
+
+3. Sentiment Leading Indicator
+
+Reddit is actually useful here.
+
+Track:
+
+Reddit mentions
+Wiki page views
+YouTube mentions
+Discord mentions
+
+Then calculate:
+
+Attention Score
+Sentiment Score
+Acceleration Score
+
+Often discussion volume rises before price.
+
+Think:
+
+Dragon claws
+
+Price:
+flat
+
+Mentions:
++400%
+
+Alert:
+"Unusual social activity"
+
+That's how hedge funds track social sentiment.
+
+4. Buy Limit Optimization
+
+Most flippers think:
+
+Margin × Limit
+
+But the real equation is:
+
+Expected Profit =
+Margin × Fill Probability × Volume × Time
+
+Create a score:
+
+Expected GP/hour
+
+instead of
+
+Raw Margin
+
+This alone would outperform many current flip finders.
+
+5. Manipulation Detection
+
+Huge opportunity.
+
+Detect:
+
+Fake spikes
+Dump groups
+Low-volume manipulation
+Temporary shortages
+
+Features:
+
+Spread widening
+Volume collapse
+Abnormal volatility
+Trade velocity changes
+
+Output:
+
+WARNING
+
+Elder maul
+Price up 18%
+
+Probability of organic move:
+21%
+
+Probability of manipulation:
+79%
+6. Market Regime Detection
+
+This is where quant gets interesting.
+
+Train a model that identifies:
+
+Update speculation market
+Panic selling market
+Stable market
+Bull market
+Bear market
+
+Then recommend different strategies.
+
+Example:
+
+Current regime:
+Update Speculation
+
+Best strategies:
+✓ Momentum
+✓ News trades
+
+Avoid:
+✗ Long holds
+✗ Margin flips
+7. Portfolio-Level Optimization
+
+Nobody does this well.
+
+Most tools suggest flips individually.
+
+Instead:
+
+You have:
+500m cash
+8 GE slots
+
+Optimal allocation:
+
+Slot 1: Dragon claws
+Slot 2: Blood fury
+Slot 3: Torstol
+...
+Expected GP/day:
+11.4m
+
+Treat GE slots as scarce capital.
+
+This is literally a portfolio optimization problem.
+
+8. Rumor Probability Market
+
+This is the feature I'd personally be excited about.
+
+Create probabilities:
+
+New Raid before Dec:
+68%
+
+New Prayer rewards:
+42%
+
+New BIS Melee item:
+74%
+
+Then map them to assets.
+
+Scythe
+Current fair value:
+1.82b
+
+If raid confirmed:
+2.05b
+
+Expected value:
+1.97b
+
+This is much closer to financial markets.
+
+9. "Why Is This Moving?" Engine
+
+A massive pain point.
+
+User sees:
+
+Inquisitor's mace +11%
+
+Your app explains:
+
+Likely causes:
+
+62% New boss proposal
+23% Reddit speculation
+10% YouTube creator video
+5% Unknown
+
+People pay for explanations.
+
+10. Alpha Score (the killer feature)
+
+Combine everything:
+
+Price momentum
+Volume acceleration
+Spread quality
+Social sentiment
+Update exposure
+Historical analogs
+
+Output:
+
+Top Alpha Opportunities
+
+1. Blood Shard
+Score: 91
+
+2. Torstol
+Score: 88
+
+3. Dragon Claws
+Score: 85
+
+Not "highest margin."
+
+Not "largest volume."
+
+Just:
+
+Which items are statistically most likely to outperform over the next 24h, 7d, or 30d?
+
+That's the feature that starts to feel like Bloomberg Terminal meets OSRS.
+
+My guess is that an AI news/rumor engine is worth building, but only as an input. The real moat is converting news, social discussion, and historical update data into probabilistic forecasts of item prices. Most competitors show what happened. A quant-style product predicts what happens next.

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type WheelEvent, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import type { WheelEvent, MouseEvent } from "preact/compat";
 import type { TimeseriesPoint } from "../api";
 import { formatGp } from "../format";
 
@@ -11,12 +12,25 @@ const PAD_BOTTOM = 24;
 const VOL_HEIGHT = 48;
 const MIN_VIEW_POINTS = 8;
 
+// DESIGN.md §12.1 item 11 / §4.2: GE Tracker's chart annotates the two GE-tax-rate-change dates.
+// Unix seconds, UTC midnight of each date.
+const TAX_MARKERS: { ts: number; label: string }[] = [
+  { ts: Date.UTC(2021, 11, 9) / 1000, label: "1% tax" },
+  { ts: Date.UTC(2025, 4, 29) / 1000, label: "2% tax" },
+];
+
 interface View {
   start: number;
   end: number; // exclusive
 }
 
-export function PriceChart({ points, blended = false }: { points: TimeseriesPoint[]; blended?: boolean }) {
+export function PriceChart({
+  points,
+  blended = false,
+}: {
+  points: TimeseriesPoint[];
+  blended?: boolean;
+}) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [view, setView] = useState<View | null>(null);
   const dragRef = useRef<{ startClientX: number; startView: View } | null>(null);
@@ -24,7 +38,7 @@ export function PriceChart({ points, blended = false }: { points: TimeseriesPoin
 
   const clean = useMemo(
     () => points.filter((p) => p.avgHighPrice != null || p.avgLowPrice != null),
-    [points]
+    [points],
   );
 
   // Reset to the full range whenever the underlying data changes (e.g. lookback switch).
@@ -43,11 +57,16 @@ export function PriceChart({ points, blended = false }: { points: TimeseriesPoin
   const visible = clean.slice(v.start, v.end);
   const visibleCount = visible.length;
 
-  const allPrices = visible.flatMap((p) => [p.avgHighPrice, p.avgLowPrice]).filter((v): v is number => v != null);
+  const allPrices = visible
+    .flatMap((p) => [p.avgHighPrice, p.avgLowPrice])
+    .filter((v): v is number => v != null);
   const min = allPrices.length ? Math.min(...allPrices) : 0;
   const max = allPrices.length ? Math.max(...allPrices) : 1;
   const range = max - min || 1;
-  const maxVol = Math.max(...visible.map((p) => (p.highPriceVolume ?? 0) + (p.lowPriceVolume ?? 0)), 1);
+  const maxVol = Math.max(
+    ...visible.map((p) => (p.highPriceVolume ?? 0) + (p.lowPriceVolume ?? 0)),
+    1,
+  );
 
   const plotW = WIDTH - PAD_LEFT - PAD_RIGHT;
   const plotH = HEIGHT - PAD_TOP - PAD_BOTTOM - VOL_HEIGHT;
@@ -138,11 +157,53 @@ export function PriceChart({ points, blended = false }: { points: TimeseriesPoin
   const isZoomed = v.start > 0 || v.end < clean.length;
   const hovered = hoverIdx != null ? clean[hoverIdx] : null;
 
+  // Tax-rate-change markers: interpolate each marker's timestamp to an x position within the
+  // *full* clean series, then only render it if that position falls inside the current
+  // (possibly zoomed) view.
+  function markerX(ts: number): number | null {
+    if (ts < clean[0].timestamp || ts > clean[clean.length - 1].timestamp) return null;
+    for (let i = 0; i < clean.length - 1; i++) {
+      const a = clean[i].timestamp;
+      const b = clean[i + 1].timestamp;
+      if (ts >= a && ts <= b) {
+        const frac = b > a ? (ts - a) / (b - a) : 0;
+        const fullIdx = i + frac;
+        if (fullIdx < v.start || fullIdx > v.end) return null;
+        return x(fullIdx - v.start);
+      }
+    }
+    return null;
+  }
+  const visibleMarkers = TAX_MARKERS.map((m) => ({ ...m, cx: markerX(m.ts) })).filter(
+    (m): m is { ts: number; label: string; cx: number } => m.cx != null,
+  );
+
+  // Simple moving-average overlay -- a light trend line, not a real forecast. Window scales with
+  // how many points are currently in view so it stays legible whether zoomed to a day or a year.
+  const maWindow = Math.max(3, Math.round(visibleCount / 15));
+  const movingAveragePath = (() => {
+    let d = "";
+    let started = false;
+    for (let i = 0; i < visible.length; i++) {
+      const windowStart = Math.max(0, i - maWindow + 1);
+      const slice = visible
+        .slice(windowStart, i + 1)
+        .map((p) => p.avgHighPrice)
+        .filter((val): val is number => val != null);
+      if (slice.length === 0) continue;
+      const avg = slice.reduce((sum, val) => sum + val, 0) / slice.length;
+      d += `${started ? "L" : "M"}${x(i).toFixed(1)},${y(avg).toFixed(1)} `;
+      started = true;
+    }
+    return d;
+  })();
+
   return (
     <div className="relative">
       <div className="flex items-center justify-between mb-1">
         <span className="text-[11px] text-gray-500">
-          Scroll to zoom, drag to pan{isZoomed ? ` · showing ${visibleCount} of ${clean.length} points` : ""}
+          Scroll to zoom, drag to pan
+          {isZoomed ? ` · showing ${visibleCount} of ${clean.length} points` : ""}
         </span>
         <div className="flex items-center gap-1">
           <button
@@ -261,6 +322,33 @@ export function PriceChart({ points, blended = false }: { points: TimeseriesPoin
           </>
         )}
 
+        {/* trend overlay -- a rolling average, not a forecast; purely visual context */}
+        <path
+          d={movingAveragePath}
+          fill="none"
+          stroke="rgba(224,231,255,0.5)"
+          strokeWidth={1}
+          strokeDasharray="3,3"
+        />
+
+        {/* GE tax-rate-change markers, only drawn when that date is within the current view */}
+        {visibleMarkers.map((m) => (
+          <g key={m.ts}>
+            <line
+              x1={m.cx}
+              x2={m.cx}
+              y1={PAD_TOP}
+              y2={PAD_TOP + plotH}
+              stroke="rgba(251,191,36,0.4)"
+              strokeWidth={1}
+              strokeDasharray="2,3"
+            />
+            <text x={m.cx + 3} y={PAD_TOP + 10} className="fill-amber-400" fontSize="9">
+              {m.label}
+            </text>
+          </g>
+        ))}
+
         {hovered && hoverIdx != null && (
           <line
             x1={x(hoverIdx - v.start)}
@@ -276,7 +364,8 @@ export function PriceChart({ points, blended = false }: { points: TimeseriesPoin
       <div className="flex items-center gap-4 text-xs text-gray-400 mt-1">
         {blended ? (
           <span className="flex items-center gap-1">
-            <span className="w-2.5 h-2.5 rounded-full bg-slate-300 inline-block" /> Price (daily, blended)
+            <span className="w-2.5 h-2.5 rounded-full bg-slate-300 inline-block" /> Price (daily,
+            blended)
           </span>
         ) : (
           <>
@@ -291,7 +380,8 @@ export function PriceChart({ points, blended = false }: { points: TimeseriesPoin
         {hovered &&
           (blended ? (
             <span className="ml-auto font-mono text-gray-300">
-              {new Date(hovered.timestamp * 1000).toLocaleDateString()} · {formatGp(hovered.avgHighPrice)}
+              {new Date(hovered.timestamp * 1000).toLocaleDateString()} ·{" "}
+              {formatGp(hovered.avgHighPrice)}
               {hovered.highPriceVolume ? ` · vol ${hovered.highPriceVolume.toLocaleString()}` : ""}
             </span>
           ) : (

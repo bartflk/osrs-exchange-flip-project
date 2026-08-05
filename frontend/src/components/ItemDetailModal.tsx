@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "preact/hooks";
 import { fetchTimeseries, type Lookback, type MarketItem, type TimeseriesPoint } from "../api";
 import { formatGp, formatPct } from "../format";
 import { PriceChart } from "./PriceChart";
@@ -76,7 +76,9 @@ export function ItemDetailModal({
     const buyingLow = buyPrices.length ? Math.min(...buyPrices) : null;
     const sellingHigh = sellPrices.length ? Math.max(...sellPrices) : null;
     const sellingLow = sellPrices.length ? Math.min(...sellPrices) : null;
-    const overallHigh = Math.max(...[buyingHigh, sellingHigh].filter((v): v is number => v != null));
+    const overallHigh = Math.max(
+      ...[buyingHigh, sellingHigh].filter((v): v is number => v != null),
+    );
     const overallLow = Math.min(...[buyingLow, sellingLow].filter((v): v is number => v != null));
     return { overallHigh, overallLow, buyingHigh, buyingLow, sellingHigh, sellingLow };
   }, [points]);
@@ -92,20 +94,29 @@ export function ItemDetailModal({
       >
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
-            {item.icon && <img src={iconUrl(item.icon)} alt="" className="w-9 h-9 object-contain" />}
+            {item.icon && (
+              <img src={iconUrl(item.icon)} alt="" className="w-9 h-9 object-contain" />
+            )}
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-semibold text-white">{item.name}</h2>
                 {holding && holding.qty > 0 && (
                   <span
                     className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-400 border border-sky-500/30"
-                    title={holding.priced ? `Worth ${formatGp(holding.value)}gp at current price` : "Untradeable / unpriced"}
+                    title={
+                      holding.priced
+                        ? `Worth ${formatGp(holding.value)}gp at current price`
+                        : "Untradeable / unpriced"
+                    }
                   >
                     You own {holding.qty.toLocaleString()}
                   </span>
                 )}
               </div>
-              <p className="text-xs text-gray-500">Item ID {item.id}{item.members ? " · Members" : ""}</p>
+              <p className="text-xs text-gray-500">
+                Item ID {item.id}
+                {item.members ? " · Members" : ""}
+              </p>
             </div>
           </div>
           <button onClick={onClose} className="text-gray-500 hover:text-white text-lg leading-none">
@@ -116,19 +127,34 @@ export function ItemDetailModal({
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           <Stat label="Buy at" value={formatGp(item.low)} />
           <Stat label="Sell at" value={formatGp(item.high)} />
-          <Stat label="Net margin" value={formatGp(item.net_margin)} positive={(item.net_margin ?? 0) >= 0} />
+          <Stat
+            label="Net margin"
+            value={formatGp(item.net_margin)}
+            positive={(item.net_margin ?? 0) >= 0}
+          />
           <Stat label="ROI" value={formatPct(item.roi_pct)} positive={(item.roi_pct ?? 0) >= 0} />
           <Stat
             label="GE tax (2%)"
             value={item.tax ? `-${formatGp(item.tax)}` : "—"}
             positive={item.tax ? false : undefined}
           />
-          <Stat label="Buy limit (4h)" value={item.buy_limit != null ? item.buy_limit.toLocaleString() : "—"} />
+          <Stat
+            label="Buy limit (4h)"
+            value={item.buy_limit != null ? item.buy_limit.toLocaleString() : "—"}
+          />
           <Stat label="Liquidity/hr" value={Math.round(item.liquidity).toLocaleString()} />
           <Stat
             label="Buy/sell ratio (1h)"
-            value={item.vol_high_1h > 0 ? (item.vol_low_1h / item.vol_high_1h).toFixed(2) : "—"}
-            positive={item.vol_high_1h > 0 ? item.vol_low_1h / item.vol_high_1h >= 1 : undefined}
+            value={
+              (item.vol_high_1h ?? 0) > 0
+                ? ((item.vol_low_1h ?? 0) / item.vol_high_1h!).toFixed(2)
+                : "—"
+            }
+            positive={
+              (item.vol_high_1h ?? 0) > 0
+                ? (item.vol_low_1h ?? 0) / item.vol_high_1h! >= 1
+                : undefined
+            }
           />
           <VolStat label="Vol 1h" buy={item.vol_low_1h} sell={item.vol_high_1h} />
           <VolStat label="Vol 5m" buy={item.vol_low_5m} sell={item.vol_high_5m} />
@@ -140,7 +166,9 @@ export function ItemDetailModal({
               key={lb.key}
               onClick={() => setLookback(lb.key)}
               className={`px-2.5 py-1 rounded-lg text-xs transition-colors ${
-                lookback === lb.key ? "bg-white/10 text-white" : "text-gray-400 hover:text-gray-200 hover:bg-white/5"
+                lookback === lb.key
+                  ? "bg-white/10 text-white"
+                  : "text-gray-400 hover:text-gray-200 hover:bg-white/5"
               }`}
             >
               {lb.label}
@@ -152,8 +180,9 @@ export function ItemDetailModal({
 
         {blended && (
           <p className="text-[11px] text-gray-500 mb-2">
-            Full history from the item's GE release, via the OSRS Wiki's long-range archive — daily blended
-            price only (no separate buy/sell spread this far back), shown as a single line below.
+            Full history from the item's GE release, via the OSRS Wiki's long-range archive — daily
+            blended price only (no separate buy/sell spread this far back), shown as a single line
+            below.
           </p>
         )}
         <PriceChart points={points} blended={blended} />
@@ -236,14 +265,14 @@ function RangeStatGroup({
 // Buy volume colored rose (matches the "Buy (low)" chart line/legend), sell volume colored
 // emerald (matches "Sell (high)") -- same convention as PriceChart's hover tooltip, so volume
 // isn't the one flat-gray number in an otherwise color-coded modal.
-function VolStat({ label, buy, sell }: { label: string; buy: number; sell: number }) {
+function VolStat({ label, buy, sell }: { label: string; buy: number | null; sell: number | null }) {
   return (
     <div className="glass rounded-lg px-3 py-2">
       <div className="text-[10px] uppercase tracking-wide text-gray-500">{label} (buy/sell)</div>
       <div className="font-mono text-sm">
-        <span className="text-rose-400">{buy.toLocaleString()}</span>
+        <span className="text-rose-400">{(buy ?? 0).toLocaleString()}</span>
         <span className="text-gray-600"> / </span>
-        <span className="text-emerald-400">{sell.toLocaleString()}</span>
+        <span className="text-emerald-400">{(sell ?? 0).toLocaleString()}</span>
       </div>
     </div>
   );

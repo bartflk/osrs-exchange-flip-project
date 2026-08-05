@@ -1,0 +1,994 @@
+# CLAUDE VISION & BRAINSTORM BLUEPRINT
+## Long-Term Technical Vision for the OSRS Flip Assistant
+
+---
+
+# Purpose
+
+This document is the long-term vision and design specification for the project.
+
+It is NOT a task list.
+
+It is NOT a sprint backlog.
+
+It exists so that every future implementation follows the same philosophy and architecture.
+
+Whenever planning or implementing features:
+
+1. Read this document.
+2. Inspect the existing implementation.
+3. Search for reusable components.
+4. Do not duplicate systems.
+5. Keep deterministic calculations separate from AI reasoning.
+
+The goal is NOT to build another GE flip finder.
+
+The goal is to build the best OSRS Decision Engine.
+
+---
+
+# Overall Philosophy
+
+The project consists of three layers.
+
+```
+                DATA
+
+                  ↓
+
+      Deterministic Quantitative Engine
+
+                  ↓
+
+         Machine Learning Models
+
+                  ↓
+
+        Claude Reasoning & Explanation
+
+                  ↓
+
+               User
+```
+
+Important:
+
+Claude never replaces mathematics.
+
+Claude never invents numbers.
+
+Claude never becomes the source of truth.
+
+Claude explains.
+
+Claude reasons.
+
+Claude critiques.
+
+Claude summarises.
+
+The Quant Engine owns calculations.
+
+ML owns probabilities.
+
+Claude owns communication.
+
+---
+
+# Vision
+
+Move beyond:
+
+"I think this flip looks good."
+
+Towards:
+
+"This flip has an 84% probability of success.
+
+Expected profit:
+
++214k
+
+Expected holding time:
+
+37 minutes
+
+Trade Health:
+
+91%
+
+Historical accuracy under similar conditions:
+
+86%
+
+Recommendation:
+
+BUY"
+
+Everything should become measurable.
+
+---
+
+# Core Systems
+
+The project will eventually contain the following independent systems.
+
+---
+
+## 1. Quantitative Engine
+
+Responsible for:
+
+- spread calculations
+- ROI
+- margins
+- volatility
+- scoring
+- manipulation detection
+- expected value
+- confidence calculations
+- historical analytics
+
+This layer is deterministic.
+
+No AI should modify these values.
+
+---
+
+## 2. Historical Warehouse
+
+Store everything.
+
+Nothing should ever be discarded.
+
+Examples:
+
+Price
+
+High
+
+Low
+
+Volume
+
+Buy limits
+
+Margins
+
+Spread
+
+Trade history
+
+Recommendations
+
+Forecasts
+
+User trades
+
+Track Record
+
+Reddit
+
+Discord
+
+Official news
+
+Everything should be timestamped.
+
+Historical data is the most valuable asset of the project.
+
+---
+
+# Feature Engineering
+
+Raw prices are almost useless for ML.
+
+The system should continuously generate engineered features.
+
+Examples:
+
+Rolling Mean
+
+Rolling Median
+
+EMA
+
+SMA
+
+MACD
+
+RSI
+
+Bollinger Bands
+
+ATR
+
+Rolling Volatility
+
+Rolling Variance
+
+Z-Score
+
+Momentum
+
+Price Velocity
+
+Acceleration
+
+Trend Slope
+
+Spread %
+
+ROI %
+
+Buy Limit Utilisation
+
+Historical Fill Rate
+
+Time Since Spike
+
+Time Since Crash
+
+Hour of Day
+
+Day of Week
+
+Weekend
+
+Update Day
+
+Holiday
+
+Event Flags
+
+These become model inputs.
+
+---
+
+# Forecasting System
+
+Forecasting is independent from recommendations.
+
+Its purpose is predicting future market behaviour.
+
+Supported horizons:
+
+5 minutes
+
+15 minutes
+
+30 minutes
+
+1 hour
+
+2 hours
+
+6 hours
+
+12 hours
+
+Each horizon represents a different user trading strategy.
+
+---
+
+## Forecast Outputs
+
+The forecasting model should predict:
+
+Future Low
+
+Future High
+
+Future Spread
+
+Future Volatility
+
+Expected Holding Time
+
+Expected Fill Time
+
+Expected Profit Distribution
+
+Do NOT predict only one value.
+
+Predict distributions.
+
+---
+
+# Prediction Bands
+
+Prediction bands should represent uncertainty.
+
+Rather than:
+
+Future Price = 2.65M
+
+Predict:
+
+Q10
+
+Q25
+
+Q50
+
+Q75
+
+Q90
+
+These become prediction bands.
+
+The user should immediately understand uncertainty.
+
+Wide bands indicate uncertainty.
+
+Narrow bands indicate confidence.
+
+---
+
+# Trade Frequency
+
+User chooses:
+
+5 min
+
+15 min
+
+30 min
+
+1 hour
+
+2 hours
+
+6 hours
+
+12 hours
+
+This does NOT simply change refresh rate.
+
+It changes optimisation.
+
+Example:
+
+5 minutes
+
+Optimise for:
+
+Fast fills
+
+Lower margins
+
+Lower holding time
+
+Higher liquidity
+
+Higher fill probability
+
+12 hours
+
+Optimise for:
+
+Higher profit
+
+Larger margins
+
+Slower items
+
+Higher expected value
+
+Trade frequency becomes an optimisation parameter.
+
+---
+
+# Risk Levels
+
+User selects:
+
+Low
+
+Medium
+
+High
+
+Risk should never be arbitrary.
+
+Risk score should combine:
+
+Volatility
+
+Prediction uncertainty
+
+Liquidity
+
+Spread stability
+
+Historical forecast accuracy
+
+Historical trade success
+
+Fill probability
+
+Manipulation risk
+
+The recommendation engine should filter accordingly.
+
+---
+
+# Position Sizing
+
+Do not always recommend maximum buy limit.
+
+Calculate position size using:
+
+Capital
+
+Risk
+
+Expected Value
+
+Liquidity
+
+Buy Limit
+
+Confidence
+
+Forecast Uncertainty
+
+Eventually use Kelly-inspired sizing if validated.
+
+---
+
+# Recommendation Engine
+
+Forecasting alone is not enough.
+
+Recommendations should combine:
+
+Expected Profit
+
+Probability of Profit
+
+Probability Buy Fills
+
+Probability Sell Fills
+
+Risk
+
+Forecast Confidence
+
+Trade Duration
+
+Expected Value
+
+Historical Accuracy
+
+Current Regime
+
+Output:
+
+BUY
+
+WAIT
+
+SELL
+
+AVOID
+
+---
+
+# Live Portfolio Manager
+
+Support monitoring multiple active trades.
+
+Target:
+
+8 simultaneous trades.
+
+Each trade stores:
+
+Entry Price
+
+Entry Time
+
+Expected Profit
+
+Forecast
+
+Expected Duration
+
+Confidence
+
+Every market update:
+
+Recalculate:
+
+Forecast
+
+Expected Value
+
+Trade Health
+
+Confidence
+
+Recommendation
+
+Detect deviations from original thesis.
+
+---
+
+# Trade Health Score
+
+Every trade should have a continuously updating score.
+
+Example:
+
+Trade Health
+
+92
+
+↓
+
+84
+
+↓
+
+71
+
+↓
+
+58
+
+↓
+
+SELL
+
+Trade Health combines:
+
+Forecast confidence
+
+Market behaviour
+
+Volatility
+
+Spread
+
+Volume
+
+Expected Value
+
+Historical Similarity
+
+---
+
+# Explain Why
+
+Never simply say:
+
+SELL
+
+Instead explain:
+
+Volume collapsed
+
+Prediction interval widened
+
+Liquidity decreased
+
+Historical failure rate increased
+
+Confidence dropped
+
+Users should understand recommendations.
+
+---
+
+# Market Intelligence
+
+External information becomes structured data.
+
+---
+
+## Reddit
+
+Collect:
+
+Mention Count
+
+Mention Velocity
+
+Sentiment
+
+Buying Pressure
+
+Selling Pressure
+
+Speculation
+
+Manipulation
+
+PvM
+
+PvP
+
+Events
+
+Topic Clusters
+
+Claude converts discussions into structured signals.
+
+---
+
+## Discord
+
+Monitor:
+
+Whale mentions
+
+Coordinated buying
+
+Pump attempts
+
+Spam
+
+Repeated recommendations
+
+Fast-moving trends
+
+Discord should likely receive higher weighting than Reddit after validation.
+
+---
+
+## Official News
+
+Claude extracts:
+
+Affected Items
+
+Affected Skills
+
+Bosses
+
+Activities
+
+Expected Duration
+
+Confidence
+
+Historical Similar Events
+
+Everything becomes structured.
+
+---
+
+# Knowledge Graph
+
+Eventually relationships should exist between:
+
+Items
+
+Bosses
+
+Skills
+
+Updates
+
+NPCs
+
+Quests
+
+Events
+
+Historical effects
+
+This allows Claude to reason over facts instead of guessing.
+
+---
+
+# Machine Learning Roadmap
+
+Phase 1
+
+Binary Classifier
+
+Will this flip become profitable?
+
+---
+
+Phase 2
+
+Learning to Rank
+
+Rank today's flips.
+
+---
+
+Phase 3
+
+Expected Profit Regression
+
+Predict GP.
+
+---
+
+Phase 4
+
+Risk Model
+
+Predict downside.
+
+---
+
+Phase 5
+
+Execution Model
+
+Predict:
+
+Buy fill probability
+
+Sell fill probability
+
+Expected holding time
+
+---
+
+Phase 6
+
+Probabilistic Forecasting
+
+Predict distributions instead of prices.
+
+---
+
+# Price Simulation
+
+Eventually simulate thousands of possible futures.
+
+Monte Carlo
+
+Forecast distributions
+
+Quantile regression
+
+Scenario generation
+
+Outputs:
+
+Median
+
+Worst Case
+
+Best Case
+
+Confidence
+
+Expected Value
+
+---
+
+# Player Profile
+
+Store:
+
+Skills
+
+Combat
+
+Bank Value
+
+Quests
+
+Achievement Diaries
+
+Collection Log
+
+Unlocked Bosses
+
+Unlocked Areas
+
+Preferred Activities
+
+AFK Preference
+
+Primary Goal
+
+Examples:
+
+Max GP
+
+Max XP
+
+Questing
+
+Collection Log
+
+Skilling
+
+---
+
+# Session Planner
+
+One of the largest future features.
+
+While trades are active:
+
+Recommend activities.
+
+Example:
+
+Trades expected to complete in 45 minutes.
+
+Suggest:
+
+Gem Cutting
+
+Herblore
+
+Birdhouse Run
+
+Slayer
+
+Amethyst
+
+Bankstanding
+
+Activities should consider:
+
+Available Time
+
+Player Stats
+
+Attention Required
+
+Expected XP
+
+Expected GP
+
+Travel Time
+
+Return before trades require attention.
+
+---
+
+# OSRS Efficiency Engine
+
+Eventually optimise the player's entire session.
+
+Instead of:
+
+"What flip?"
+
+Answer:
+
+"What should I do next?"
+
+Examples:
+
+Flip
+
+Skill
+
+Boss
+
+Quest
+
+Bankstand
+
+AFK Activity
+
+Everything should work together.
+
+---
+
+# Claude Responsibilities
+
+Claude should:
+
+Explain recommendations.
+
+Explain risk.
+
+Explain Trade Health.
+
+Summarise Reddit.
+
+Summarise Discord.
+
+Extract Events.
+
+Compare historical events.
+
+Never replace deterministic calculations.
+
+Always inspect existing implementations before coding.
+
+Never duplicate code.
+
+---
+
+# Validation
+
+Every model should be validated.
+
+Metrics:
+
+Precision
+
+Recall
+
+Calibration
+
+Expected Value
+
+Profit
+
+Sharpe-like metrics
+
+Track Record
+
+Historical comparison
+
+Walk-forward validation
+
+Backtesting
+
+Nothing should ship without evidence.
+
+---
+
+# Long-Term Vision
+
+This project should become an OSRS Decision Engine.
+
+Not simply a flip finder.
+
+Not simply a forecasting tool.
+
+It should optimise:
+
+Capital
+
+Risk
+
+Time
+
+Profit
+
+XP
+
+Player progression
+
+Activities
+
+Market decisions
+
+Every recommendation should be explainable.
+
+Every prediction should include uncertainty.
+
+Every model should be historically validated.
+
+Every feature should improve measurable player outcomes.
+
+The system should eventually answer:
+
+What should I buy?
+
+How much should I buy?
+
+How long should I hold?
+
+Should I exit?
+
+Why?
+
+What changed?
+
+What should I do while waiting?
+
+How certain is the recommendation?
+
+How has this model historically performed?
+
+What is the opportunity cost of doing something else?
+
+This is the end-state vision of the project.

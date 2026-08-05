@@ -4,8 +4,9 @@
     {
       "name": "osrs-frontend",
       "runtimeExecutable": "cmd.exe",
-      "runtimeArgs": ["/c", "set PATH=C:\\Program Files\\nodejs;%PATH% && npm run dev --prefix frontend"],
-      "port": 5173
+      "runtimeArgs": ["/c", "set PATH=C:\\Program Files\\nodejs;%PATH% && npm run dev --prefix frontend -- --port %PORT%"],
+      "port": 5173,
+      "autoPort": true
     }
   ]
 }

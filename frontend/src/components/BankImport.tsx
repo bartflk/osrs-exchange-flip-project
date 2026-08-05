@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useState } from "preact/hooks";
+import type { MouseEvent } from "preact/compat";
 import {
   postBankValue,
   saveBankImport,
@@ -64,7 +65,8 @@ export function BankImport({
     }
     if (statusFilter === "calculated") rows = rows.filter((it) => it.priced && !it.estimated);
     else if (statusFilter === "estimated") rows = rows.filter((it) => it.estimated);
-    else if (statusFilter === "uncalculated") rows = rows.filter((it) => !it.priced && !it.estimated);
+    else if (statusFilter === "uncalculated")
+      rows = rows.filter((it) => !it.priced && !it.estimated);
 
     const sorted = [...rows].sort((a, b) => {
       let av: number | string;
@@ -208,16 +210,18 @@ export function BankImport({
     <div className="space-y-4">
       <div className="glass rounded-xl p-4">
         <p className="text-sm text-gray-300 mb-2">
-          In RuneLite, install the <span className="text-gray-100">Bank Memory</span> plugin, open your bank so it
-          records it, then right-click in its panel and export item data (TSV: Item id / Item name / Item
-          quantity). Paste it below.
+          In RuneLite, install the <span className="text-gray-100">Bank Memory</span> plugin, open
+          your bank so it records it, then right-click in its panel and export item data (TSV: Item
+          id / Item name / Item quantity). Paste it below.
         </p>
         <p className="text-xs text-amber-400/80 mb-2">
-          If items are missing: Bank Memory keeps multiple saved snapshots (game-mode variants like "(League)"/
-          "(Tournament)", plus any you've manually named) alongside the live one. Make sure you're right-clicking
-          the top-most <span className="text-gray-300">"Current bank &lt;name&gt;"</span> entry under Saved Banks —
-          not an older named snapshot — before choosing "Copy item data to clipboard," or you'll get a stale export.
-          "Parse & add" below merges multiple pastes if you still need to combine snapshots.
+          If items are missing: Bank Memory keeps multiple saved snapshots (game-mode variants like
+          "(League)"/ "(Tournament)", plus any you've manually named) alongside the live one. Make
+          sure you're right-clicking the top-most{" "}
+          <span className="text-gray-300">"Current bank &lt;name&gt;"</span> entry under Saved Banks
+          — not an older named snapshot — before choosing "Copy item data to clipboard," or you'll
+          get a stale export. "Parse & add" below merges multiple pastes if you still need to
+          combine snapshots.
         </p>
         <textarea
           value={text}
@@ -248,7 +252,10 @@ export function BankImport({
             Read clipboard & add
           </button>
           {tabsImported && (
-            <button onClick={handleClear} className="px-3 py-1.5 rounded-lg text-sm text-gray-500 hover:text-rose-400">
+            <button
+              onClick={handleClear}
+              className="px-3 py-1.5 rounded-lg text-sm text-gray-500 hover:text-rose-400"
+            >
               Clear all
             </button>
           )}
@@ -256,8 +263,12 @@ export function BankImport({
         </div>
         {skipped.length > 0 && (
           <div className="mt-2 text-xs">
-            <button onClick={() => setShowSkipped((s) => !s)} className="text-amber-400 hover:text-amber-300">
-              ⚠ {skipped.length} line{skipped.length === 1 ? "" : "s"} couldn't be read from that paste
+            <button
+              onClick={() => setShowSkipped((s) => !s)}
+              className="text-amber-400 hover:text-amber-300"
+            >
+              ⚠ {skipped.length} line{skipped.length === 1 ? "" : "s"} couldn't be read from that
+              paste
               {showSkipped ? " — hide" : " — show"}
             </button>
             {showSkipped && (
@@ -277,8 +288,13 @@ export function BankImport({
                 {viewingSavedId ? `Saved snapshot #${viewingSavedId}` : "Current total"}
                 {result.items.length > 0 && ` · ${result.items.length} unique items`}
               </div>
-              <div className="text-2xl font-mono text-emerald-400">{formatGp(result.totalValue)}gp</div>
-              <div className="text-xs text-gray-500" title="Sum of unitValue - GE tax (1%, capped at 5m/item, waived under 100gp) across every held item, i.e. what you'd actually walk away with instant-selling everything right now.">
+              <div className="text-2xl font-mono text-emerald-400">
+                {formatGp(result.totalValue)}gp
+              </div>
+              <div
+                className="text-xs text-gray-500"
+                title="Sum of unitValue - GE tax (1%, capped at 5m/item, waived under 100gp) across every held item, i.e. what you'd actually walk away with instant-selling everything right now."
+              >
                 {formatGp(result.totalNetValue)}gp after GE tax
               </div>
               {importedAt && (
@@ -320,7 +336,9 @@ export function BankImport({
                   key={f}
                   onClick={() => setStatusFilter(f)}
                   className={`px-2 py-1 rounded-md text-[11px] capitalize transition-colors ${
-                    statusFilter === f ? "bg-white/10 text-white" : "text-gray-500 hover:text-gray-300"
+                    statusFilter === f
+                      ? "bg-white/10 text-white"
+                      : "text-gray-500 hover:text-gray-300"
                   }`}
                 >
                   {f}
@@ -361,8 +379,12 @@ export function BankImport({
                   return (
                     <tr key={it.id} className="border-b border-white/5">
                       <td className="px-4 py-1.5 flex items-center gap-2" title={it.note}>
-                        {it.icon && <img src={iconUrl(it.icon)} alt="" className="w-5 h-5 object-contain" />}
-                        <span className={uncalculated ? "text-rose-400" : "text-gray-100"}>{it.name}</span>
+                        {it.icon && (
+                          <img src={iconUrl(it.icon)} alt="" className="w-5 h-5 object-contain" />
+                        )}
+                        <span className={uncalculated ? "text-rose-400" : "text-gray-100"}>
+                          {it.name}
+                        </span>
                         {it.estimated && (
                           <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30">
                             est.
@@ -374,15 +396,25 @@ export function BankImport({
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-1.5 font-mono text-gray-300">{it.qty.toLocaleString()}</td>
-                      <td className={`px-4 py-1.5 font-mono ${uncalculated ? "text-rose-400" : "text-gray-400"}`}>
+                      <td className="px-4 py-1.5 font-mono text-gray-300">
+                        {it.qty.toLocaleString()}
+                      </td>
+                      <td
+                        className={`px-4 py-1.5 font-mono ${uncalculated ? "text-rose-400" : "text-gray-400"}`}
+                      >
                         {formatGp(it.unitValue)}
                       </td>
-                      <td className="px-4 py-1.5 font-mono text-gray-500">{formatGp(it.highAlchValue)}</td>
-                      <td className={`px-4 py-1.5 font-mono ${uncalculated ? "text-rose-400" : "text-gray-200"}`}>
+                      <td className="px-4 py-1.5 font-mono text-gray-500">
+                        {formatGp(it.highAlchValue)}
+                      </td>
+                      <td
+                        className={`px-4 py-1.5 font-mono ${uncalculated ? "text-rose-400" : "text-gray-200"}`}
+                      >
                         {formatGp(it.value)}
                       </td>
-                      <td className="px-4 py-1.5 font-mono text-gray-400">{formatGp(it.netValue)}</td>
+                      <td className="px-4 py-1.5 font-mono text-gray-400">
+                        {formatGp(it.netValue)}
+                      </td>
                     </tr>
                   );
                 })}
@@ -409,7 +441,9 @@ export function BankImport({
                 >
                   <td className="px-4 py-2 text-gray-400">{formatAgo(h.imported_at)}</td>
                   <td className="px-4 py-2 text-gray-500">{h.item_count} items</td>
-                  <td className="px-4 py-2 font-mono text-gray-200 text-right">{formatGp(h.total_value)}gp</td>
+                  <td className="px-4 py-2 font-mono text-gray-200 text-right">
+                    {formatGp(h.total_value)}gp
+                  </td>
                   <td className="px-4 py-2 text-right">
                     <button
                       onClick={(e) => handleDeleteSnapshot(h.id, e)}

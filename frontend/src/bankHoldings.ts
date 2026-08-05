@@ -4,7 +4,10 @@ import type { BankValueItem } from "./api";
 // keyed by item id, so any part of the UI (e.g. the item detail modal) can answer
 // "do I currently hold this?" without re-fetching bank state. Persisted so it survives
 // a reload without requiring a re-paste.
-export type HoldingEntry = Pick<BankValueItem, "qty" | "unitValue" | "value" | "netValue" | "priced">;
+export type HoldingEntry = Pick<
+  BankValueItem,
+  "qty" | "unitValue" | "value" | "netValue" | "priced"
+>;
 
 const KEY = "bankHoldings";
 
@@ -21,7 +24,13 @@ export function saveHoldings(items: BankValueItem[]) {
   const next: Record<number, HoldingEntry> = {};
   for (const it of items) {
     if (it.qty > 0) {
-      next[it.id] = { qty: it.qty, unitValue: it.unitValue, value: it.value, netValue: it.netValue, priced: it.priced };
+      next[it.id] = {
+        qty: it.qty,
+        unitValue: it.unitValue,
+        value: it.value,
+        netValue: it.netValue,
+        priced: it.priced,
+      };
     }
   }
   localStorage.setItem(KEY, JSON.stringify(next));

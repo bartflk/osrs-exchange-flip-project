@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { lookupItems, type MarketItem } from "../api";
 
 function iconUrl(icon: string): string {
@@ -60,7 +60,9 @@ export function GlobalSearch({ onSelect }: { onSelect: (item: MarketItem) => voi
               }}
               className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/5 text-sm"
             >
-              {item.icon && <img src={iconUrl(item.icon)} alt="" className="w-5 h-5 object-contain shrink-0" />}
+              {item.icon && (
+                <img src={iconUrl(item.icon)} alt="" className="w-5 h-5 object-contain shrink-0" />
+              )}
               <span className="text-gray-100 truncate flex-1">{item.name}</span>
               <span className="text-gray-500 font-mono text-xs">
                 {item.high != null ? item.high.toLocaleString() : "no price"}

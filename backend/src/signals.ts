@@ -10,6 +10,14 @@ export function geTax(sellPrice: number): number {
   return Math.min(tax, 5_000_000);
 }
 
+// Old school bond (13190): technically has a GE buy/sell spread like any other item, but it's
+// not something people actually flip -- getting a sellable bond onto the GE in the first place
+// means either paying real money for it or already holding one from membership, not buying it
+// off the GE cheap and reselling. Scoring it alongside genuine flips just wastes a Buy Signals /
+// allocator slot on a "flip" no one would actually run. Excluded from scoring everywhere
+// (Market, Buy Signals, Track record, Capital allocator all share scoreItem).
+const NON_FLIPPABLE_IDS = new Set([13190]);
+
 export interface ItemRow {
   id: number;
   name: string;
@@ -41,6 +49,18 @@ export function scoreItem(row: ItemRow): ScoredItem {
   let roi_pct: number | null = null;
   let limit_adjusted_profit: number | null = null;
   let tax: number | null = null;
+
+  if (NON_FLIPPABLE_IDS.has(row.id)) {
+    return {
+      ...row,
+      net_margin,
+      roi_pct,
+      liquidity: 0,
+      limit_adjusted_profit,
+      score: -Infinity,
+      tax,
+    };
+  }
 
   if (high != null && low != null && low > 0) {
     tax = geTax(high);

@@ -2,10 +2,17 @@ import type { FastifyInstance } from "fastify";
 import { db } from "../db.js";
 import { scoreItem, type ItemRow } from "../signals.js";
 import { fetchTimeseries, fetchAllTimeHistory, type Lookback } from "../wiki.js";
+import { getWarehouseStatus } from "../warehouse.js";
+import { getSidecarStatus } from "../sidecar.js";
 
 export async function itemsRoutes(app: FastifyInstance) {
   app.get("/api/items", async (req) => {
-    const query = req.query as { minVolume?: string; membersOnly?: string; search?: string; ids?: string };
+    const query = req.query as {
+      minVolume?: string;
+      membersOnly?: string;
+      search?: string;
+      ids?: string;
+    };
 
     const rows = db
       .prepare(
@@ -15,7 +22,7 @@ export async function itemsRoutes(app: FastifyInstance) {
       FROM items i
       JOIN latest_snapshot s ON s.item_id = i.id
       WHERE s.high IS NOT NULL AND s.low IS NOT NULL
-    `
+    `,
       )
       .all() as ItemRow[];
 
@@ -51,7 +58,7 @@ export async function itemsRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const rows = db
       .prepare(
-        `SELECT ts, high, low, avg_high_5m, avg_low_5m FROM price_history WHERE item_id = ? ORDER BY ts ASC LIMIT 2000`
+        `SELECT ts, high, low, avg_high_5m, avg_low_5m FROM price_history WHERE item_id = ? ORDER BY ts ASC LIMIT 2000`,
       )
       .all(Number(id));
     return { itemId: Number(id), history: rows };
@@ -107,7 +114,7 @@ export async function itemsRoutes(app: FastifyInstance) {
       WHERE LOWER(i.name) LIKE ?
       ORDER BY i.name
       LIMIT 20
-    `
+    `,
       )
       .all(needle) as (ItemRow & { value: number })[];
 
@@ -121,9 +128,10 @@ export async function itemsRoutes(app: FastifyInstance) {
 
   app.get("/api/status", async () => {
     const itemCount = (db.prepare("SELECT COUNT(*) as c FROM items").get() as { c: number }).c;
-    const lastUpdate = db
-      .prepare("SELECT MAX(updated_at) as t FROM latest_snapshot")
-      .get() as { t: number | null };
-    return { itemCount, lastUpdate: lastUpdate.t };
+    const lastUpdate = db.prepare("SELECT MAX(updated_at) as t FROM latest_snapshot").get() as {
+      t: number | null;
+    };
+    const [warehouse, sidecar] = await Promise.all([getWarehouseStatus(), getSidecarStatus()]);
+    return { itemCount, lastUpdate: lastUpdate.t, warehouse, sidecar };
   });
 }
