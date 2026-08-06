@@ -413,6 +413,70 @@ export async function fetchLlmHealth(): Promise<LlmHealthResponse> {
   return res.json();
 }
 
+// DESIGN.md §10 items 36-45 ("More indicators.txt", §14.34): per-item deterministic indicator
+// bundle + an LLM-synthesized conclusion grounded in it, and a whole-catalogue sentiment gauge.
+export type BuyPressure = "bullish" | "bearish" | "neutral";
+export type MeanReversionSignal = "oversold" | "overbought" | "neutral";
+export type SupplyDemandShock = "supply_shock" | "demand_shock" | "none";
+export type FlipSaturation = "low" | "moderate" | "high" | "unknown";
+
+export interface IntradayEdge {
+  bestBuyHourUtc: number | null;
+  bestSellHourUtc: number | null;
+  sampleDays: number;
+}
+
+export interface IndicatorBundle {
+  liquidityScore: number;
+  buyPressure: BuyPressure;
+  buyPressureRatio: number | null;
+  spreadStabilityScore: number | null;
+  meanReversionZ: number | null;
+  meanReversionSignal: MeanReversionSignal;
+  supplyDemandShock: SupplyDemandShock;
+  flipSaturation: FlipSaturation;
+  intradayEdge: IntradayEdge | null;
+  opportunityScore: number;
+  sampleSize: number;
+}
+
+export async function fetchIndicators(itemId: number): Promise<IndicatorBundle> {
+  const res = await fetch(`/api/items/${itemId}/indicators`);
+  if (!res.ok) throw new Error(`Failed to fetch indicators: ${res.status}`);
+  return res.json();
+}
+
+export interface MarketIntelligence {
+  conclusion: string;
+  confidence: "low" | "medium" | "high";
+  indicators: IndicatorBundle;
+  cached: boolean;
+}
+
+export async function fetchMarketIntelligence(itemId: number): Promise<MarketIntelligence> {
+  const res = await fetch(`/api/items/${itemId}/intelligence`);
+  if (!res.ok) throw new Error(`Failed to fetch market intelligence: ${res.status}`);
+  return res.json();
+}
+
+export type MarketTemperatureLabel = "hot" | "warm" | "neutral" | "cool" | "cold";
+
+export interface MarketTemperature {
+  label: MarketTemperatureLabel;
+  avgChangePct: number;
+  gainersCount: number;
+  losersCount: number;
+  flatCount: number;
+  totalCount: number;
+  gainerPct: number;
+}
+
+export async function fetchMarketTemperature(window: TrendWindow): Promise<MarketTemperature> {
+  const res = await fetch(`/api/market-temperature?window=${window}`);
+  if (!res.ok) throw new Error(`Failed to fetch market temperature: ${res.status}`);
+  return res.json();
+}
+
 export interface ExtractedGeOffer {
   type: "buy" | "sell";
   itemName: string;

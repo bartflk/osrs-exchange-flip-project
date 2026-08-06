@@ -6,9 +6,12 @@ import { upsertPriceDaily, getLastRolledDay, type PriceDailyRow } from "./wareho
 // change" half of Fix 2 (schema split by cadence) -- SQLite's price_history stays the live,
 // full-resolution table for recent data; DuckDB holds the durable long-term OHLC-style record at
 // a fraction of the row count once a day is fully rolled up.
-const RAW_RETENTION_DAYS = 3; // keep this many days of raw 60s ticks in SQLite regardless of
-// rollup status -- generous margin over the job's own daily cadence, and matches Fix 1's original
-// reasoning that recent high/low deserves full resolution, not just a daily OHLC summary.
+// DESIGN.md §14.35: bumped from 3 to 14 days on direct request -- indicatorBundle.ts's
+// hour-of-day/mean-reversion/spread-stability signals need more than a few recurrences of each
+// hour to be meaningful, and 14 days of full-resolution ticks is a modest disk cost (measured:
+// ~58MB for 3 days, so ~270MB at 14) for a local single-user desktop app. Still generous margin
+// over the daily rollup job's own cadence.
+const RAW_RETENTION_DAYS = 14;
 
 function utcDayStartTs(date: Date): number {
   return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) / 1000;

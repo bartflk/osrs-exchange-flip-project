@@ -23,6 +23,7 @@ import { TrendLeaderboard } from "./components/TrendLeaderboard";
 import { SubstitutionFlags } from "./components/SubstitutionFlags";
 import { SectorIndices } from "./components/SectorIndices";
 import { UpdateCycleBadge } from "./components/UpdateCycleBadge";
+import { MarketTemperatureGauge } from "./components/MarketTemperatureGauge";
 import { SettingsModal } from "./components/SettingsModal";
 import { ToastHost } from "./components/ToastHost";
 import { formatAgo, formatGp } from "./format";
@@ -377,6 +378,9 @@ function App() {
       <main className="px-6 2xl:px-10 py-6 2xl:py-8 max-w-[1600px] 2xl:max-w-[2200px] mx-auto">
         {tab === "market" && (
           <>
+            <div className="mb-3">
+              <MarketTemperatureGauge />
+            </div>
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-5">
               <StatCard label="Items shown" value={marketStats.count.toLocaleString()} />
               <StatCard

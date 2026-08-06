@@ -1,0 +1,543 @@
+These are exactly the kinds of signals that would differentiate an AI-assisted GE terminal from a simple flipping tool. Instead of just saying "buy at X, sell at Y," you'd be modeling why prices move.
+
+Here are the indicators I'd build.
+
+1. Intraday Liquidity Index ⭐⭐⭐⭐⭐
+
+Question: What time of day should I buy or sell?
+
+Metrics:
+
+Average price by hour (UTC)
+Average spread by hour
+Average traded volume by hour
+Average flip margin by hour
+Fill time by hour
+
+Example:
+
+Time UTC	Avg Price	Volume	Spread
+04:00	Lowest	Low	High
+10:00	Medium	Medium	Medium
+18:00	Highest	Very High	Small
+22:00	High	High	Small
+
+Then calculate
+
+Buy Score
+Sell Score
+
+instead of just displaying prices.
+
+2. Weekly Seasonality
+
+Very underrated.
+
+Questions:
+
+Mondays?
+Fridays?
+Saturday mornings?
+Sunday evenings?
+
+Some items always spike on weekends.
+
+Examples:
+
+PvM supplies
+PK supplies
+Skilling supplies
+
+while others drop because bots run 24/7.
+
+Show
+
+Average Monday price
+Average Saturday price
+
+and
+
+Weekend Premium %
+
+3. Player Count Correlation ⭐⭐⭐⭐⭐
+
+Huge one.
+
+Compare
+
+OSRS Online Players
+
+vs
+
+Item Price
+
+Example
+
+Player Count ↑ 15%
+
+Prayer Potions ↑ 3%
+
+Dragon Darts ↑ 8%
+
+Blood Runes ↑ 5%
+
+You can calculate
+
+Pearson Correlation
+
+from -1 to +1.
+
+Example
+
+Dragon arrows
+
+Correlation
+
+0.84
+
+Meaning
+
+When players increase
+
+Price almost always increases.
+
+4. Bot Pressure Index ⭐⭐⭐⭐⭐
+
+One of the coolest indicators.
+
+Bots create
+
+continuous supply
+
+not demand.
+
+Things to monitor:
+
+Supply increasing
+
+Price falling
+
+Volume exploding
+
+No corresponding player increase
+
+Example
+
+Zulrah Scales
+
+Supply +35%
+
+Players +1%
+
+Price -18%
+
+Bot Pressure
+
+87/100
+
+5. Supply Shock Detector
+
+Detect sudden increases in supply.
+
+Example
+
+Dragon Bones
+
+Normal volume
+
+120k/day
+
+Today
+
+320k/day
+
+Price crashes.
+
+AI labels
+
+Possible supply dump.
+
+6. Demand Shock Detector
+
+Opposite.
+
+Example
+
+Volume doubles
+
+Price rises rapidly
+
+Player count increases
+
+AI says
+
+Demand Spike
+
+Could be
+
+new update
+
+YouTube guide
+
+Clan event
+
+etc.
+
+7. Flip Saturation Score
+
+How many people are flipping this item?
+
+Indicators
+
+Margin shrinking
+
+Volume rising
+
+Price stable
+
+Meaning
+
+Too many flippers.
+
+Avoid.
+
+8. Volatility Index
+
+Think VIX.
+
+Items with
+
+stable prices
+
+vs
+
+crazy movement.
+
+Example
+
+Sharks
+
+Volatility
+
+12%
+
+Elder Maul
+
+89%
+
+Useful for risk.
+
+9. Market Temperature
+
+Entire GE.
+
+Green
+
+Everything rising
+
+Red
+
+Everything dumping
+
+Neutral
+
+Sideways
+
+Think crypto fear & greed.
+
+10. Bot Farm Detector ⭐⭐⭐⭐
+
+Interesting AI project.
+
+Detect items that have
+
+Huge constant supply
+
+No seasonality
+
+Always undercutting
+
+Perfect quantities
+
+Price always slowly falling
+
+Those are classic botted items.
+
+11. Update Sensitivity
+
+Whenever Jagex updates.
+
+Track
+
+Items before update
+
+After update
+
+Recovery
+
+Rank items by
+
+Affected %
+
+12. Merchant Activity Index
+
+Detect
+
+Artificial pumps.
+
+Signals
+
+Price rises
+
+Volume low
+
+Spread huge
+
+Often indicates manipulation.
+
+13. Buy Pressure vs Sell Pressure
+
+Like an order book.
+
+Estimate
+
+How quickly buy offers fill
+
+vs
+
+Sell offers.
+
+Produces
+
+Bullish
+
+Bearish
+
+Neutral
+
+14. Liquidity Score
+
+How easy is it to trade?
+
+Factors
+
+Volume
+
+Spread
+
+Fill time
+
+Instant buy %
+
+Instant sell %
+
+Score
+
+0-100
+
+15. Opportunity Score ⭐⭐⭐⭐⭐
+
+This is what users actually care about.
+
+Combine
+
+Spread
+Volatility
+Liquidity
+Player activity
+Time of day
+Weekend effect
+Competition
+Risk
+Historical success
+
+Output
+
+Opportunity
+
+94/100
+
+instead of raw data.
+
+16. Event Predictor
+
+Watch
+
+Player count
+Twitch viewership
+YouTube uploads
+Jagex announcements
+Poll blogs
+Updates
+
+Predict
+
+Demand tomorrow.
+
+17. Mean Reversion Score
+
+Some items always bounce back.
+
+AI predicts
+
+Current price
+
+15% below normal
+
+85% chance of reverting.
+
+18. Momentum Score
+
+Moving averages
+
+EMA
+
+MACD
+
+RSI
+
+but adapted to GE.
+
+Instead of stocks
+
+AI says
+
+Momentum
+
+Strong Uptrend
+
+Weak
+
+Breaking Out
+
+19. Spread Stability
+
+Some items have
+
+Huge margins
+
+for five minutes
+
+then disappear.
+
+Others
+
+Maintain margins
+
+for hours.
+
+Rank consistency.
+
+20. AI Confidence
+
+Instead of
+
+BUY
+
+Say
+
+Buy Confidence
+
+92%
+
+Based on
+
+Time
+
+Volume
+
+Supply
+
+Player count
+
+Trend
+
+Weekend
+
+Bot pressure
+
+Volatility
+
+Your specific questions
+Is there an indicator for buying during work hours and selling during evenings?
+
+Potentially yes, but it's something to measure rather than assume. If you collect timestamped price and margin data, you can build:
+
+Hour-of-day average return after buying.
+Hour-of-day average selling premium.
+A "Time-of-Day Edge" score showing whether certain hours consistently outperform. Different items will likely have different patterns, and the effect may vary by region and day of the week.
+Same for weekends?
+
+Absolutely. Many items have recurring weekly behavior. Useful metrics include:
+
+Weekend premium (% difference from weekday average).
+Day-of-week seasonality.
+Heatmaps showing average price or margin by hour and weekday.
+Is there a bot detection system on items?
+
+There is no public API that identifies botted items, so any "bot detection" would be heuristic, not definitive. Strong signals include:
+
+Sustained high supply with steadily declining prices.
+Volume increases without matching player-count increases.
+Little or no daily or weekly seasonality despite human activity cycles.
+Consistent undercutting and rapid replenishment after sales.
+
+Think of it as a Bot Pressure Score rather than "this item is botted."
+
+What do bots affect?
+
+Bots primarily influence supply, especially for:
+
+Gathered resources (ores, logs, fish).
+Boss drops from heavily botted bosses.
+Common skilling materials.
+
+Their effects often include:
+
+Lower long-term prices.
+Higher trading volume.
+Tighter margins due to competition.
+Faster recovery after demand spikes because supply is replenished quickly.
+
+Assigning an exact percentage isn't realistic without privileged data; the impact differs greatly between items and over time.
+
+Correlation between player count and the market
+
+This is one of the strongest features you could build. Compare hourly or daily player counts against:
+
+Price changes.
+Trading volume.
+Spread.
+Margin.
+Volatility.
+
+You'll likely find that some items are highly correlated with player activity (consumables, PvM supplies), while others are driven more by updates or speculation.
+
+The killer feature: Flashwave Market Intelligence
+
+Rather than presenting users with dozens of separate charts, combine them into a single dashboard that generates an Edge Score from multiple indicators:
+
+📈 Time-of-Day Edge
+📅 Weekend Seasonality
+👥 Player Count Correlation
+🤖 Bot Pressure
+🌊 Supply Shock
+🔥 Demand Shock
+💧 Liquidity
+📊 Volatility
+💹 Momentum
+🎯 Mean Reversion
+🪙 Opportunity Score
+🧠 AI Confidence
+
+Instead of forcing users to interpret raw data, Flashwave could simply say:
+
+Dragon Bones
+
+Opportunity: 91/100
+Buy Window: 02:00–06:00 UTC
+Preferred Sell Window: 18:00–22:00 UTC
+Weekend Premium: +4.8%
+Player Correlation: 0.81
+Bot Pressure: 74/100 (High)
+AI Confidence: 89%

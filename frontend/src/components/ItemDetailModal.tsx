@@ -3,6 +3,7 @@ import {
   fetchTimeseries,
   fetchForecast,
   fetchItemTrackRecord,
+  fetchNews,
   type Lookback,
   type MarketItem,
   type TimeseriesPoint,
@@ -10,9 +11,10 @@ import {
   type ItemTrackRecord,
 } from "../api";
 import { formatGp, formatPct } from "../format";
-import { PriceChart } from "./PriceChart";
+import { PriceChart, type ChartEvent } from "./PriceChart";
 import type { HoldingEntry } from "../bankHoldings";
 import { computeSizingTiers, type SizingTierName } from "../positionSizing";
+import { MarketIntelligencePanel } from "./MarketIntelligencePanel";
 
 function iconUrl(icon: string): string {
   if (!icon) return "";
@@ -50,6 +52,7 @@ export function ItemDetailModal({
   const [error, setError] = useState<string | null>(null);
   const [forecast, setForecast] = useState<ForecastPoint[]>([]);
   const [trackRecord, setTrackRecord] = useState<ItemTrackRecord | null>(null);
+  const [chartEvents, setChartEvents] = useState<ChartEvent[]>([]);
   const sizingTiers = useMemo(() => computeSizingTiers(item), [item]);
 
   useEffect(() => {
@@ -93,6 +96,28 @@ export function ItemDetailModal({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  // DESIGN.md §14.35: patch notes / Reddit posts overlaid on the chart -- catalogue-wide (not
+  // item-specific), so fetched once regardless of which item's modal is open.
+  useEffect(() => {
+    let cancelled = false;
+    fetchNews()
+      .then((res) => {
+        if (cancelled) return;
+        setChartEvents(
+          res.events.map((e) => ({
+            ts: Math.floor(new Date(`${e.eventDate}T00:00:00Z`).getTime() / 1000),
+            title: e.title,
+            source: e.source,
+            link: e.link,
+          })),
+        );
+      })
+      .catch(() => !cancelled && setChartEvents([]));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Overall high/low for whatever range is currently loaded -- same shape as GE Tracker's
   // chart-footer stats table, computed client-side from the points already fetched for the
@@ -204,6 +229,8 @@ export function ItemDetailModal({
           </div>
         )}
 
+        <MarketIntelligencePanel key={item.id} itemId={item.id} />
+
         {/* DESIGN.md §14.12: grounded in this app's own resolved recommendation history
             (recommendation_snapshots), not an unexplained competitor badge -- most items won't
             have any history yet, shown honestly rather than faked. */}
@@ -253,7 +280,7 @@ export function ItemDetailModal({
             below.
           </p>
         )}
-        <PriceChart points={points} blended={blended} forecast={forecast} />
+        <PriceChart points={points} blended={blended} forecast={forecast} events={chartEvents} />
 
         {rangeStats && (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4 text-sm">

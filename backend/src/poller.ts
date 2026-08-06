@@ -5,6 +5,7 @@ import { refreshVolatility } from "./volatility.js";
 import { logRecommendationSnapshots, resolveRecommendationSnapshots } from "./scorekeeping.js";
 import { runDailyRollup } from "./rollup.js";
 import { fetchOfficialNews } from "./news.js";
+import { fetchRedditPosts } from "./redditFeed.js";
 import { insertNewEvents } from "./warehouse.js";
 
 // DESIGN.md §14.22: the frontend's own "next refresh" countdown (§14.21) was a guess based on
@@ -171,6 +172,29 @@ async function runNewsPoll() {
   }
 }
 
+// DESIGN.md §14.35: Reddit via public RSS (no OAuth/PRAW needed) -- top-of-day posts from
+// r/2007scape and r/runescape, same events table as official news, tagged `source: "reddit"`.
+// Polled hourly (community discussion moves faster than weekly patch notes, but top-of-day
+// rankings don't change meaningfully minute to minute).
+async function runRedditPoll() {
+  try {
+    const posts = await fetchRedditPosts();
+    const inserted = await insertNewEvents(
+      posts.map((post) => ({
+        event_date: new Date(post.updated).toISOString().slice(0, 10),
+        title: post.title,
+        summary: `Posted by ${post.author} in r/${post.subreddit}`,
+        source: "reddit",
+        link: post.link || null,
+        tags: `r/${post.subreddit}`,
+      })),
+    );
+    if (inserted) console.log(`[reddit] ${inserted} new post(s)`);
+  } catch (err) {
+    console.error("[reddit] error", err);
+  }
+}
+
 export function startPolling() {
   // mapping changes rarely -- once at boot, then once a day
   pollMapping().catch((err) => console.error("[poller] mapping error", err));
@@ -215,4 +239,8 @@ export function startPolling() {
   // official news: changes rarely -- once at boot, then once a day, same cadence as the mapping poll.
   runNewsPoll();
   setInterval(runNewsPoll, 24 * 60 * 60 * 1000);
+
+  // reddit: community discussion moves faster than patch notes -- hourly.
+  runRedditPoll();
+  setInterval(runRedditPoll, 60 * 60 * 1000);
 }

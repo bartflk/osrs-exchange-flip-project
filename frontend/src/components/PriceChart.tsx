@@ -19,6 +19,22 @@ const TAX_MARKERS: { ts: number; label: string }[] = [
   { ts: Date.UTC(2025, 4, 29) / 1000, label: "2% tax" },
 ];
 
+// DESIGN.md §14.35: patch notes + community discussion overlaid on the chart, same visual
+// language as GE Tracker's own "GE Tax" markers with expandable "and N more..." tooltips --
+// answers "did this update / community happening move the market" directly on the chart instead
+// of needing to cross-reference the Update News tab separately.
+export interface ChartEvent {
+  ts: number; // unix seconds, midnight UTC of the event date
+  title: string;
+  source: string;
+  link: string | null;
+}
+
+const EVENT_DOT_COLOR: Record<string, string> = {
+  official: "#38bdf8", // sky
+  reddit: "#fb923c", // orange
+};
+
 interface View {
   start: number;
   end: number; // exclusive
@@ -28,14 +44,18 @@ export function PriceChart({
   points,
   blended = false,
   forecast,
+  events,
 }: {
   points: TimeseriesPoint[];
   blended?: boolean;
   // DESIGN.md §14.12: IQR prediction bands -- only meaningful appended to the most recent real
   // data, so it's only ever drawn when the view hasn't been panned/zoomed away from the present.
   forecast?: ForecastPoint[];
+  // DESIGN.md §14.35: patch notes / Reddit posts, positioned the same way as TAX_MARKERS.
+  events?: ChartEvent[];
 }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const [hoveredEventGroup, setHoveredEventGroup] = useState<number | null>(null);
   const [view, setView] = useState<View | null>(null);
   const dragRef = useRef<{ startClientX: number; startView: View } | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -195,6 +215,23 @@ export function PriceChart({
   const visibleMarkers = TAX_MARKERS.map((m) => ({ ...m, cx: markerX(m.ts) })).filter(
     (m): m is { ts: number; label: string; cx: number } => m.cx != null,
   );
+
+  // Group real events into buckets by rendered x position (a few pixels wide) so a busy news
+  // week shows one dot with "and N more..." rather than an unreadable cluster of overlapping dots
+  // -- same "and 22 more..." pattern GE Tracker's own chart uses for this exact problem.
+  const eventGroups = (() => {
+    if (!events || events.length === 0) return [];
+    const buckets = new Map<number, { cx: number; items: ChartEvent[] }>();
+    for (const e of events) {
+      const cx = markerX(e.ts);
+      if (cx == null) continue;
+      const bucketKey = Math.round(cx / 6);
+      const bucket = buckets.get(bucketKey);
+      if (bucket) bucket.items.push(e);
+      else buckets.set(bucketKey, { cx, items: [e] });
+    }
+    return [...buckets.values()];
+  })();
 
   // Simple moving-average overlay -- a light trend line, not a real forecast. Window scales with
   // how many points are currently in view so it stays legible whether zoomed to a day or a year.
@@ -419,6 +456,87 @@ export function PriceChart({
           </g>
         ))}
 
+        {/* Event dots -- patch notes / community discussion, positioned along the bottom axis.
+            Grouped (eventGroups) so a busy week renders one dot, not a cluster. */}
+        {eventGroups.map((g, i) => {
+          const primarySource = g.items[0].source;
+          return (
+            <g
+              key={i}
+              onMouseEnter={() => setHoveredEventGroup(i)}
+              onMouseLeave={() => setHoveredEventGroup((cur) => (cur === i ? null : cur))}
+              style={{ cursor: "pointer" }}
+            >
+              <line
+                x1={g.cx}
+                x2={g.cx}
+                y1={PAD_TOP}
+                y2={HEIGHT - PAD_BOTTOM}
+                stroke={EVENT_DOT_COLOR[primarySource] ?? "#94a3b8"}
+                stroke-width={1}
+                stroke-opacity={0.15}
+              />
+              <circle
+                cx={g.cx}
+                cy={HEIGHT - PAD_BOTTOM + 8}
+                r={5}
+                fill={EVENT_DOT_COLOR[primarySource] ?? "#94a3b8"}
+                fill-opacity={0.85}
+              />
+              {g.items.length > 1 && (
+                <text
+                  x={g.cx}
+                  y={HEIGHT - PAD_BOTTOM + 11}
+                  text-anchor="middle"
+                  font-size="7"
+                  className="fill-gray-900 font-bold"
+                  style={{ pointerEvents: "none" }}
+                >
+                  {g.items.length}
+                </text>
+              )}
+            </g>
+          );
+        })}
+
+        {/* Event tooltip -- first title + "and N more..." for a grouped bucket, same shape as
+            the reference screenshot's own hover box. */}
+        {hoveredEventGroup != null && eventGroups[hoveredEventGroup] && (
+          <g style={{ pointerEvents: "none" }}>
+            <rect
+              x={Math.min(Math.max(eventGroups[hoveredEventGroup].cx - 90, PAD_LEFT), WIDTH - 190)}
+              y={PAD_TOP + 4}
+              width={185}
+              height={eventGroups[hoveredEventGroup].items.length > 1 ? 34 : 22}
+              rx={4}
+              fill="rgba(15,23,42,0.95)"
+              stroke="rgba(255,255,255,0.15)"
+            />
+            <text
+              x={Math.min(Math.max(eventGroups[hoveredEventGroup].cx - 90, PAD_LEFT), WIDTH - 190) + 6}
+              y={PAD_TOP + 17}
+              font-size="9"
+              className="fill-gray-100"
+            >
+              {eventGroups[hoveredEventGroup].items[0].title.slice(0, 40)}
+              {eventGroups[hoveredEventGroup].items[0].title.length > 40 ? "…" : ""}
+            </text>
+            {eventGroups[hoveredEventGroup].items.length > 1 && (
+              <text
+                x={
+                  Math.min(Math.max(eventGroups[hoveredEventGroup].cx - 90, PAD_LEFT), WIDTH - 190) +
+                  6
+                }
+                y={PAD_TOP + 29}
+                font-size="8"
+                className="fill-gray-500"
+              >
+                and {eventGroups[hoveredEventGroup].items.length - 1} more…
+              </text>
+            )}
+          </g>
+        )}
+
         {hovered && hoverIdx != null && (
           <line
             x1={x(hoverIdx - v.start)}
@@ -451,6 +569,13 @@ export function PriceChart({
           <span className="flex items-center gap-1 text-gray-500">
             <span className="w-2.5 h-2.5 rounded-sm bg-sky-400/25 inline-block" /> IQR forecast
             (~24h)
+          </span>
+        )}
+        {events && events.length > 0 && (
+          <span className="flex items-center gap-1 text-gray-500">
+            <span className="w-2 h-2 rounded-full bg-sky-400 inline-block" />
+            <span className="w-2 h-2 rounded-full bg-orange-400 inline-block -ml-1" /> Updates /
+            Reddit
           </span>
         )}
         {hovered &&

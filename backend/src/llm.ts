@@ -151,3 +151,56 @@ export async function generateDigest(
   }
   return text;
 }
+
+// DESIGN.md §10 item 45 ("More indicators.txt" item 20, "AI Confidence"): instead of "buy," give
+// a confidence read grounded in the actual computed indicator bundle (indicatorBundle.ts) --
+// liquidity, buy/sell pressure, spread stability, mean reversion, supply/demand shock, flip
+// saturation, opportunity score. Same "narrate real numbers, never invent" split as every other
+// LLM call in this file -- the model never sees raw price ticks, only the already-computed,
+// already-labeled indicators, so it can't hallucinate a number that isn't there.
+export interface MarketIntelligenceInput {
+  name: string;
+  netMargin: number | null;
+  roiPct: number | null;
+  indicators: Record<string, unknown>;
+}
+
+export interface MarketIntelligence {
+  conclusion: string;
+  confidence: "low" | "medium" | "high";
+}
+
+const INTELLIGENCE_SYSTEM_PROMPT = `You are an OSRS Grand Exchange market analyst. You're given one item's net margin/ROI and a bundle of already-computed indicators (liquidity score, buy/sell pressure, spread stability, mean reversion signal, supply/demand shock, flip saturation, an overall opportunity score). All numbers are real and already calculated -- you do not compute anything, you only synthesize what they mean together into one concrete conclusion. Reference at least two specific indicators by name in your reasoning. Be direct, not hedgy. No "as always, do your own research."
+
+Respond with ONLY a JSON object, no markdown fences, no other text:
+{"conclusion": "2-3 sentences synthesizing what the indicators together suggest about this item right now", "confidence": "low" | "medium" | "high"}`;
+
+function parseMarketIntelligence(raw: string): MarketIntelligence {
+  const stripped = raw.replace(/```(?:json)?\s*/g, "").replace(/```\s*$/g, "");
+  const match = stripped.match(/\{[\s\S]*\}/);
+  const jsonText = match ? match[0] : stripped;
+  const parsed = JSON.parse(jsonText) as Partial<MarketIntelligence>;
+  if (!parsed.conclusion || !parsed.confidence) {
+    throw new Error("Model response missing required fields");
+  }
+  return parsed as MarketIntelligence;
+}
+
+export async function generateMarketIntelligence(
+  input: MarketIntelligenceInput,
+): Promise<MarketIntelligence> {
+  const response = await client.chat.completions.create({
+    model,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: INTELLIGENCE_SYSTEM_PROMPT },
+      { role: "user", content: JSON.stringify(input) },
+    ],
+  });
+
+  const text = response.choices[0]?.message?.content;
+  if (!text) {
+    throw new Error("Empty response from model");
+  }
+  return parseMarketIntelligence(text);
+}
