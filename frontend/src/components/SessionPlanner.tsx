@@ -1,7 +1,18 @@
 import { useEffect, useState } from "preact/hooks";
-import { fetchSessionPlan, type SessionPlanEntry, type ActivityAttention } from "../api";
+import {
+  fetchSessionPlan,
+  type SessionPlanEntry,
+  type ActivityAttention,
+  type SessionGoal,
+} from "../api";
 import { formatGp } from "../format";
-import { NumberInput, Badge } from "./ui";
+import { NumberInput, Badge, Chip } from "./ui";
+
+const GOALS: { key: SessionGoal; label: string }[] = [
+  { key: "afk", label: "AFK-first" },
+  { key: "profit", label: "Max profit" },
+  { key: "active", label: "Active grinding" },
+];
 
 // DESIGN.md §14.15 / message 8 "Session Planner": while a flip is filling, suggest something to
 // do that fits the wait and your actual unlocked skills -- sourced from a curated,
@@ -47,23 +58,31 @@ function ActivityRow({ entry }: { entry: SessionPlanEntry }) {
 
 export function SessionPlanner({ username }: { username: string }) {
   const [minutes, setMinutes] = useState(30);
+  const [goal, setGoal] = useState<SessionGoal>(
+    () => (localStorage.getItem("sessionPlannerGoal") as SessionGoal | null) ?? "afk",
+  );
   const [plan, setPlan] = useState<SessionPlanEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function updateGoal(next: SessionGoal) {
+    setGoal(next);
+    localStorage.setItem("sessionPlannerGoal", next);
+  }
 
   useEffect(() => {
     if (!username.trim()) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetchSessionPlan(username, minutes)
+    fetchSessionPlan(username, minutes, goal)
       .then((res) => !cancelled && setPlan(res.plan))
       .catch((err) => !cancelled && setError(err instanceof Error ? err.message : "Failed to load"))
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
     };
-  }, [username, minutes]);
+  }, [username, minutes, goal]);
 
   if (!username.trim()) {
     return (
@@ -79,17 +98,27 @@ export function SessionPlanner({ username }: { username: string }) {
 
   return (
     <section>
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
         <h3 className="text-sm font-medium text-gray-300">While you wait</h3>
         <label className="text-xs text-gray-500 flex items-center gap-2">
           Wait length (min)
           <NumberInput value={minutes} onChange={setMinutes} className="w-16" />
         </label>
       </div>
+      <div className="flex items-center gap-1.5 mb-2">
+        <span className="text-[10px] uppercase tracking-wide text-gray-500 mr-1">Goal</span>
+        {GOALS.map((g) => (
+          <Chip key={g.key} active={goal === g.key} onClick={() => updateGoal(g.key)}>
+            {g.label}
+          </Chip>
+        ))}
+      </div>
       <p className="text-xs text-gray-500 mb-3">
         Filtered to what your current skill levels actually unlock. Profit shown where computable
         from live GE prices (gem cutting, Herblore potions) — pure-XP activities show no figure
-        rather than a fabricated one.
+        rather than a fabricated one. Goal changes ranking, not just what's shown — "Max profit"
+        always ranks by GP, "Active grinding" favors non-AFK activities, "AFK-first" (default)
+        favors passive activities when the wait is long enough to matter.
       </p>
       {loading && <p className="text-xs text-gray-500 py-2">Loading…</p>}
       {error && <p className="text-xs text-rose-400 py-2">{error}</p>}

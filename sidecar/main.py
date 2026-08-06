@@ -1,4 +1,4 @@
-# OSRS Flip Assistant -- Python sidecar (DESIGN.md §11.1, §11.3.1).
+# Project Flashwave -- Python sidecar (DESIGN.md §11.1, §11.3.1).
 #
 # Node/TS stays the core backend (Fastify, port 3001); this process exists only for the handful
 # of things that genuinely need Python -- PRAW (Reddit) and a Discord self-bot scraper, neither
@@ -10,7 +10,7 @@ from fastapi import FastAPI, HTTPException
 
 from config import get_config
 
-app = FastAPI(title="OSRS Flip Assistant Sidecar")
+app = FastAPI(title="Project Flashwave Sidecar")
 
 
 @app.get("/health")

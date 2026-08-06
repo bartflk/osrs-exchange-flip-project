@@ -140,8 +140,34 @@ export function BuySignals({
     setOffers(offers.filter((o) => o.id !== id));
   }
 
+  // "Try something else more profitable" -- when a tracked buy's guidance says cancel (the
+  // underlying margin went flat/negative, see repriceGuidance.ts), swap it for the current
+  // top-scoring item you're not already tracking, sized to roughly the same capital the bad
+  // offer was tying up. A single combined setOffers call (not remove-then-track) so the swap
+  // can't be lost to a stale closure over `offers` between two separate state updates.
+  function switchToAlternative(offerId: string, alt: MarketItem, qty: number) {
+    const newOffer: Offer = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      type: "buy",
+      itemName: alt.name,
+      price: alt.low ?? 0,
+      qty,
+      trackedAt: Math.floor(Date.now() / 1000),
+    };
+    setOffers([...offers.filter((o) => o.id !== offerId), newOffer]);
+  }
+
   function applyReprice(offerId: string, price: number) {
     setOffers(offers.map((o) => (o.id === offerId ? { ...o, price } : o)));
+  }
+
+  // Manual progress control -- the screenshot flow reads filledQty off the GE's own progress
+  // bar when it can, but that requires re-uploading a screenshot every time. This lets you just
+  // drag/type an update directly, same as accepting/editing a price below.
+  function applyFilledQty(offerId: string, filledQty: number) {
+    setOffers(
+      offers.map((o) => (o.id === offerId ? { ...o, filledQty: Math.max(0, Math.min(o.qty, filledQty)) } : o)),
+    );
   }
 
   // Accept-the-real-price flow: what you actually managed to place on the GE often isn't the
@@ -150,6 +176,8 @@ export function BuySignals({
   // price need to be hand-editable, not just auto-filled from the recommendation.
   const [editingOfferId, setEditingOfferId] = useState<string | null>(null);
   const [editPriceDraft, setEditPriceDraft] = useState(0);
+  const [editingFilledId, setEditingFilledId] = useState<string | null>(null);
+  const [editFilledDraft, setEditFilledDraft] = useState(0);
   const [pendingTrackItemId, setPendingTrackItemId] = useState<number | null>(null);
   const [pendingTrackPrice, setPendingTrackPrice] = useState(0);
 
@@ -157,16 +185,29 @@ export function BuySignals({
   // `items` updates (i.e. every poll cycle) since computeRepriceGuidance is a pure function of
   // the offer + current market row -- no separate "re-check" trigger needed.
   const offerRows = useMemo(() => {
+    // Ranked once per items update, reused for every offer that needs a replacement suggestion --
+    // same score everything else in the app ranks by, just filtered to what you're not already
+    // tracking (no point "switching" into an item that'd just occupy another slot).
+    const rankedCandidates = [...items]
+      .filter((i) => (i.net_margin ?? 0) > 0 && i.low && i.liquidity >= 20 && !trackedNames.has(i.name.toLowerCase()))
+      .sort((a, b) => b.score - a.score);
+
     return offers.map((offer) => {
       const market = items.find((i) => i.name.toLowerCase() === offer.itemName.toLowerCase());
+      const guidance = computeRepriceGuidance(offer, market);
+      const alternative =
+        guidance.action === "cancel" && offer.type === "buy"
+          ? rankedCandidates.find((i) => i.name.toLowerCase() !== offer.itemName.toLowerCase())
+          : undefined;
       return {
         offer,
         market,
-        guidance: computeRepriceGuidance(offer, market),
+        guidance,
         health: computeTradeHealth(offer, market),
+        alternative,
       };
     });
-  }, [offers, items]);
+  }, [offers, items, trackedNames]);
 
   const minLiquidity = TIMEFRAMES.find((t) => t.key === timeframe)?.minLiquidity ?? 0;
 
@@ -305,7 +346,7 @@ export function BuySignals({
               {/* A tracked/open offer is a real GE slot already in use -- show it as one of the
                   slot cards (not a separate side list) so the grid reflects your actual 8 slots,
                   not just what the allocator would suggest from scratch. */}
-              {offerRows.map(({ offer, market, guidance, health }, idx) => {
+              {offerRows.map(({ offer, market, guidance, health, alternative }, idx) => {
                 const isWarning = guidance.action !== "hold" && guidance.action !== "unknown";
                 const isEditing = editingOfferId === offer.id;
                 return (
@@ -406,6 +447,64 @@ export function BuySignals({
                         </button>
                       )}
                     </div>
+
+                    {/* Fill progress: how many of qty have actually gone through. Read off the
+                        screenshot's progress bar when available (GeOffersPanel merges it in on
+                        re-upload), or set by hand here -- the GE's own partial-fill state isn't
+                        otherwise visible to this app at all. */}
+                    <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
+                      {editingFilledId === offer.id ? (
+                        <div className="flex items-center gap-1">
+                          <NumberInput
+                            value={editFilledDraft}
+                            onChange={setEditFilledDraft}
+                            className="w-16 !py-0.5 !px-1.5 text-xs"
+                          />
+                          <span className="text-[10px] text-gray-500">/ {offer.qty.toLocaleString()}</span>
+                          <button
+                            onClick={() => {
+                              applyFilledQty(offer.id, editFilledDraft);
+                              setEditingFilledId(null);
+                            }}
+                            className="text-emerald-400 hover:text-emerald-300 text-xs px-1"
+                            title="Save fill progress"
+                          >
+                            ✓
+                          </button>
+                          <button
+                            onClick={() => setEditingFilledId(null)}
+                            className="text-gray-500 hover:text-rose-400 text-xs px-1"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setEditingFilledId(offer.id);
+                            setEditFilledDraft(offer.filledQty ?? 0);
+                          }}
+                          className="w-full text-left group"
+                          title="Click to update how much of this offer has actually filled"
+                        >
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className="text-[10px] text-gray-500 group-hover:text-gray-300">
+                              filled {(offer.filledQty ?? 0).toLocaleString()} / {offer.qty.toLocaleString()}
+                            </span>
+                            <span className="text-[10px] text-gray-600 group-hover:text-gray-400">
+                              {Math.round(((offer.filledQty ?? 0) / offer.qty) * 100)}%
+                            </span>
+                          </div>
+                          <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${offer.type === "buy" ? "bg-rose-400/70" : "bg-emerald-400/70"}`}
+                              style={{ width: `${Math.min(100, ((offer.filledQty ?? 0) / offer.qty) * 100)}%` }}
+                            />
+                          </div>
+                        </button>
+                      )}
+                    </div>
+
                     <div className="mt-1.5 text-[11px]">
                       <span className={`font-medium ${ACTION_TONE[guidance.action]}`}>
                         {isWarning ? "⚠ " : ""}
@@ -413,6 +512,42 @@ export function BuySignals({
                       </span>{" "}
                       <span className="text-gray-500">{guidance.reason}</span>
                     </div>
+                    {alternative && (
+                      <div
+                        className="mt-1.5 rounded-md bg-sky-500/10 border border-sky-500/20 px-2 py-1.5 flex items-center justify-between gap-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="min-w-0 flex items-center gap-1.5">
+                          {alternative.icon && (
+                            <img
+                              src={iconUrl(alternative.icon)}
+                              alt=""
+                              className="w-4 h-4 object-contain shrink-0"
+                            />
+                          )}
+                          <span className="text-[11px] text-gray-300 truncate">
+                            Try <span className="text-sky-300">{alternative.name}</span> instead —{" "}
+                            {formatPct(alternative.roi_pct)} ROI
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => {
+                            const qty = Math.max(
+                              1,
+                              Math.min(
+                                alternative.buy_limit ?? Infinity,
+                                Math.floor((offer.price * offer.qty) / (alternative.low ?? 1)),
+                              ),
+                            );
+                            switchToAlternative(offer.id, alternative, qty);
+                          }}
+                          className="text-[11px] text-sky-400 hover:text-sky-300 shrink-0"
+                          title="Remove this offer and track the alternative instead, sized to roughly the same capital"
+                        >
+                          Switch
+                        </button>
+                      </div>
+                    )}
                     <div className="mt-2 flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
                       {guidance.suggestedPrice != null && (
                         <button
@@ -422,17 +557,23 @@ export function BuySignals({
                           Accept {formatGpFull(guidance.suggestedPrice)}
                         </button>
                       )}
-                      <button
-                        onClick={() => markFilled(offer, market)}
-                        className="text-[11px] text-emerald-400 hover:text-emerald-300"
-                      >
-                        {offer.type === "buy" ? "I bought it" : "I sold it"}
-                      </button>
+                      {guidance.action !== "cancel" && (
+                        <button
+                          onClick={() => markFilled(offer, market)}
+                          className="text-[11px] text-emerald-400 hover:text-emerald-300"
+                        >
+                          {offer.type === "buy" ? "I bought it" : "I sold it"}
+                        </button>
+                      )}
                       <button
                         onClick={() => removeOffer(offer.id)}
-                        className="text-[11px] text-gray-500 hover:text-rose-400 ml-auto"
+                        className={
+                          guidance.action === "cancel"
+                            ? "text-[11px] font-medium text-rose-400 hover:text-rose-300 ml-auto"
+                            : "text-[11px] text-gray-500 hover:text-rose-400 ml-auto"
+                        }
                       >
-                        Remove
+                        {guidance.action === "cancel" ? "⚠ Remove" : "Remove"}
                       </button>
                     </div>
                   </div>
@@ -518,7 +659,7 @@ export function BuySignals({
           )}
         </div>
 
-        <GeOffersPanel offers={offers} setOffers={setOffers} fills={fills} setFills={setFills} />
+        <GeOffersPanel offers={offers} setOffers={setOffers} fills={fills} setFills={setFills} items={items} />
       </div>
 
       {signalsDiff && signalsDiff.previousAt != null && (

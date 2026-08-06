@@ -21,6 +21,7 @@ import { ResearchReport } from "./components/ResearchReport";
 import { Sets } from "./components/Sets";
 import { TrendLeaderboard } from "./components/TrendLeaderboard";
 import { SubstitutionFlags } from "./components/SubstitutionFlags";
+import { SectorIndices } from "./components/SectorIndices";
 import { UpdateCycleBadge } from "./components/UpdateCycleBadge";
 import { SettingsModal } from "./components/SettingsModal";
 import { ToastHost } from "./components/ToastHost";
@@ -230,7 +231,7 @@ function App() {
     if (source === "watchlist" && settings.muteWatchlistAlerts) return;
     setAlertBanner(message);
     if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-      new Notification("OSRS Flip Assistant", { body: message });
+      new Notification("Project Flashwave", { body: message });
     }
   }
 
@@ -296,7 +297,7 @@ function App() {
       <header className="glass sticky top-0 z-20 px-6 2xl:px-10 py-3 flex items-center justify-between border-b border-white/10">
         <div className="flex items-center gap-6 2xl:gap-8">
           <h1 className="text-lg 2xl:text-xl font-semibold tracking-tight text-white">
-            OSRS Flip Assistant
+            Project Flashwave
           </h1>
           <nav className="flex gap-1">
             {TABS.map((t) => (
@@ -504,6 +505,7 @@ function App() {
             {error && <div className="text-xs text-rose-400 mb-2">{error}</div>}
 
             <TrendLeaderboard items={items} onSelectItem={setSelectedItem} />
+            <SectorIndices />
             <SubstitutionFlags items={items} onSelectItem={setSelectedItem} />
 
             <MarketTable

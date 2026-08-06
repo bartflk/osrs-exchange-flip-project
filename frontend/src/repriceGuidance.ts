@@ -50,6 +50,21 @@ export function computeRepriceGuidance(
     if (market.low == null) {
       return { action: "unknown", suggestedPrice: null, reason: "No current buy-side price." };
     }
+
+    // Whether your offer would still fill and whether the flip is still worth filling are two
+    // different questions -- check profitability FIRST. A buy priced above market.low always
+    // used to read "hold" here even after the sell side crashed and margin went negative, which
+    // is exactly backwards: it'd fill, just at a loss. Bad margin means cancel regardless of
+    // where your price sits relative to market.low.
+    if ((market.net_margin ?? 0) <= 0) {
+      return {
+        action: "cancel",
+        suggestedPrice: null,
+        reason:
+          "No longer profitable — the sell price (or tax/spread) has moved enough that this flip no longer clears a positive margin.",
+      };
+    }
+
     if (offer.price >= market.low) {
       return {
         action: "hold",
@@ -58,16 +73,6 @@ export function computeRepriceGuidance(
       };
     }
     const gapPct = (market.low - offer.price) / market.low;
-    if (gapPct > SLIGHT_GAP && (market.net_margin ?? 0) <= 0) {
-      // The market moved enough that even buying at today's low no longer clears a profitable
-      // margin -- reprice guidance alone would be misleading; the trade itself is stale.
-      return {
-        action: "cancel",
-        suggestedPrice: null,
-        reason:
-          "Market moved against this flip — buying even at today's price no longer clears a profitable margin.",
-      };
-    }
     return {
       action: "reprice_up",
       suggestedPrice: market.low,

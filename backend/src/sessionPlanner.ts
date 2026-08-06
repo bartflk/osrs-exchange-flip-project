@@ -35,9 +35,16 @@ export interface SessionPlanEntry {
   profitPerUnit: number | null;
 }
 
+// DESIGN.md §10 item 29: a "goal" axis for the planner, honestly scoped to what real data
+// supports -- no quest/diary/collection-log dataset exists in this app, so "Questing" and
+// "Collection Log" goals from the original brainstorm aren't buildable without fabricating
+// data. These three map to axes the planner actually has: attention level and live GP profit.
+export type SessionGoal = "afk" | "profit" | "active";
+
 export function computeSessionPlan(
   skills: Record<string, { level: number }>,
   availableMinutes: number,
+  goal: SessionGoal = "afk",
 ): SessionPlanEntry[] {
   const eligible = ACTIVITY_DEFINITIONS.filter(
     (a) => (skills[a.skill]?.level ?? 1) >= a.levelRequired,
@@ -77,9 +84,20 @@ export function computeSessionPlan(
     };
   });
 
-  // AFK-first when there's real time to fill (a long wait suits a passive birdhouse run far
-  // better than an activity that demands constant clicking), then by profit where known.
+  // Goal changes the ranking, not just a filter -- "profit" always ranks by GP regardless of
+  // time available (a player who explicitly wants max GP shouldn't get an AFK activity with no
+  // profit figure ranked above a profitable one); "active" flips the attention bias instead of
+  // defaulting to passive; "afk" (default) keeps the original time-aware behavior.
   entries.sort((a, b) => {
+    if (goal === "profit") {
+      return (b.profitPerUnit ?? -Infinity) - (a.profitPerUnit ?? -Infinity);
+    }
+    if (goal === "active") {
+      const aActive = a.attention === "active" ? 2 : a.attention === "moderate" ? 1 : 0;
+      const bActive = b.attention === "active" ? 2 : b.attention === "moderate" ? 1 : 0;
+      if (aActive !== bActive) return bActive - aActive;
+      return (b.profitPerUnit ?? -Infinity) - (a.profitPerUnit ?? -Infinity);
+    }
     const aAfk = a.attention === "afk" ? 1 : 0;
     const bAfk = b.attention === "afk" ? 1 : 0;
     if (availableMinutes >= 30 && aAfk !== bAfk) return bAfk - aAfk;

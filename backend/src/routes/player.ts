@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { getPlayerSnapshot, PlayerNotFoundError, type PlayerSnapshot } from "../wiseoldman.js";
-import { computeSessionPlan } from "../sessionPlanner.js";
+import { computeSessionPlan, type SessionGoal } from "../sessionPlanner.js";
 
 // DESIGN.md §14.13: cache per username -- skills/bosses don't change meaningfully minute to
 // minute, and there's no reason to hit WOM's API on every render of a settings/player panel.
@@ -37,16 +37,18 @@ export async function playerRoutes(app: FastifyInstance) {
   // DESIGN.md §14.15: bankstand/session planner -- filters activities.ts down to what this
   // player's skill levels actually unlock, with live GP profit where computable.
   app.get("/api/session-plan", async (req, reply) => {
-    const query = req.query as { username?: string; minutes?: string };
+    const query = req.query as { username?: string; minutes?: string; goal?: string };
     if (!query.username) {
       return reply.code(400).send({ error: "username is required" });
     }
     const minutes = query.minutes ? Number(query.minutes) : 30;
+    const goal: SessionGoal =
+      query.goal === "profit" || query.goal === "active" ? query.goal : "afk";
 
     try {
       const snapshot = await getCachedSnapshot(query.username);
-      const plan = computeSessionPlan(snapshot.skills, minutes);
-      return { username: snapshot.displayName, availableMinutes: minutes, plan };
+      const plan = computeSessionPlan(snapshot.skills, minutes, goal);
+      return { username: snapshot.displayName, availableMinutes: minutes, goal, plan };
     } catch (err) {
       if (err instanceof PlayerNotFoundError) {
         return reply.code(404).send({ error: err.message });

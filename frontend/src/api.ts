@@ -413,6 +413,34 @@ export async function fetchLlmHealth(): Promise<LlmHealthResponse> {
   return res.json();
 }
 
+export interface ExtractedGeOffer {
+  type: "buy" | "sell";
+  itemName: string;
+  price: number;
+  qty: number;
+  filledQty: number;
+  slotIndex: number | null;
+}
+
+// `imageDataUrl` is a full "data:image/...;base64,..." string (FileReader.readAsDataURL output)
+// -- sent as-is, decoded server-side by the vision model call, never written to disk.
+// emptySlotIndexes: slots (1-8) the model saw explicitly labeled "Empty" -- lets the caller tell
+// "this slot was freed up" apart from "this screenshot just doesn't show that slot."
+export async function extractGeOffersFromScreenshot(
+  imageDataUrl: string,
+): Promise<{ offers: ExtractedGeOffer[]; emptySlotIndexes: number[] }> {
+  const res = await fetch("/api/vision/ge-offers", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image: imageDataUrl }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error ?? `Failed to read screenshot: ${res.status}`);
+  }
+  return res.json();
+}
+
 // DESIGN.md §14.15: bankstand/session planner -- activities filtered to what the player's real
 // skill levels unlock, with live GP profit where computable from local GE prices.
 export type ActivityAttention = "afk" | "moderate" | "active";
@@ -428,18 +456,25 @@ export interface SessionPlanEntry {
   profitPerUnit: number | null;
 }
 
+// DESIGN.md §10 item 29: a goal axis for the planner, honestly scoped to what real data
+// supports (attention level + live GP profit) -- "Questing"/"Collection Log" from the original
+// brainstorm aren't buildable without a quest/diary/collection-log dataset this app doesn't have.
+export type SessionGoal = "afk" | "profit" | "active";
+
 export interface SessionPlanResponse {
   username: string;
   availableMinutes: number;
+  goal: SessionGoal;
   plan: SessionPlanEntry[];
 }
 
 export async function fetchSessionPlan(
   username: string,
   minutes: number,
+  goal: SessionGoal = "afk",
 ): Promise<SessionPlanResponse> {
   const res = await fetch(
-    `/api/session-plan?username=${encodeURIComponent(username)}&minutes=${minutes}`,
+    `/api/session-plan?username=${encodeURIComponent(username)}&minutes=${minutes}&goal=${goal}`,
   );
   if (!res.ok) {
     if (res.status === 404) throw new Error(`Player "${username}" not found on Wise Old Man`);
@@ -464,6 +499,22 @@ export interface TrendEntry {
 export async function fetchTrends(window: TrendWindow): Promise<{ entries: TrendEntry[] }> {
   const res = await fetch(`/api/trends?window=${window}`);
   if (!res.ok) throw new Error(`Failed to fetch trends: ${res.status}`);
+  return res.json();
+}
+
+// DESIGN.md §10 item 20 / §14.33: sector/basket indices -- a curated item-group's average price
+// change over a window, for spotting sector-wide moves a single-item view would miss.
+export interface SectorIndex {
+  key: string;
+  label: string;
+  itemCount: number;
+  totalItems: number;
+  avgChangePct: number | null;
+}
+
+export async function fetchSectors(window: TrendWindow): Promise<{ sectors: SectorIndex[] }> {
+  const res = await fetch(`/api/sectors?window=${window}`);
+  if (!res.ok) throw new Error(`Failed to fetch sectors: ${res.status}`);
   return res.json();
 }
 

@@ -1,4 +1,4 @@
-# OSRS Flip Assistant
+# Project Flashwave
 
 A locally-run OSRS Grand Exchange flip/merchanting dashboard. Pulls live prices from the
 [Wiki Real-time Prices API](https://prices.runescape.wiki/), computes tax/limit-aware net margin

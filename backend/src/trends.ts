@@ -118,11 +118,19 @@ function buildEntries(
   return entries;
 }
 
+// Unsorted, untruncated -- every item that cleared the MIN_PRICE/MIN_LIQUIDITY/MAX_SANE_PCT
+// guards for this window, not just the top 50 movers. computeTrend() (below) is the leaderboard
+// view; this is for callers that need a specific item's change regardless of whether it's a big
+// mover (e.g. sectors.ts averaging a curated, mostly-stable basket of high-value items that would
+// never make a "biggest movers" top 50).
+export async function computeAllTrendEntries(window: TrendWindow): Promise<TrendEntry[]> {
+  return window === "7d" || window === "30d"
+    ? await computeLongTrend(window)
+    : computeShortTrend(window);
+}
+
 export async function computeTrend(window: TrendWindow): Promise<TrendEntry[]> {
-  const entries =
-    window === "7d" || window === "30d"
-      ? await computeLongTrend(window)
-      : computeShortTrend(window);
+  const entries = await computeAllTrendEntries(window);
   entries.sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct));
   return entries.slice(0, 50);
 }

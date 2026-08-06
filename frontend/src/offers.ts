@@ -17,6 +17,17 @@ export interface Offer {
   // existed -- new offers always set it. Feeds Trade Health's "how long has this been open"
   // staleness factor (tradeHealth.ts, DESIGN.md §10 item 23).
   trackedAt?: number;
+  // How many of `qty` have actually gone through on the GE so far -- read off the offer's
+  // progress bar/fraction by the screenshot vision flow, or set by hand. Undefined/0 means
+  // nothing's filled yet. Purely informational (doesn't gate "I bought/sold it"), since the GE's
+  // own partial-fill state isn't otherwise visible to this app.
+  filledQty?: number;
+  // Which of the 8 physical GE slots this came from (1-8), when the screenshot flow could
+  // determine it. The one thing that stays unique when the SAME item occupies multiple slots at
+  // once (e.g. several sell offers split across slots) -- name+type alone can't tell those apart
+  // on a re-screenshot. Undefined for offers tracked manually/via the allocator, since they don't
+  // correspond to a real screenshot slot until one's uploaded.
+  slotIndex?: number | null;
 }
 
 const KEY = "geOffers";
