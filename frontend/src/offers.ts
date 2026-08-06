@@ -13,6 +13,10 @@ export interface Offer {
   itemName: string;
   price: number;
   qty: number;
+  // Unix seconds. Optional only for backwards compatibility with offers saved before this field
+  // existed -- new offers always set it. Feeds Trade Health's "how long has this been open"
+  // staleness factor (tradeHealth.ts, DESIGN.md §10 item 23).
+  trackedAt?: number;
 }
 
 const KEY = "geOffers";
@@ -59,6 +63,7 @@ export function parseOffersText(text: string): { offers: Offer[]; skipped: strin
       itemName: cols[1],
       price,
       qty,
+      trackedAt: Math.floor(Date.now() / 1000),
     });
   }
   return { offers, skipped };

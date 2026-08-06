@@ -6,6 +6,7 @@ import { NumberInput, Chip, Button } from "./ui";
 import { type Offer, loadOffers, saveOffers } from "../offers";
 import { type Fill, loadFills, saveFills } from "../fills";
 import { computeRepriceGuidance, ACTION_LABEL, ACTION_TONE } from "../repriceGuidance";
+import { computeTradeHealth, TIER_TONE } from "../tradeHealth";
 import { GeOffersPanel } from "./GeOffersPanel";
 import { diffAndSnapshotSignals, type SignalsDiff } from "../signalsDiff";
 
@@ -101,6 +102,7 @@ export function BuySignals({
       itemName,
       price,
       qty,
+      trackedAt: Math.floor(Date.now() / 1000),
     };
     setOffers([...offers, newOffer]);
   }
@@ -126,6 +128,7 @@ export function BuySignals({
         itemName: offer.itemName,
         price: market?.high ?? offer.price,
         qty: offer.qty,
+        trackedAt: Math.floor(Date.now() / 1000),
       };
       setOffers([...offers.filter((o) => o.id !== offer.id), sellOffer]);
     } else {
@@ -156,7 +159,12 @@ export function BuySignals({
   const offerRows = useMemo(() => {
     return offers.map((offer) => {
       const market = items.find((i) => i.name.toLowerCase() === offer.itemName.toLowerCase());
-      return { offer, market, guidance: computeRepriceGuidance(offer, market) };
+      return {
+        offer,
+        market,
+        guidance: computeRepriceGuidance(offer, market),
+        health: computeTradeHealth(offer, market),
+      };
     });
   }, [offers, items]);
 
@@ -297,7 +305,7 @@ export function BuySignals({
               {/* A tracked/open offer is a real GE slot already in use -- show it as one of the
                   slot cards (not a separate side list) so the grid reflects your actual 8 slots,
                   not just what the allocator would suggest from scratch. */}
-              {offerRows.map(({ offer, market, guidance }, idx) => {
+              {offerRows.map(({ offer, market, guidance, health }, idx) => {
                 const isWarning = guidance.action !== "hold" && guidance.action !== "unknown";
                 const isEditing = editingOfferId === offer.id;
                 return (
@@ -318,16 +326,35 @@ export function BuySignals({
                       <span className="text-[10px] uppercase tracking-wide text-gray-500">
                         Slot {idx + 1}
                       </span>
-                      <span
-                        className={`text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded ${
-                          offer.type === "buy"
-                            ? "bg-rose-500/15 text-rose-400 border border-rose-500/30"
-                            : "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-                        }`}
-                      >
-                        {offer.type}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {health && (
+                          <span
+                            className={`text-[10px] font-mono font-semibold ${TIER_TONE[health.tier]}`}
+                            title={
+                              health.reasons.length > 0
+                                ? `Trade health ${health.score}/100 — ${health.reasons.join("; ")}`
+                                : `Trade health ${health.score}/100 — no concerns`
+                            }
+                          >
+                            {health.score}
+                          </span>
+                        )}
+                        <span
+                          className={`text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded ${
+                            offer.type === "buy"
+                              ? "bg-rose-500/15 text-rose-400 border border-rose-500/30"
+                              : "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                          }`}
+                        >
+                          {offer.type}
+                        </span>
+                      </div>
                     </div>
+                    {health && health.reasons.length > 0 && (
+                      <div className="text-[10px] text-gray-500 mb-1 truncate" title={health.reasons.join("; ")}>
+                        {health.reasons[0]}
+                      </div>
+                    )}
                     <div className="flex items-center gap-2 min-w-0">
                       {market?.icon && (
                         <img src={iconUrl(market.icon)} alt="" className="w-5 h-5 object-contain shrink-0" />
