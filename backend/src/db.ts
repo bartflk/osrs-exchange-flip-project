@@ -303,3 +303,21 @@ export function pruneHistoryBefore(cutoffTs: number): number {
   const result = db.prepare(`DELETE FROM price_history WHERE ts < ?`).run(cutoffTs);
   return Number(result.changes);
 }
+
+export interface HistoryTick {
+  ts: number;
+  high: number | null;
+  low: number | null;
+}
+
+// Most recent N ticks for one item, oldest-first -- used by forecast.ts to build a
+// period-over-period return distribution (needs chronological order, not the DESC a UI table
+// would want).
+const recentHistoryStmt = db.prepare(`
+  SELECT ts, high, low FROM price_history WHERE item_id = ? ORDER BY ts DESC LIMIT ?
+`);
+
+export function getRecentHistoryForItem(itemId: number, limit: number): HistoryTick[] {
+  const rows = recentHistoryStmt.all(itemId, limit) as unknown as HistoryTick[];
+  return rows.reverse();
+}

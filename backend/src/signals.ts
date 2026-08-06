@@ -1,3 +1,5 @@
+import { getVolatility } from "./volatility.js";
+
 // GE tax: 2% of sale price (doubled from 1% on 2025-05-29, the "Yama CAs & More!" update --
 // verified against the live OSRS Wiki Grand Exchange page), capped at 5,000,000gp per sale,
 // rounds down to 0 (so effectively waived) under 50gp. A curated whitelist of tax-exempt items
@@ -40,6 +42,9 @@ export interface ScoredItem extends ItemRow {
   limit_adjusted_profit: number | null;
   score: number;
   tax: number | null;
+  // Coefficient of variation of the high price over a trailing 24h (volatility.ts) -- null
+  // until enough history exists, not a fake 0.
+  volatility_pct: number | null;
 }
 
 export function scoreItem(row: ItemRow): ScoredItem {
@@ -59,6 +64,7 @@ export function scoreItem(row: ItemRow): ScoredItem {
       limit_adjusted_profit,
       score: -Infinity,
       tax,
+      volatility_pct: null,
     };
   }
 
@@ -77,7 +83,23 @@ export function scoreItem(row: ItemRow): ScoredItem {
   const minVol1h = Math.min(vol_high_1h, vol_low_1h);
   const liquidity = Math.min(minVol5m * 12, minVol1h); // normalize 5m to hourly rate, take the more conservative
 
-  const score = net_margin != null ? net_margin * Math.log10(liquidity + 1) : -Infinity;
+  // Volatility as a mild score penalty, not a hard filter -- an item with no volatility data
+  // yet (penalty factor 1) ranks exactly as before, so this never breaks ranking for items
+  // without 24h of history. Once data exists, a highly volatile item (CoV of, say, 0.3) is
+  // discounted to ~77% of its raw score -- message 8's "Trade Health combines... Volatility."
+  const volatility_pct = getVolatility(row.id);
+  const volatilityPenalty = 1 + (volatility_pct ?? 0);
+  const score =
+    net_margin != null ? (net_margin * Math.log10(liquidity + 1)) / volatilityPenalty : -Infinity;
 
-  return { ...row, net_margin, roi_pct, liquidity, limit_adjusted_profit, score, tax };
+  return {
+    ...row,
+    net_margin,
+    roi_pct,
+    liquidity,
+    limit_adjusted_profit,
+    score,
+    tax,
+    volatility_pct,
+  };
 }

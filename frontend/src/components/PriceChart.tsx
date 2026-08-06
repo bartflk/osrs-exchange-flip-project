@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { WheelEvent, MouseEvent } from "preact/compat";
-import type { TimeseriesPoint } from "../api";
+import type { TimeseriesPoint, ForecastPoint } from "../api";
 import { formatGp } from "../format";
 
 const WIDTH = 980;
@@ -27,9 +27,13 @@ interface View {
 export function PriceChart({
   points,
   blended = false,
+  forecast,
 }: {
   points: TimeseriesPoint[];
   blended?: boolean;
+  // DESIGN.md §14.12: IQR prediction bands -- only meaningful appended to the most recent real
+  // data, so it's only ever drawn when the view hasn't been panned/zoomed away from the present.
+  forecast?: ForecastPoint[];
 }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [view, setView] = useState<View | null>(null);
@@ -57,9 +61,20 @@ export function PriceChart({
   const visible = clean.slice(v.start, v.end);
   const visibleCount = visible.length;
 
+  // Forecast only makes sense appended to the most recent real point, so it's only shown when
+  // the view actually reaches the end of the full series (not panned/zoomed into the past).
+  const showForecast = !!forecast && forecast.length > 0 && v.end === clean.length;
+  const forecastCount = showForecast ? forecast!.length : 0;
+  // Total x-domain width includes the forecast region when shown -- real data compresses
+  // slightly to make room on the right, same layout as the reference chart.
+  const totalCount = visibleCount + forecastCount;
+
   const allPrices = visible
     .flatMap((p) => [p.avgHighPrice, p.avgLowPrice])
     .filter((v): v is number => v != null);
+  if (showForecast) {
+    for (const p of forecast!) allPrices.push(p.low, p.high);
+  }
   const min = allPrices.length ? Math.min(...allPrices) : 0;
   const max = allPrices.length ? Math.max(...allPrices) : 1;
   const range = max - min || 1;
@@ -72,16 +87,19 @@ export function PriceChart({
   const plotH = HEIGHT - PAD_TOP - PAD_BOTTOM - VOL_HEIGHT;
 
   function x(localIdx: number) {
-    return PAD_LEFT + (localIdx / Math.max(visibleCount - 1, 1)) * plotW;
+    return PAD_LEFT + (localIdx / Math.max(totalCount - 1, 1)) * plotW;
   }
   function y(price: number) {
     return PAD_TOP + plotH - ((price - min) / range) * plotH;
   }
 
-  // Map an SVG-space x coordinate to a fractional index into the *full* clean array.
+  // Map an SVG-space x coordinate to a fractional index into the *full* clean array. Uses
+  // totalCount (not visibleCount) to stay consistent with x()'s scale, which compresses to make
+  // room for the forecast region when one is showing -- otherwise zoom-centering and hover would
+  // drift out of alignment with the rendered lines whenever a forecast is displayed.
   function svgXToFullIdx(svgX: number) {
     const frac = (svgX - PAD_LEFT) / plotW;
-    return v.start + frac * (visibleCount - 1);
+    return v.start + frac * (totalCount - 1);
   }
 
   function pathFor(key: "avgHighPrice" | "avgLowPrice") {
@@ -141,7 +159,7 @@ export function PriceChart({
     }
     const rect = e.currentTarget.getBoundingClientRect();
     const relX = ((e.clientX - rect.left) / rect.width) * WIDTH;
-    const localIdx = Math.round(((relX - PAD_LEFT) / plotW) * (visibleCount - 1));
+    const localIdx = Math.round(((relX - PAD_LEFT) / plotW) * (totalCount - 1));
     if (localIdx >= 0 && localIdx < visibleCount) setHoverIdx(v.start + localIdx);
     else setHoverIdx(null);
   }
@@ -196,6 +214,36 @@ export function PriceChart({
       started = true;
     }
     return d;
+  })();
+
+  // IQR forecast band: starts as a single point at the last real price (both edges coincide),
+  // then fans out through each forecast step -- same visual language as the reference chart
+  // (dashed "Low/High prediction" lines around a shaded "Low/High IQR" band).
+  const lastRealPrice = showForecast
+    ? (visible[visible.length - 1].avgHighPrice ?? visible[visible.length - 1].avgLowPrice ?? 0)
+    : 0;
+  const forecastStartX = showForecast ? x(visibleCount - 1) : 0;
+  const forecastStartY = showForecast ? y(lastRealPrice) : 0;
+
+  function forecastLinePath(key: "low" | "high"): string {
+    if (!showForecast) return "";
+    let d = `M${forecastStartX.toFixed(1)},${forecastStartY.toFixed(1)} `;
+    forecast!.forEach((p, i) => {
+      d += `L${x(visibleCount - 1 + (i + 1)).toFixed(1)},${y(p[key]).toFixed(1)} `;
+    });
+    return d;
+  }
+
+  const forecastBandPolygon = (() => {
+    if (!showForecast) return "";
+    const top = [`${forecastStartX.toFixed(1)},${forecastStartY.toFixed(1)}`];
+    const bottom = [`${forecastStartX.toFixed(1)},${forecastStartY.toFixed(1)}`];
+    forecast!.forEach((p, i) => {
+      const fx = x(visibleCount - 1 + (i + 1));
+      top.push(`${fx.toFixed(1)},${y(p.high).toFixed(1)}`);
+      bottom.push(`${fx.toFixed(1)},${y(p.low).toFixed(1)}`);
+    });
+    return `${top.join(" ")} ${bottom.reverse().join(" ")}`;
   })();
 
   return (
@@ -254,14 +302,14 @@ export function PriceChart({
             y1={PAD_TOP + t * plotH}
             y2={PAD_TOP + t * plotH}
             stroke="rgba(255,255,255,0.08)"
-            strokeWidth={1}
+            stroke-width={1}
           />
         ))}
         {/* y axis labels */}
-        <text x={4} y={PAD_TOP + 4} className="fill-gray-500" fontSize="11">
+        <text x={4} y={PAD_TOP + 4} className="fill-gray-500" font-size="11">
           {formatGp(max)}
         </text>
-        <text x={4} y={PAD_TOP + plotH} className="fill-gray-500" fontSize="11">
+        <text x={4} y={PAD_TOP + plotH} className="fill-gray-500" font-size="11">
           {formatGp(min)}
         </text>
 
@@ -313,12 +361,34 @@ export function PriceChart({
         {blended ? (
           // Single blended price line -- avgHighPrice === avgLowPrice for every point here,
           // so a real high/low split would be fake precision.
-          <path d={pathFor("avgHighPrice")} fill="none" stroke="#e2e8f0" strokeWidth={1.75} />
+          <path d={pathFor("avgHighPrice")} fill="none" stroke="#e2e8f0" stroke-width={1.75} />
         ) : (
           <>
             {/* sell (high) line -- green, buy (low) line -- rose-tinted */}
-            <path d={pathFor("avgHighPrice")} fill="none" stroke="#34d399" strokeWidth={1.75} />
-            <path d={pathFor("avgLowPrice")} fill="none" stroke="#fb7185" strokeWidth={1.75} />
+            <path d={pathFor("avgHighPrice")} fill="none" stroke="#34d399" stroke-width={1.75} />
+            <path d={pathFor("avgLowPrice")} fill="none" stroke="#fb7185" stroke-width={1.75} />
+          </>
+        )}
+
+        {/* IQR prediction band -- deterministic quantile forecast (forecast.ts), not a trained
+            model. Only drawn when the view reaches the end of the real data. */}
+        {showForecast && (
+          <>
+            <polygon points={forecastBandPolygon} fill="rgba(96,165,250,0.15)" />
+            <path
+              d={forecastLinePath("high")}
+              fill="none"
+              stroke="#34d399"
+              stroke-width={1.25}
+              stroke-dasharray="4,3"
+            />
+            <path
+              d={forecastLinePath("low")}
+              fill="none"
+              stroke="#fb7185"
+              stroke-width={1.25}
+              stroke-dasharray="4,3"
+            />
           </>
         )}
 
@@ -327,8 +397,8 @@ export function PriceChart({
           d={movingAveragePath}
           fill="none"
           stroke="rgba(224,231,255,0.5)"
-          strokeWidth={1}
-          strokeDasharray="3,3"
+          stroke-width={1}
+          stroke-dasharray="3,3"
         />
 
         {/* GE tax-rate-change markers, only drawn when that date is within the current view */}
@@ -340,10 +410,10 @@ export function PriceChart({
               y1={PAD_TOP}
               y2={PAD_TOP + plotH}
               stroke="rgba(251,191,36,0.4)"
-              strokeWidth={1}
-              strokeDasharray="2,3"
+              stroke-width={1}
+              stroke-dasharray="2,3"
             />
-            <text x={m.cx + 3} y={PAD_TOP + 10} className="fill-amber-400" fontSize="9">
+            <text x={m.cx + 3} y={PAD_TOP + 10} className="fill-amber-400" font-size="9">
               {m.label}
             </text>
           </g>
@@ -356,7 +426,7 @@ export function PriceChart({
             y1={PAD_TOP}
             y2={PAD_TOP + plotH}
             stroke="rgba(255,255,255,0.3)"
-            strokeWidth={1}
+            stroke-width={1}
           />
         )}
       </svg>
@@ -376,6 +446,12 @@ export function PriceChart({
               <span className="w-2.5 h-2.5 rounded-full bg-rose-400 inline-block" /> Buy (low)
             </span>
           </>
+        )}
+        {showForecast && (
+          <span className="flex items-center gap-1 text-gray-500">
+            <span className="w-2.5 h-2.5 rounded-sm bg-sky-400/25 inline-block" /> IQR forecast
+            (~24h)
+          </span>
         )}
         {hovered &&
           (blended ? (

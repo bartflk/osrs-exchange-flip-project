@@ -22,12 +22,42 @@ export interface AllocationResult {
 
 export function allocateCapital(
   items: MarketItem[],
-  opts: { bankroll: number; numSlots: number; maxAllocationPct: number },
+  opts: {
+    bankroll: number;
+    numSlots: number;
+    maxAllocationPct: number;
+    // DESIGN.md §10 item 21 / §14.23: a timeframe changes which items even QUALIFY, not just
+    // how they're sized -- a short hold needs liquidity high enough to actually fill and resell
+    // in that window; a long hold can tolerate a thinner book in exchange for wider margin. Kept
+    // as a simple pre-filter (not a re-weighted score) so the allocator stays explainable: every
+    // candidate still ranks by the same score as everywhere else in the app.
+    minLiquidity?: number;
+    // DESIGN.md §14.23: "reroll" -- cycle to the next batch of qualifying candidates instead of
+    // always the same top-N, without resorting to randomness (stays deterministic/explainable).
+    // Rotates the sorted candidate list by `skipCount` positions, wrapping around.
+    skipCount?: number;
+    // Items already occupying a real GE slot (a tracked/open offer) shouldn't also be suggested
+    // for one of the *remaining* slots -- that would double-count the same item against two
+    // slots at once. Matched case-insensitively by name, same key GeOffersPanel/offers.ts uses.
+    excludeNames?: Set<string>;
+  },
 ): AllocationResult {
   const maxPerItem = opts.bankroll * (opts.maxAllocationPct / 100);
-  const candidates = [...items]
-    .filter((i) => (i.net_margin ?? 0) > 0 && i.low)
+  const minLiquidity = opts.minLiquidity ?? 0;
+  let candidates = [...items]
+    .filter(
+      (i) =>
+        (i.net_margin ?? 0) > 0 &&
+        i.low &&
+        i.liquidity >= minLiquidity &&
+        !opts.excludeNames?.has(i.name.toLowerCase()),
+    )
     .sort((a, b) => b.score - a.score);
+
+  if (opts.skipCount && candidates.length > 0) {
+    const skip = opts.skipCount % candidates.length;
+    candidates = [...candidates.slice(skip), ...candidates.slice(0, skip)];
+  }
 
   const assignments: SlotAssignment[] = [];
   let remaining = opts.bankroll;

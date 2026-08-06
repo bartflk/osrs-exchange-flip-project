@@ -77,13 +77,16 @@ export function Badge({
   tone = "neutral",
   children,
   className = "",
+  title,
 }: {
   tone?: BadgeTone;
   children: ReactNode;
   className?: string;
+  title?: string;
 }) {
   return (
     <span
+      title={title}
       className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-medium uppercase tracking-wide leading-none ${TONE_CLASSES[tone]} ${className}`}
     >
       {children}
@@ -125,8 +128,11 @@ export function NumberInput({
       type="text"
       inputMode="numeric"
       value={text}
-      onChange={(e) => {
-        const raw = e.target.value;
+      // Preact's `onChange` binds to the native `change` event (fires on blur), not `input`
+      // (fires per keystroke) -- unlike React, which aliases onChange to fire on every
+      // keystroke. `onInput` is the per-keystroke equivalent under Preact.
+      onInput={(e) => {
+        const raw = (e.target as HTMLInputElement).value;
         if (!/^-?\d*$/.test(raw)) return;
         setText(raw);
         if (raw !== "" && raw !== "-") onChange(Number(raw));

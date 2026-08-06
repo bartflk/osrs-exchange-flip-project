@@ -7,6 +7,10 @@ import { scorekeepingRoutes } from "./routes/scorekeeping.js";
 import { llmRoutes } from "./routes/llm.js";
 import { newsRoutes } from "./routes/news.js";
 import { setsRoutes } from "./routes/sets.js";
+import { playerRoutes } from "./routes/player.js";
+import { trendsRoutes } from "./routes/trends.js";
+import { substitutionsRoutes } from "./routes/substitutions.js";
+import { researchReportRoutes } from "./routes/researchReport.js";
 import { startPolling } from "./poller.js";
 import { closeWarehouse } from "./warehouse.js";
 
@@ -20,6 +24,10 @@ await app.register(scorekeepingRoutes);
 await app.register(llmRoutes);
 await app.register(newsRoutes);
 await app.register(setsRoutes);
+await app.register(playerRoutes);
+await app.register(trendsRoutes);
+await app.register(substitutionsRoutes);
+await app.register(researchReportRoutes);
 
 startPolling();
 

@@ -3,6 +3,9 @@ export interface Settings {
   muteWatchlistAlerts: boolean;
   refreshIntervalSec: number;
   defaultMinLiquidity: number;
+  // DESIGN.md §14.13: which OSRS account to look up via Wise Old Man -- plumbing for the
+  // bankstand/session-planner feature (Phase 3), empty means "not configured yet."
+  womUsername: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -10,6 +13,7 @@ export const DEFAULT_SETTINGS: Settings = {
   muteWatchlistAlerts: false,
   refreshIntervalSec: 30,
   defaultMinLiquidity: 20,
+  womUsername: "",
 };
 
 const KEY = "settings";

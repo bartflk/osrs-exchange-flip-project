@@ -1,8 +1,18 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
-import { fetchTimeseries, type Lookback, type MarketItem, type TimeseriesPoint } from "../api";
+import {
+  fetchTimeseries,
+  fetchForecast,
+  fetchItemTrackRecord,
+  type Lookback,
+  type MarketItem,
+  type TimeseriesPoint,
+  type ForecastPoint,
+  type ItemTrackRecord,
+} from "../api";
 import { formatGp, formatPct } from "../format";
 import { PriceChart } from "./PriceChart";
 import type { HoldingEntry } from "../bankHoldings";
+import { computeSizingTiers, type SizingTierName } from "../positionSizing";
 
 function iconUrl(icon: string): string {
   if (!icon) return "";
@@ -38,6 +48,9 @@ export function ItemDetailModal({
   const [blended, setBlended] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [forecast, setForecast] = useState<ForecastPoint[]>([]);
+  const [trackRecord, setTrackRecord] = useState<ItemTrackRecord | null>(null);
+  const sizingTiers = useMemo(() => computeSizingTiers(item), [item]);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,6 +69,22 @@ export function ItemDetailModal({
       cancelled = true;
     };
   }, [item.id, lookback]);
+
+  // DESIGN.md §14.12: IQR forecast + per-item track record -- independent of `lookback` (the
+  // forecast always projects ~24h forward from *now*, not from whatever historical range is
+  // being viewed), so these live in their own effect keyed only on item.id.
+  useEffect(() => {
+    let cancelled = false;
+    fetchForecast(item.id)
+      .then((res) => !cancelled && setForecast(res.points))
+      .catch(() => !cancelled && setForecast([]));
+    fetchItemTrackRecord(item.id)
+      .then((res) => !cancelled && setTrackRecord(res))
+      .catch(() => !cancelled && setTrackRecord(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [item.id]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -158,7 +187,46 @@ export function ItemDetailModal({
           />
           <VolStat label="Vol 1h" buy={item.vol_low_1h} sell={item.vol_high_1h} />
           <VolStat label="Vol 5m" buy={item.vol_low_5m} sell={item.vol_high_5m} />
+          <Stat
+            label="Volatility (24h)"
+            value={item.volatility_pct != null ? `${(item.volatility_pct * 100).toFixed(1)}%` : "—"}
+            positive={item.volatility_pct != null ? item.volatility_pct < 0.05 : undefined}
+          />
         </div>
+
+        {/* DESIGN.md §10 item 7: quantity bands instead of one suggested qty, so the number
+            itself communicates how sure the system is (a volatile item's bands shrink together). */}
+        {sizingTiers && (
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            {sizingTiers.map((tier) => (
+              <SizingTierCard key={tier.name} tier={tier} />
+            ))}
+          </div>
+        )}
+
+        {/* DESIGN.md §14.12: grounded in this app's own resolved recommendation history
+            (recommendation_snapshots), not an unexplained competitor badge -- most items won't
+            have any history yet, shown honestly rather than faked. */}
+        {trackRecord && trackRecord.resolvedCount > 0 && (
+          <div className="grid grid-cols-3 gap-3 mb-4 text-sm">
+            <Stat
+              label="This item's success rate"
+              value={
+                trackRecord.winRate != null ? `${(trackRecord.winRate * 100).toFixed(0)}%` : "—"
+              }
+              positive={trackRecord.winRate != null ? trackRecord.winRate >= 0.5 : undefined}
+            />
+            <Stat
+              label="Avg realized margin"
+              value={formatGp(trackRecord.avgRealizedNetMargin)}
+              positive={(trackRecord.avgRealizedNetMargin ?? 0) >= 0}
+            />
+            <Stat
+              label="Resolved recommendations"
+              value={`${trackRecord.wins}W / ${trackRecord.losses}L of ${trackRecord.resolvedCount}`}
+            />
+          </div>
+        )}
 
         <div className="flex gap-1 mb-3">
           {LOOKBACKS.map((lb) => (
@@ -185,7 +253,7 @@ export function ItemDetailModal({
             below.
           </p>
         )}
-        <PriceChart points={points} blended={blended} />
+        <PriceChart points={points} blended={blended} forecast={forecast} />
 
         {rangeStats && (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4 text-sm">
@@ -212,6 +280,36 @@ export function ItemDetailModal({
             />
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+const TIER_LABEL: Record<SizingTierName, string> = {
+  conservative: "Conservative",
+  suggested: "Suggested",
+  aggressive: "Aggressive",
+};
+
+const TIER_TONE: Record<SizingTierName, string> = {
+  conservative: "text-sky-400",
+  suggested: "text-emerald-400",
+  aggressive: "text-amber-400",
+};
+
+function SizingTierCard({
+  tier,
+}: {
+  tier: { name: SizingTierName; qty: number; cost: number; projectedProfit: number };
+}) {
+  return (
+    <div className="glass rounded-lg px-3 py-2">
+      <div className={`text-[10px] uppercase tracking-wide ${TIER_TONE[tier.name]}`}>
+        {TIER_LABEL[tier.name]}
+      </div>
+      <div className="font-mono text-sm text-gray-200">{tier.qty.toLocaleString()} units</div>
+      <div className="text-[11px] text-gray-500 font-mono">
+        {formatGp(tier.cost)} cost · +{formatGp(tier.projectedProfit)}
       </div>
     </div>
   );

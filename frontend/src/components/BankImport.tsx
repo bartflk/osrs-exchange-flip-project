@@ -12,6 +12,7 @@ import {
 } from "../api";
 import { parseBankText, type ParsedBankEntry } from "../bankParse";
 import { formatGp, formatAgo } from "../format";
+import { NetWorthChart } from "./NetWorthChart";
 
 function iconUrl(icon: string): string {
   if (!icon) return "";
@@ -225,7 +226,7 @@ export function BankImport({
         </p>
         <textarea
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
           placeholder={"Item id\tItem name\tItem quantity\n4151\tAbyssal whip\t1\n..."}
           rows={6}
           className="glass rounded-lg w-full px-3 py-2 text-xs font-mono text-gray-200 placeholder:text-gray-600 outline-none"
@@ -327,7 +328,7 @@ export function BankImport({
               type="text"
               placeholder="Filter items…"
               value={itemFilter}
-              onChange={(e) => setItemFilter(e.target.value)}
+              onInput={(e) => setItemFilter((e.target as HTMLInputElement).value)}
               className="glass rounded-lg px-2 py-1 text-xs text-gray-100 placeholder:text-gray-500 outline-none w-48"
             />
             <div className="flex gap-1">
@@ -424,8 +425,10 @@ export function BankImport({
         </div>
       )}
 
+      {history.length > 0 && <NetWorthChart history={history} />}
+
       {history.length > 0 && (
-        <div className="glass rounded-xl overflow-hidden">
+        <div className="glass rounded-xl overflow-hidden mt-4">
           <div className="px-4 py-3 border-b border-white/10 text-xs text-gray-500 uppercase tracking-wide">
             Import history
           </div>

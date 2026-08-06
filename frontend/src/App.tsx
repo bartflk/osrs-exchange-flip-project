@@ -17,8 +17,13 @@ import { Actions } from "./components/Actions";
 import { MarketAlerts } from "./components/MarketAlerts";
 import { TrackRecord } from "./components/TrackRecord";
 import { NewsFeed } from "./components/NewsFeed";
+import { ResearchReport } from "./components/ResearchReport";
 import { Sets } from "./components/Sets";
+import { TrendLeaderboard } from "./components/TrendLeaderboard";
+import { SubstitutionFlags } from "./components/SubstitutionFlags";
+import { UpdateCycleBadge } from "./components/UpdateCycleBadge";
 import { SettingsModal } from "./components/SettingsModal";
+import { ToastHost } from "./components/ToastHost";
 import { formatAgo, formatGp } from "./format";
 import { type WatchEntry, loadWatchlist, saveWatchlist } from "./watchlist";
 import { type BlockEntry, loadBlocklist, saveBlocklist, removeFromBlocklist } from "./blocklist";
@@ -240,12 +245,51 @@ function App() {
     }
   }, []);
 
+  // DESIGN.md §14.21/§14.22: manual refresh button. A self-rescheduling setTimeout (not
+  // setInterval) so a manual refresh can clear and restart the cycle cleanly -- with a plain
+  // setInterval, clicking refresh wouldn't push back the *next* auto-fire, so you'd sometimes
+  // see two loads a few seconds apart. The displayed countdown is driven by the backend's real
+  // poll timestamp (status.nextPricePollAt below), not this tab's own fetch cadence.
+  const [nowTick, setNowTick] = useState<number>(Date.now());
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshTimeoutRef = useRef<number | null>(null);
+
+  function runRefreshCycle() {
+    if (refreshTimeoutRef.current != null) {
+      clearTimeout(refreshTimeoutRef.current);
+      refreshTimeoutRef.current = null;
+    }
+    setRefreshing(true);
+    load().finally(() => {
+      setRefreshing(false);
+      refreshTimeoutRef.current = window.setTimeout(
+        runRefreshCycle,
+        settings.refreshIntervalSec * 1000,
+      );
+    });
+  }
+
   useEffect(() => {
-    load();
-    const interval = setInterval(load, settings.refreshIntervalSec * 1000);
-    return () => clearInterval(interval);
+    runRefreshCycle();
+    return () => {
+      if (refreshTimeoutRef.current != null) clearTimeout(refreshTimeoutRef.current);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [minVolume, search, watched, holdings, settings, f2pOnly]);
+
+  // UI-only ticker for the countdown display -- doesn't touch the actual poll schedule above.
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // DESIGN.md §14.22: driven by the backend's real poll timestamp (status.nextPricePollAt), not
+  // a frontend-side guess derived from this tab's own fetch cadence -- those two clocks have no
+  // fixed relationship to each other, which is exactly why the old version looked "out of sync."
+  const secondsUntilPricePoll =
+    status?.nextPricePollAt != null
+      ? Math.max(0, Math.round((status.nextPricePollAt - nowTick) / 1000))
+      : null;
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_20%_-10%,#1e2130_0%,#0b0c10_55%)]">
@@ -292,7 +336,23 @@ function App() {
             {status
               ? `${status.itemCount.toLocaleString()} items · ${formatAgo(status.lastUpdate)}`
               : "connecting…"}
+            {secondsUntilPricePoll != null && (
+              <>
+                <span className="text-gray-600">·</span>
+                <span title="Time until the backend's next real 60s Wiki API poll">
+                  data in {secondsUntilPricePoll}s
+                </span>
+              </>
+            )}
           </div>
+          <IconButton
+            onClick={runRefreshCycle}
+            disabled={refreshing}
+            title="Refresh now"
+            className={refreshing ? "animate-spin" : ""}
+          >
+            ⟳
+          </IconButton>
           <IconButton onClick={() => setShowSettings(true)} title="Settings">
             ⚙
           </IconButton>
@@ -316,7 +376,7 @@ function App() {
       <main className="px-6 2xl:px-10 py-6 2xl:py-8 max-w-[1600px] 2xl:max-w-[2200px] mx-auto">
         {tab === "market" && (
           <>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-5">
               <StatCard label="Items shown" value={marketStats.count.toLocaleString()} />
               <StatCard
                 label="Profitable"
@@ -338,6 +398,7 @@ function App() {
                 value={status ? formatAgo(status.lastUpdate) : "—"}
                 hint={status ? `${status.itemCount.toLocaleString()} tracked items` : undefined}
               />
+              <UpdateCycleBadge />
             </div>
 
             <div className="glass rounded-xl p-3 mb-4 flex flex-wrap items-end gap-x-4 gap-y-3">
@@ -353,7 +414,7 @@ function App() {
                     type="text"
                     placeholder="Find an item…"
                     value={search}
-                    onChange={(e) => setSearch(e.target.value)}
+                    onInput={(e) => setSearch((e.target as HTMLInputElement).value)}
                     className="w-56 2xl:w-72 pl-7"
                   />
                 </div>
@@ -376,7 +437,10 @@ function App() {
                     inputMode="numeric"
                     placeholder="Min"
                     value={minPrice}
-                    onChange={(e) => /^\d*$/.test(e.target.value) && setMinPrice(e.target.value)}
+                    onInput={(e) => {
+                      const v = (e.target as HTMLInputElement).value;
+                      if (/^\d*$/.test(v)) setMinPrice(v);
+                    }}
                     className="w-24"
                   />
                   <span className="text-gray-600 text-xs">–</span>
@@ -385,7 +449,10 @@ function App() {
                     inputMode="numeric"
                     placeholder="Max"
                     value={maxPrice}
-                    onChange={(e) => /^\d*$/.test(e.target.value) && setMaxPrice(e.target.value)}
+                    onInput={(e) => {
+                      const v = (e.target as HTMLInputElement).value;
+                      if (/^\d*$/.test(v)) setMaxPrice(v);
+                    }}
                     className="w-24"
                   />
                 </div>
@@ -436,6 +503,9 @@ function App() {
             )}
             {error && <div className="text-xs text-rose-400 mb-2">{error}</div>}
 
+            <TrendLeaderboard items={items} onSelectItem={setSelectedItem} />
+            <SubstitutionFlags items={items} onSelectItem={setSelectedItem} />
+
             <MarketTable
               items={marketItems}
               watched={watched}
@@ -475,12 +545,18 @@ function App() {
           <Actions
             items={items}
             heldItems={heldItems}
+            womUsername={settings.womUsername}
             holdings={holdings}
             onSelectItem={setSelectedItem}
           />
         )}
         {tab === "sets" && <Sets />}
-        {tab === "news" && <NewsFeed />}
+        {tab === "news" && (
+          <>
+            <ResearchReport />
+            <NewsFeed />
+          </>
+        )}
       </main>
 
       {selectedItem && (
@@ -500,6 +576,8 @@ function App() {
           onRemoveBlock={handleRemoveBlock}
         />
       )}
+
+      <ToastHost />
     </div>
   );
 }

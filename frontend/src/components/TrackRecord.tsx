@@ -1,5 +1,11 @@
 import { useEffect, useState } from "preact/hooks";
-import { fetchTrackRecord, type TrackRecordEntry, type TrackRecordSummary } from "../api";
+import {
+  fetchTrackRecord,
+  fetchTrackRecordHorizons,
+  type TrackRecordEntry,
+  type TrackRecordSummary,
+  type HorizonResult,
+} from "../api";
 import { formatAgo, formatGp, formatPct } from "../format";
 
 function iconUrl(icon: string): string {
@@ -36,16 +42,21 @@ function outcomeBadge(entry: TrackRecordEntry) {
 export function TrackRecord() {
   const [summary, setSummary] = useState<TrackRecordSummary | null>(null);
   const [recent, setRecent] = useState<TrackRecordEntry[]>([]);
+  const [horizons, setHorizons] = useState<HorizonResult[]>([]);
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetchTrackRecord();
+        const [trackRes, horizonRes] = await Promise.all([
+          fetchTrackRecord(),
+          fetchTrackRecordHorizons(),
+        ]);
         if (!cancelled) {
-          setSummary(res.summary);
-          setRecent(res.recent);
+          setSummary(trackRes.summary);
+          setRecent(trackRes.recent);
+          setHorizons(horizonRes.horizons);
         }
       } catch {
         // silent -- this is a secondary widget, not worth an error banner
@@ -70,7 +81,8 @@ export function TrackRecord() {
           <h3 className="text-sm font-medium text-gray-200">Track record</h3>
           <p className="text-xs text-gray-500">
             Every 30min the app logs its own top Buy Signals, then checks back 4h later against real
-            prices.
+            prices (headline stats below). The hold-period table further down backtests the same
+            logged picks at 2/3/6/12/24h instead.
           </p>
         </div>
         <div className="flex items-center gap-5 text-sm">
@@ -104,6 +116,48 @@ export function TrackRecord() {
           </div>
         </div>
       </div>
+
+      {horizons.length > 0 && (
+        <div className="mt-4 pt-3 border-t border-white/10">
+          <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-2">
+            By hold period
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-left">
+              <thead>
+                <tr className="text-gray-500">
+                  <th className="pr-4 py-1 font-medium">Hold</th>
+                  <th className="px-3 py-1 font-medium text-right">Win rate</th>
+                  <th className="px-3 py-1 font-medium text-right">Avg net margin</th>
+                  <th className="px-3 py-1 font-medium text-right">Avg ROI</th>
+                  <th className="px-3 py-1 font-medium text-right">Resolved / pending</th>
+                </tr>
+              </thead>
+              <tbody>
+                {horizons.map((h) => (
+                  <tr key={h.hours} className="border-t border-white/5">
+                    <td className="pr-4 py-1.5 text-gray-200 font-mono">{h.hours}h</td>
+                    <td className="px-3 py-1.5 text-right font-mono text-gray-200">
+                      {h.winRate != null ? `${(h.winRate * 100).toFixed(0)}%` : "—"}
+                    </td>
+                    <td
+                      className={`px-3 py-1.5 text-right font-mono ${(h.avgNetMargin ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+                    >
+                      {h.avgNetMargin != null ? formatGp(h.avgNetMargin) : "—"}
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-mono text-gray-300">
+                      {h.avgRoiPct != null ? formatPct(h.avgRoiPct) : "—"}
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-mono text-gray-500">
+                      {h.resolvedCount} / {h.pendingCount}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {recent.length === 0 ? (
         <p className="text-xs text-gray-500 mt-3">

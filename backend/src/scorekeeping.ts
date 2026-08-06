@@ -172,6 +172,44 @@ export interface TrackRecordSummary {
   avgRoiPct: number | null;
 }
 
+// DESIGN.md §14.12: per-item slice of the same track record, for the item detail modal --
+// "has this specific item's recommendation actually panned out historically," not just the
+// catalogue-wide summary. Grounded in real resolved outcomes (recommendation_snapshots), unlike
+// a competitor's unexplained "Success Rate" badge -- most items simply won't have any history
+// yet, and that's surfaced honestly (null) rather than faked.
+export interface ItemTrackRecord {
+  resolvedCount: number;
+  wins: number;
+  losses: number;
+  winRate: number | null;
+  avgRealizedNetMargin: number | null;
+}
+
+const itemSummaryStmt = db.prepare(`
+  SELECT COUNT(*) AS total,
+         SUM(CASE WHEN outcome = 'win' THEN 1 ELSE 0 END) AS wins,
+         SUM(CASE WHEN outcome = 'loss' THEN 1 ELSE 0 END) AS losses,
+         AVG(realized_net_margin) AS avg_net_margin
+  FROM recommendation_snapshots
+  WHERE resolved_at IS NOT NULL AND item_id = ?
+`);
+
+export function getItemTrackRecord(itemId: number): ItemTrackRecord {
+  const row = itemSummaryStmt.get(itemId) as {
+    total: number;
+    wins: number | null;
+    losses: number | null;
+    avg_net_margin: number | null;
+  };
+  return {
+    resolvedCount: row.total,
+    wins: row.wins ?? 0,
+    losses: row.losses ?? 0,
+    winRate: row.total > 0 ? (row.wins ?? 0) / row.total : null,
+    avgRealizedNetMargin: row.avg_net_margin,
+  };
+}
+
 export function getTrackRecord(): { summary: TrackRecordSummary; recent: TrackRecordEntry[] } {
   const row = summaryStmt.get() as {
     total: number;

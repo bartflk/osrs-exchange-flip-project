@@ -4,6 +4,18 @@ import { formatGp, formatPct, formatAgo } from "../format";
 import { type WatchEntry, toggleWatch } from "../watchlist";
 import { type BlockEntry, toggleBlock } from "../blocklist";
 import { Badge, Button, EmptyState } from "./ui";
+import { showToast } from "../toast";
+
+// No-entry sign (circle + diagonal bar) -- reads as "blocked" at a glance, unlike a bare
+// emoji whose rendering varies by OS/font and doesn't reliably look like "block" at 16px.
+function BlockIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className={className} aria-hidden="true">
+      <circle cx="10" cy="10" r="7.25" stroke="currentColor" strokeWidth="1.6" />
+      <line x1="5.4" y1="14.6" x2="14.6" y2="5.4" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  );
+}
 
 type SortKey =
   | "score"
@@ -47,6 +59,15 @@ const columns: { key: SortKey; label: string; align?: "right"; title?: string }[
     title: "This app's overall ranking (blends margin, ROI and liquidity)",
   },
 ];
+
+// DESIGN.md §14.12: tiered volatility badge, coefficient of variation of the high price over a
+// trailing 24h (volatility.ts). Thresholds are a starting judgment call, not derived from a
+// backtest -- revisit once real usage shows whether they're well-calibrated.
+function volatilityTone(pct: number): "success" | "warning" | "danger" {
+  if (pct < 0.05) return "success";
+  if (pct < 0.15) return "warning";
+  return "danger";
+}
 
 function iconUrl(icon: string): string {
   if (!icon) return "";
@@ -176,13 +197,21 @@ export function MarketTable({
                   </td>
                   <td className="px-3 py-2">
                     <button
-                      onClick={() => setBlocked(toggleBlock(blocked, item))}
-                      className={`text-base leading-none transition-colors ${
+                      onClick={() => {
+                        setBlocked(toggleBlock(blocked, item));
+                        showToast(
+                          isBlocked
+                            ? `${item.name} unblocked`
+                            : `${item.name} blocked — won't appear in Buy Signals`,
+                          isBlocked ? "neutral" : "danger",
+                        );
+                      }}
+                      className={`inline-flex items-center justify-center w-5 h-5 transition-colors ${
                         isBlocked ? "text-rose-400" : "text-gray-600 hover:text-gray-300"
                       }`}
                       title={isBlocked ? "Remove from blocklist" : "Never recommend this item"}
                     >
-                      🚫
+                      <BlockIcon className="w-4 h-4" />
                     </button>
                   </td>
                   <td className="px-3 py-2">
@@ -199,6 +228,14 @@ export function MarketTable({
                       )}
                       <span className="group-hover:underline">{item.name}</span>
                       {item.members === 1 && <Badge tone="info">P2P</Badge>}
+                      {item.volatility_pct != null && (
+                        <Badge
+                          tone={volatilityTone(item.volatility_pct)}
+                          title="Coefficient of variation of price over the trailing 24h"
+                        >
+                          {(item.volatility_pct * 100).toFixed(0)}% vol
+                        </Badge>
+                      )}
                     </button>
                   </td>
                   <td className="px-3 py-2 font-mono text-rose-300 text-right">

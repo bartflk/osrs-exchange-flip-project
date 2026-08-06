@@ -12,11 +12,12 @@ try {
 // Every major provider (OpenAI, Anthropic, Ollama, Gemini, Grok, ...) now speaks the
 // OpenAI-compatible chat completions API, so switching provider is just a base URL + token +
 // model swap -- no SDK or request-shape changes. Defaults target a local Ollama instance
-// running qwen3.5:9b, since that's the model currently in use; override any of the three env
-// vars to point at a different provider.
+// running qwen3:14b (confirmed via `GET /api/tags` against the live local server -- the model
+// tag actually pulled, not guessed); override any of the three env vars to point at a different
+// provider/model.
 const baseURL = process.env.LLM_BASE_URL ?? "http://localhost:11434/v1";
 const apiKey = process.env.LLM_API_KEY ?? "ollama"; // Ollama ignores the key but the SDK requires a non-empty string
-const model = process.env.LLM_MODEL ?? "qwen3.5:9b";
+const model = process.env.LLM_MODEL ?? "qwen3:14b";
 
 const client = new OpenAI({ baseURL, apiKey });
 
@@ -62,6 +63,41 @@ function parseExplanation(raw: string): Explanation {
   return parsed as Explanation;
 }
 
+export interface LlmPingResult {
+  ok: boolean;
+  baseURL: string;
+  model: string;
+  latencyMs: number;
+  reply?: string;
+  error?: string;
+}
+
+// Small standalone smoke test, decoupled from item scoring -- exists so the LLM connection
+// (base URL, model tag, provider reachability) can be checked in one click without needing a
+// real item id or worrying about the explain-endpoint's 15min cache. Surfaced via the Settings
+// modal's "Test LLM" button.
+export async function pingLlm(): Promise<LlmPingResult> {
+  const startedAt = Date.now();
+  try {
+    const response = await client.chat.completions.create({
+      model,
+      messages: [
+        { role: "user", content: 'Reply with exactly one word: "pong".' },
+      ],
+    });
+    const reply = response.choices[0]?.message?.content?.trim();
+    return { ok: true, baseURL, model, latencyMs: Date.now() - startedAt, reply };
+  } catch (err) {
+    return {
+      ok: false,
+      baseURL,
+      model,
+      latencyMs: Date.now() - startedAt,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 export async function explainItem(input: ExplainInput): Promise<Explanation> {
   const response = await client.chat.completions.create({
     model,
@@ -78,4 +114,40 @@ export async function explainItem(input: ExplainInput): Promise<Explanation> {
   }
 
   return parseExplanation(text);
+}
+
+// DESIGN.md §10 item 34: daily/weekly research digest. Every number the model sees is already
+// real (Track Record, trend leaderboard, tiered alerts -- all deterministic, already built) --
+// the model's only job here is turning bullet facts into readable prose under fixed headings, the
+// same "narrate, don't invent" split as explainItem() above. Plain markdown text back, not JSON --
+// more forgiving for a small local model than strict structured output, and the frontend just
+// renders it as-is.
+const DIGEST_SYSTEM_PROMPT = `You are a terse OSRS Grand Exchange research analyst writing a periodic digest for a solo flipper. You are given real, already-computed data -- track record stats, price movers, and alerts. Your only job is to turn these numbers into short, readable prose under the given headings. Use ONLY the numbers provided. Never invent a price, percentage, or item that isn't in the data. If a section's data is empty, write one honest sentence saying so rather than inventing content. No preamble, no closing disclaimer, no markdown fences -- just the sections.`;
+
+export interface DigestSection {
+  heading: string;
+  facts: unknown;
+}
+
+export async function generateDigest(
+  period: "daily" | "weekly",
+  sections: DigestSection[],
+): Promise<string> {
+  const prompt = `Write a ${period} OSRS GE flipping research digest with exactly these section headings, each as a markdown "## Heading" line followed by 1-3 sentences:\n\n${sections
+    .map((s) => `## ${s.heading}\nData: ${JSON.stringify(s.facts)}`)
+    .join("\n\n")}`;
+
+  const response = await client.chat.completions.create({
+    model,
+    messages: [
+      { role: "system", content: DIGEST_SYSTEM_PROMPT },
+      { role: "user", content: prompt },
+    ],
+  });
+
+  const text = response.choices[0]?.message?.content?.trim();
+  if (!text) {
+    throw new Error("Empty response from model");
+  }
+  return text;
 }

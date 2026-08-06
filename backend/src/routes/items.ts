@@ -4,6 +4,8 @@ import { scoreItem, type ItemRow } from "../signals.js";
 import { fetchTimeseries, fetchAllTimeHistory, type Lookback } from "../wiki.js";
 import { getWarehouseStatus } from "../warehouse.js";
 import { getSidecarStatus } from "../sidecar.js";
+import { computeForecast } from "../forecast.js";
+import { getPricePollTiming } from "../poller.js";
 
 export async function itemsRoutes(app: FastifyInstance) {
   app.get("/api/items", async (req) => {
@@ -97,6 +99,23 @@ export async function itemsRoutes(app: FastifyInstance) {
     }
   });
 
+  // DESIGN.md §14.12: IQR prediction bands -- deterministic quantile forecast, see forecast.ts.
+  app.get("/api/items/:id/forecast", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const itemId = Number(id);
+    const snapshot = db
+      .prepare(`SELECT high FROM latest_snapshot WHERE item_id = ?`)
+      .get(itemId) as { high: number | null } | undefined;
+    if (!snapshot || snapshot.high == null) {
+      return reply.code(400).send({ error: "item not currently tradeable" });
+    }
+    const forecast = computeForecast(itemId, snapshot.high);
+    if (!forecast) {
+      return reply.code(200).send({ itemId, points: [], historicalSamples: 0 });
+    }
+    return { itemId, ...forecast };
+  });
+
   // Item lookup independent of the Market tab's tradeability/liquidity filters --
   // used by the global search box, and by bank-value lookups for items that may
   // have thin/no recent trade data.
@@ -132,6 +151,7 @@ export async function itemsRoutes(app: FastifyInstance) {
       t: number | null;
     };
     const [warehouse, sidecar] = await Promise.all([getWarehouseStatus(), getSidecarStatus()]);
-    return { itemCount, lastUpdate: lastUpdate.t, warehouse, sidecar };
+    const { nextPricePollAt } = getPricePollTiming();
+    return { itemCount, lastUpdate: lastUpdate.t, warehouse, sidecar, nextPricePollAt };
   });
 }

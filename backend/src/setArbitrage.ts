@@ -59,17 +59,32 @@ export const SET_DEFINITIONS: SetDefinition[] = [
       "Bloodbark boots",
     ],
   },
+  // DESIGN.md §14.11/§14.14: these three sets each bundle a weapon too, not just 3 armour
+  // pieces -- confirmed via the OSRS Wiki ("a Blood moon helm, Blood moon chestplate, Blood moon
+  // tassets and Dual macuahuitl") and cross-checked against live prices (the set-vs-3-pieces gap
+  // matched the weapon's own price almost exactly). Omitting it understated pieceCost by the
+  // weapon's full value, inflating combineProfit by millions.
   {
     setName: "Blood moon armour set",
-    pieceNames: ["Blood moon helm", "Blood moon chestplate", "Blood moon tassets"],
+    pieceNames: [
+      "Blood moon helm",
+      "Blood moon chestplate",
+      "Blood moon tassets",
+      "Dual macuahuitl",
+    ],
   },
   {
     setName: "Blue moon armour set",
-    pieceNames: ["Blue moon helm", "Blue moon chestplate", "Blue moon tassets"],
+    pieceNames: ["Blue moon helm", "Blue moon chestplate", "Blue moon tassets", "Blue moon spear"],
   },
   {
     setName: "Eclipse moon armour set",
-    pieceNames: ["Eclipse moon helm", "Eclipse moon chestplate", "Eclipse moon tassets"],
+    pieceNames: [
+      "Eclipse moon helm",
+      "Eclipse moon chestplate",
+      "Eclipse moon tassets",
+      "Eclipse atlatl",
+    ],
   },
   {
     setName: "Justiciar armour set",
@@ -107,13 +122,25 @@ const priceStmt = db.prepare(`
   WHERE i.name = ?
 `);
 
+// Per-item cost/tax breakdown -- a piece's own buy/sell price plus the GE tax charged on
+// *its* sale specifically (geTax is per-transaction, not a flat rate applied to the total), so
+// the UI can show exactly where the profit is won or lost rather than just an aggregate number.
+export interface PieceBreakdown {
+  name: string;
+  buy: number;
+  sell: number;
+  tax: number; // geTax(sell) -- what selling this one piece costs in GE tax
+}
+
 export interface SetArbitrageResult {
   setName: string;
   pieceNames: string[];
   setBuy: number;
   setSell: number;
+  setTax: number; // geTax(setSell) -- tax on selling the assembled set as one transaction
   pieceCost: number; // sum of piece buy (low) prices
   pieceRevenue: number; // sum of piece sell (high) prices, pre-tax
+  pieces: PieceBreakdown[];
   combineProfit: number; // buy pieces, sell as set
   decombineProfit: number; // buy set, sell pieces
   bestDirection: "combine" | "decombine";
@@ -142,9 +169,17 @@ export function computeSetArbitrage(): SetArbitrageResult[] {
     const pieceCost = pieces.reduce((sum, p) => sum + (p.low ?? 0), 0);
     const pieceRevenue = pieces.reduce((sum, p) => sum + (p.high ?? 0), 0);
     const pieceRevenueAfterTax = pieces.reduce((sum, p) => sum + (p.high! - geTax(p.high!)), 0);
+    const setTax = geTax(setPrice.high);
+
+    const pieceBreakdown: PieceBreakdown[] = pieces.map((p, i) => ({
+      name: def.pieceNames[i],
+      buy: p.low!,
+      sell: p.high!,
+      tax: geTax(p.high!),
+    }));
 
     // Combine: buy every piece at its low, sell the assembled set at its high (taxed once, as one sale).
-    const combineProfit = setPrice.high - geTax(setPrice.high) - pieceCost;
+    const combineProfit = setPrice.high - setTax - pieceCost;
     // Decombine: buy the set at its low, sell every piece separately at its high (taxed per piece).
     const decombineProfit = pieceRevenueAfterTax - setPrice.low;
 
@@ -157,8 +192,10 @@ export function computeSetArbitrage(): SetArbitrageResult[] {
       pieceNames: def.pieceNames,
       setBuy: setPrice.low,
       setSell: setPrice.high,
+      setTax,
       pieceCost,
       pieceRevenue,
+      pieces: pieceBreakdown,
       combineProfit,
       decombineProfit,
       bestDirection,

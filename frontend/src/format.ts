@@ -8,6 +8,14 @@ export function formatGp(value: number | null | undefined): string {
   return `${sign}${Math.round(abs)}`;
 }
 
+// Exact gp value with thousands separators (e.g. "43,254,231") -- formatGp's "43.25m" is fine
+// for scanning a dense table, but rounds off enough real gp to matter when you're about to
+// actually place that buy/sell order on the GE.
+export function formatGpFull(value: number | null | undefined): string {
+  if (value == null) return "—";
+  return `${Math.round(value).toLocaleString()}gp`;
+}
+
 export function formatPct(value: number | null | undefined): string {
   if (value == null) return "—";
   return `${(value * 100).toFixed(2)}%`;

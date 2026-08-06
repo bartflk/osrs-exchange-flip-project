@@ -21,6 +21,9 @@ export interface MarketItem {
   limit_adjusted_profit: number | null;
   score: number;
   tax: number | null;
+  // Coefficient of variation of the high price over a trailing 24h -- null until 24h of local
+  // history has accumulated for this item (§14.12).
+  volatility_pct: number | null;
 }
 
 export interface ItemsResponse {
@@ -44,6 +47,9 @@ export async function fetchItems(
 export interface StatusResponse {
   itemCount: number;
   lastUpdate: number | null;
+  // DESIGN.md §14.22: real next-scheduled-poll timestamp (unix ms) from the backend's actual
+  // 60s Wiki-API poll cycle -- not a frontend guess about when data might refresh.
+  nextPricePollAt: number | null;
 }
 
 export async function fetchStatus(): Promise<StatusResponse> {
@@ -239,6 +245,26 @@ export async function fetchTrackRecord(): Promise<{
   return res.json();
 }
 
+// DESIGN.md §14.22: multi-horizon backtest -- the same logged picks, checked at 2/3/6/12/24h
+// hold periods instead of just the fixed 4h resolution above.
+export interface HorizonResult {
+  hours: number;
+  resolvedCount: number;
+  pendingCount: number;
+  noDataCount: number;
+  wins: number;
+  losses: number;
+  winRate: number | null;
+  avgNetMargin: number | null;
+  avgRoiPct: number | null;
+}
+
+export async function fetchTrackRecordHorizons(): Promise<{ horizons: HorizonResult[] }> {
+  const res = await fetch("/api/track-record/horizons");
+  if (!res.ok) throw new Error(`Failed to fetch track record horizons: ${res.status}`);
+  return res.json();
+}
+
 // DESIGN.md §6.4 -- official OSRS news feed. Reddit sentiment and Claude's item-linking aren't
 // wired in yet (Reddit needs app pre-approval, Claude is blocked on Anthropic API billing --
 // §14.8), so every entry is currently source: "official" with no item tags.
@@ -260,13 +286,22 @@ export async function fetchNews(): Promise<{ events: NewsEvent[] }> {
 
 // DESIGN.md §10 items 15-16: Set Conversion Arbitrage and Barrows Repair Flip -- fully
 // deterministic against data already local, no new external source.
+export interface PieceBreakdown {
+  name: string;
+  buy: number;
+  sell: number;
+  tax: number;
+}
+
 export interface SetArbitrageResult {
   setName: string;
   pieceNames: string[];
   setBuy: number;
   setSell: number;
+  setTax: number;
   pieceCost: number;
   pieceRevenue: number;
+  pieces: PieceBreakdown[];
   combineProfit: number;
   decombineProfit: number;
   bestDirection: "combine" | "decombine";
@@ -291,5 +326,193 @@ export interface BarrowsRepairResult {
 export async function fetchBarrowsRepair(): Promise<{ flips: BarrowsRepairResult[] }> {
   const res = await fetch("/api/sets/barrows-repair");
   if (!res.ok) throw new Error(`Failed to fetch barrows repair flips: ${res.status}`);
+  return res.json();
+}
+
+// DESIGN.md §14.12: IQR prediction bands -- deterministic quantile forecast (backend/src/forecast.ts),
+// not a trained model. Empty `points` means not enough local history has accumulated yet.
+export interface ForecastPoint {
+  timestamp: number;
+  mid: number;
+  low: number;
+  high: number;
+}
+
+export interface ForecastResponse {
+  itemId: number;
+  points: ForecastPoint[];
+  historicalSamples: number;
+}
+
+export async function fetchForecast(itemId: number): Promise<ForecastResponse> {
+  const res = await fetch(`/api/items/${itemId}/forecast`);
+  if (!res.ok) throw new Error(`Failed to fetch forecast: ${res.status}`);
+  return res.json();
+}
+
+// DESIGN.md §14.12: per-item slice of the app's own track record -- grounded in real resolved
+// recommendations, not a black-box "success rate" badge.
+export interface ItemTrackRecord {
+  resolvedCount: number;
+  wins: number;
+  losses: number;
+  winRate: number | null;
+  avgRealizedNetMargin: number | null;
+}
+
+export async function fetchItemTrackRecord(itemId: number): Promise<ItemTrackRecord> {
+  const res = await fetch(`/api/items/${itemId}/track-record`);
+  if (!res.ok) throw new Error(`Failed to fetch item track record: ${res.status}`);
+  return res.json();
+}
+
+// DESIGN.md §14.13: Wise Old Man player snapshot -- plumbing for the bankstand/session-planner
+// feature (Phase 3, message 8). -1 experience/rank/kills are already normalized to 0 server-side.
+export interface PlayerSkillLevel {
+  level: number;
+  experience: number;
+}
+
+export interface PlayerBossKills {
+  kills: number;
+}
+
+export interface PlayerSnapshot {
+  username: string;
+  displayName: string;
+  type: string;
+  combatLevel: number;
+  updatedAt: string;
+  skills: Record<string, PlayerSkillLevel>;
+  bosses: Record<string, PlayerBossKills>;
+}
+
+export async function fetchPlayerSnapshot(username: string): Promise<PlayerSnapshot> {
+  const res = await fetch(`/api/player/${encodeURIComponent(username)}`);
+  if (!res.ok) {
+    if (res.status === 404) throw new Error(`Player "${username}" not found on Wise Old Man`);
+    throw new Error(`Failed to fetch player: ${res.status}`);
+  }
+  return res.json();
+}
+
+// DESIGN.md §14.28: small standalone LLM connectivity smoke test -- decoupled from item scoring,
+// exists purely to confirm the configured provider/model is actually reachable and responding.
+export interface LlmHealthResponse {
+  ok: boolean;
+  baseURL: string;
+  model: string;
+  latencyMs: number;
+  reply?: string;
+  error?: string;
+}
+
+export async function fetchLlmHealth(): Promise<LlmHealthResponse> {
+  const res = await fetch("/api/llm/health");
+  if (!res.ok) throw new Error(`Failed to reach LLM health endpoint: ${res.status}`);
+  return res.json();
+}
+
+// DESIGN.md §14.15: bankstand/session planner -- activities filtered to what the player's real
+// skill levels unlock, with live GP profit where computable from local GE prices.
+export type ActivityAttention = "afk" | "moderate" | "active";
+
+export interface SessionPlanEntry {
+  name: string;
+  skill: string;
+  levelRequired: number;
+  playerLevel: number;
+  attention: ActivityAttention;
+  suggestedMinutes: number;
+  description: string;
+  profitPerUnit: number | null;
+}
+
+export interface SessionPlanResponse {
+  username: string;
+  availableMinutes: number;
+  plan: SessionPlanEntry[];
+}
+
+export async function fetchSessionPlan(
+  username: string,
+  minutes: number,
+): Promise<SessionPlanResponse> {
+  const res = await fetch(
+    `/api/session-plan?username=${encodeURIComponent(username)}&minutes=${minutes}`,
+  );
+  if (!res.ok) {
+    if (res.status === 404) throw new Error(`Player "${username}" not found on Wise Old Man`);
+    throw new Error(`Failed to fetch session plan: ${res.status}`);
+  }
+  return res.json();
+}
+
+// DESIGN.md §10 item 9 / §14.17: multi-window trend leaderboards -- browsable ranked movers,
+// distinct from alerts.ts's event-triggered crash/spike detector.
+export type TrendWindow = "1h" | "4h" | "12h" | "24h" | "7d" | "30d";
+
+export interface TrendEntry {
+  itemId: number;
+  name: string;
+  icon: string;
+  fromPrice: number;
+  toPrice: number;
+  changePct: number;
+}
+
+export async function fetchTrends(window: TrendWindow): Promise<{ entries: TrendEntry[] }> {
+  const res = await fetch(`/api/trends?window=${window}`);
+  if (!res.ok) throw new Error(`Failed to fetch trends: ${res.status}`);
+  return res.json();
+}
+
+// DESIGN.md §10 item 2 / §14.18: cross-item correlation / substitution flags -- when a leader
+// item has moved but its substitute (raw/cooked, ore/bar, herb/potion) hasn't followed
+// proportionally yet, a classic merchanting lag signal.
+export interface SubstitutionPriceChange {
+  itemId: number;
+  name: string;
+  icon: string;
+  from: number;
+  to: number;
+  changePct: number;
+}
+
+export interface SubstitutionFlag {
+  leader: SubstitutionPriceChange;
+  follower: SubstitutionPriceChange;
+  category: string;
+  lagGapPct: number;
+}
+
+export async function fetchSubstitutionFlags(): Promise<{ flags: SubstitutionFlag[] }> {
+  const res = await fetch("/api/substitutions");
+  if (!res.ok) throw new Error(`Failed to fetch substitution flags: ${res.status}`);
+  return res.json();
+}
+
+// DESIGN.md §10 item 34: daily/weekly research digest -- Track Record + trend leaderboard +
+// tiered alerts synthesized into readable prose by the local LLM (llm.ts's generateDigest()).
+export type ReportPeriod = "daily" | "weekly";
+
+export interface ResearchReport {
+  period: ReportPeriod;
+  generatedAt: number;
+  narrative: string;
+  data: {
+    trackRecord: TrackRecordSummary;
+    topGainers: { name: string; changePct: number }[];
+    topLosers: { name: string; changePct: number }[];
+    majorAlerts: { name: string; direction: string; changePct: number }[];
+  };
+}
+
+export async function fetchResearchReport(
+  period: ReportPeriod,
+  refresh = false,
+): Promise<ResearchReport> {
+  const res = await fetch(`/api/research-report?period=${period}${refresh ? "&refresh=true" : ""}`);
+  if (!res.ok) throw new Error(`Failed to generate research report: ${res.status}`);
   return res.json();
 }

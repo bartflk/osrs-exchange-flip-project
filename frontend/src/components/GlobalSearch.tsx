@@ -41,8 +41,8 @@ export function GlobalSearch({ onSelect }: { onSelect: (item: MarketItem) => voi
         type="text"
         placeholder="Look up any item…"
         value={query}
-        onChange={(e) => {
-          setQuery(e.target.value);
+        onInput={(e) => {
+          setQuery((e.target as HTMLInputElement).value);
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}

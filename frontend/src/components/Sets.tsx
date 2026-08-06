@@ -15,6 +15,16 @@ export function Sets() {
   const [flips, setFlips] = useState<BarrowsRepairResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  function toggleExpanded(setName: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(setName)) next.delete(setName);
+      else next.add(setName);
+      return next;
+    });
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -57,41 +67,140 @@ export function Sets() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
-            {profitableSets.map((s) => (
-              <div key={s.setName} className="glass rounded-xl p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-gray-100 font-medium">{s.setName}</span>
-                  <span
-                    className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border ${
-                      s.bestDirection === "combine"
-                        ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
-                        : "bg-sky-500/15 text-sky-400 border-sky-500/30"
-                    }`}
+            {profitableSets.map((s) => {
+              const isOpen = expanded.has(s.setName);
+              return (
+                <div key={s.setName} className="glass rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-gray-100 font-medium">{s.setName}</span>
+                    <span
+                      className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border ${
+                        s.bestDirection === "combine"
+                          ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                          : "bg-sky-500/15 text-sky-400 border-sky-500/30"
+                      }`}
+                    >
+                      {s.bestDirection === "combine" ? "Combine" : "Decombine"}
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-500 mb-2">{s.pieceNames.join(", ")}</div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                    <span className="text-gray-500">
+                      {s.bestDirection === "combine" ? "Pieces cost" : "Set cost"}
+                    </span>
+                    <span className="font-mono text-gray-200 text-right">
+                      {formatGp(s.bestDirection === "combine" ? s.pieceCost : s.setBuy)}
+                    </span>
+                    <span className="text-gray-500">
+                      {s.bestDirection === "combine" ? "Set sells for" : "Pieces sell for"}
+                    </span>
+                    <span className="font-mono text-gray-200 text-right">
+                      {formatGp(s.bestDirection === "combine" ? s.setSell : s.pieceRevenue)}
+                    </span>
+                    <span className="text-gray-500">
+                      {s.bestDirection === "combine" ? "Tax (set sale)" : "Tax (per-piece sales)"}
+                    </span>
+                    <span className="font-mono text-rose-400 text-right">
+                      -
+                      {formatGp(
+                        s.bestDirection === "combine"
+                          ? s.setTax
+                          : s.pieces.reduce((sum, p) => sum + p.tax, 0),
+                      )}
+                    </span>
+                    <span className="text-gray-500">Profit</span>
+                    <span className="font-mono text-emerald-400 text-right">
+                      {formatGp(s.bestProfit)}
+                    </span>
+                  </div>
+
+                  <button
+                    onClick={() => toggleExpanded(s.setName)}
+                    className="text-xs text-sky-400 hover:text-sky-300 mt-3"
                   >
-                    {s.bestDirection === "combine" ? "Combine" : "Decombine"}
-                  </span>
+                    {isOpen ? "Hide" : "Show"} per-item breakdown
+                  </button>
+
+                  {isOpen && (
+                    <div className="mt-2 pt-2 border-t border-white/10">
+                      <table className="w-full text-xs">
+                        <thead className="text-gray-500">
+                          <tr>
+                            <th className="text-left font-medium py-1">Item</th>
+                            <th className="text-right font-medium py-1">
+                              {s.bestDirection === "combine" ? "Buy" : "Sell"}
+                            </th>
+                            <th className="text-right font-medium py-1">Tax</th>
+                            <th className="text-right font-medium py-1">Net</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {s.bestDirection === "combine" ? (
+                            <>
+                              {s.pieces.map((p) => (
+                                <tr key={p.name} className="border-t border-white/5">
+                                  <td className="py-1 text-gray-300">{p.name}</td>
+                                  <td className="py-1 font-mono text-gray-300 text-right">
+                                    {formatGp(p.buy)}
+                                  </td>
+                                  <td className="py-1 font-mono text-gray-600 text-right">—</td>
+                                  <td className="py-1 font-mono text-rose-400 text-right">
+                                    -{formatGp(p.buy)}
+                                  </td>
+                                </tr>
+                              ))}
+                              <tr className="border-t border-white/5">
+                                <td className="py-1 text-gray-200 font-medium">
+                                  {s.setName} (sold)
+                                </td>
+                                <td className="py-1 font-mono text-gray-300 text-right">
+                                  {formatGp(s.setSell)}
+                                </td>
+                                <td className="py-1 font-mono text-rose-400 text-right">
+                                  -{formatGp(s.setTax)}
+                                </td>
+                                <td className="py-1 font-mono text-emerald-400 text-right">
+                                  +{formatGp(s.setSell - s.setTax)}
+                                </td>
+                              </tr>
+                            </>
+                          ) : (
+                            <>
+                              <tr>
+                                <td className="py-1 text-gray-200 font-medium">
+                                  {s.setName} (bought)
+                                </td>
+                                <td className="py-1 font-mono text-gray-300 text-right">
+                                  {formatGp(s.setBuy)}
+                                </td>
+                                <td className="py-1 font-mono text-gray-600 text-right">—</td>
+                                <td className="py-1 font-mono text-rose-400 text-right">
+                                  -{formatGp(s.setBuy)}
+                                </td>
+                              </tr>
+                              {s.pieces.map((p) => (
+                                <tr key={p.name} className="border-t border-white/5">
+                                  <td className="py-1 text-gray-300">{p.name}</td>
+                                  <td className="py-1 font-mono text-gray-300 text-right">
+                                    {formatGp(p.sell)}
+                                  </td>
+                                  <td className="py-1 font-mono text-rose-400 text-right">
+                                    -{formatGp(p.tax)}
+                                  </td>
+                                  <td className="py-1 font-mono text-emerald-400 text-right">
+                                    +{formatGp(p.sell - p.tax)}
+                                  </td>
+                                </tr>
+                              ))}
+                            </>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
-                <div className="text-xs text-gray-500 mb-2">{s.pieceNames.join(", ")}</div>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                  <span className="text-gray-500">
-                    {s.bestDirection === "combine" ? "Pieces cost" : "Set cost"}
-                  </span>
-                  <span className="font-mono text-gray-200 text-right">
-                    {formatGp(s.bestDirection === "combine" ? s.pieceCost : s.setBuy)}
-                  </span>
-                  <span className="text-gray-500">
-                    {s.bestDirection === "combine" ? "Set sells for" : "Pieces sell for"}
-                  </span>
-                  <span className="font-mono text-gray-200 text-right">
-                    {formatGp(s.bestDirection === "combine" ? s.setSell : s.pieceRevenue)}
-                  </span>
-                  <span className="text-gray-500">Profit</span>
-                  <span className="font-mono text-emerald-400 text-right">
-                    {formatGp(s.bestProfit)}
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

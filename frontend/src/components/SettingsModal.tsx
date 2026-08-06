@@ -2,7 +2,9 @@ import { useEffect, useState } from "preact/hooks";
 import type { ReactNode } from "preact/compat";
 import { type Settings, DEFAULT_SETTINGS } from "../settings";
 import type { BlockEntry } from "../blocklist";
-import { NumberInput } from "./ui";
+import { fetchLlmHealth, type LlmHealthResponse } from "../api";
+import { NumberInput, Input } from "./ui";
+import { PlayerPanel } from "./PlayerPanel";
 
 function iconUrl(icon: string): string {
   if (!icon) return "";
@@ -64,6 +66,28 @@ export function SettingsModal({
   const [permission, setPermission] = useState<NotificationPermission | "unsupported">(
     typeof Notification === "undefined" ? "unsupported" : Notification.permission,
   );
+  const [llmTest, setLlmTest] = useState<
+    { status: "idle" } | { status: "loading" } | { status: "done"; result: LlmHealthResponse }
+  >({ status: "idle" });
+
+  async function testLlm() {
+    setLlmTest({ status: "loading" });
+    try {
+      const result = await fetchLlmHealth();
+      setLlmTest({ status: "done", result });
+    } catch (err) {
+      setLlmTest({
+        status: "done",
+        result: {
+          ok: false,
+          baseURL: "",
+          model: "",
+          latencyMs: 0,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      });
+    }
+  }
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -172,12 +196,69 @@ export function SettingsModal({
 
         <div className="mt-5">
           <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">
+            Player (Wise Old Man)
+          </div>
+          <Row label="OSRS username" description="Used by the upcoming session planner (§14.13)">
+            <Input
+              type="text"
+              value={settings.womUsername}
+              onInput={(e) => set("womUsername", (e.target as HTMLInputElement).value)}
+              placeholder="e.g. Zezima"
+              className="w-40"
+            />
+          </Row>
+          <PlayerPanel username={settings.womUsername} />
+        </div>
+
+        <div className="mt-5">
+          <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">LLM / AI</div>
+          <Row
+            label="Test connection"
+            description="Pings the configured provider (llm.ts) with a one-word prompt"
+          >
+            <button
+              onClick={testLlm}
+              disabled={llmTest.status === "loading"}
+              className="px-2.5 py-1 rounded-lg text-xs bg-white/10 hover:bg-white/15 text-white transition-colors shrink-0 disabled:opacity-50"
+            >
+              {llmTest.status === "loading" ? "Testing…" : "Test LLM"}
+            </button>
+          </Row>
+          {llmTest.status === "done" && (
+            <div
+              className={`text-xs rounded-lg px-3 py-2 mt-1 ${
+                llmTest.result.ok
+                  ? "bg-emerald-500/10 text-emerald-300 border border-emerald-500/20"
+                  : "bg-rose-500/10 text-rose-300 border border-rose-500/20"
+              }`}
+            >
+              {llmTest.result.ok ? (
+                <>
+                  <div>
+                    ✓ {llmTest.result.model} responded in {llmTest.result.latencyMs}ms
+                  </div>
+                  <div className="text-gray-400 mt-0.5">
+                    {llmTest.result.baseURL} — reply: "{llmTest.result.reply}"
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>✗ Failed{llmTest.result.model ? ` (${llmTest.result.model})` : ""}</div>
+                  <div className="text-gray-400 mt-0.5">{llmTest.result.error}</div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-5">
+          <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">
             Blocklist ({Object.keys(blocklist).length})
           </div>
           {Object.keys(blocklist).length === 0 ? (
             <p className="text-xs text-gray-500 py-2">
-              No blocked items. Use the 🚫 button next to any item to keep it out of Buy Signals and
-              the Capital Allocator for good.
+              No blocked items. Use the block button next to any item to keep it out of Buy Signals
+              and the Capital Allocator for good.
             </p>
           ) : (
             <div className="max-h-40 overflow-auto flex flex-col gap-1 py-1">

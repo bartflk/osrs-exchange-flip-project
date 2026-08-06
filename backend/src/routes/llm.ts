@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { db } from "../db.js";
 import { scoreItem, type ItemRow } from "../signals.js";
-import { explainItem, type Explanation } from "../llm.js";
+import { explainItem, pingLlm, type Explanation } from "../llm.js";
 
 // Cache per item -- price data (and the case for/against a flip) doesn't meaningfully change
 // minute to minute, and there's no reason to pay for a fresh LLM call every time the same item's
@@ -10,6 +10,10 @@ const TTL_MS = 15 * 60 * 1000;
 const cache = new Map<number, { at: number; data: Explanation }>();
 
 export async function llmRoutes(app: FastifyInstance) {
+  app.get("/api/llm/health", async () => {
+    return pingLlm();
+  });
+
   app.get("/api/items/:id/explain", async (req, reply) => {
     const { id } = req.params as { id: string };
     const itemId = Number(id);

@@ -1,10 +1,27 @@
 import { fetchMapping, fetchLatest, fetchWindow } from "./wiki.js";
 import { upsertItems, upsertSnapshots } from "./db.js";
 import { recordSampleAndCheck, checkVolumeAnomalies } from "./alerts.js";
+import { refreshVolatility } from "./volatility.js";
 import { logRecommendationSnapshots, resolveRecommendationSnapshots } from "./scorekeeping.js";
 import { runDailyRollup } from "./rollup.js";
 import { fetchOfficialNews } from "./news.js";
 import { insertNewEvents } from "./warehouse.js";
+
+// DESIGN.md §14.22: the frontend's own "next refresh" countdown (§14.21) was a guess based on
+// its own independent fetch cycle, not the real thing -- the backend polls the Wiki API on its
+// own fixed 60s cycle that starts at server boot, with no fixed relationship to when any given
+// browser tab happens to be open. Tracking the actual next-scheduled-poll timestamp here lets
+// /api/status expose ground truth instead, so the frontend can show a countdown that's actually
+// synced to the real API cycle rather than reflecting its own polling schedule.
+let lastPricePollAt: number | null = null;
+let nextPricePollAt: number | null = null;
+
+export function getPricePollTiming(): {
+  lastPricePollAt: number | null;
+  nextPricePollAt: number | null;
+} {
+  return { lastPricePollAt, nextPricePollAt };
+}
 
 export async function pollMapping() {
   const mapping = await fetchMapping();
@@ -90,6 +107,17 @@ function runVolumeAnomalyCheck() {
   }
 }
 
+// DESIGN.md §8.1/§14.12: volatility score -- a batch aggregate over 24h of price_history,
+// same cadence reasoning as the volume anomaly check below (doesn't need 60s resolution).
+function runVolatilityRefresh() {
+  try {
+    const count = refreshVolatility();
+    console.log(`[volatility] refreshed for ${count} items`);
+  } catch (err) {
+    console.error("[volatility] error", err);
+  }
+}
+
 // DESIGN.md §10 item 1 / §11.3 item 8: recommendation scorekeeping -- log the current Buy Signals
 // top-N periodically, then resolve them 4h later against actual prices to build a real track record.
 function runScorekeeping() {
@@ -153,16 +181,25 @@ export function startPolling() {
     24 * 60 * 60 * 1000,
   );
 
-  // prices: poll every 60s
-  pollPrices().catch((err) => console.error("[poller] prices error", err));
-  setInterval(() => {
+  // prices: poll every 60s -- lastPricePollAt/nextPricePollAt are set right before each fire so
+  // /api/status always reflects the real schedule, not an assumption about it.
+  const PRICE_POLL_MS = 60 * 1000;
+  function firePricePoll() {
+    lastPricePollAt = Date.now();
+    nextPricePollAt = lastPricePollAt + PRICE_POLL_MS;
     pollPrices().catch((err) => console.error("[poller] prices error", err));
-  }, 60 * 1000);
+  }
+  firePricePoll();
+  setInterval(firePricePoll, PRICE_POLL_MS);
 
   // volume anomaly detection: a heavier aggregate query over 24h of price_history, doesn't
   // need 60s resolution -- runs every 10 minutes instead (DESIGN.md §11.3 item 6).
   runVolumeAnomalyCheck();
   setInterval(runVolumeAnomalyCheck, 10 * 60 * 1000);
+
+  // volatility score: same cadence/reasoning as the volume anomaly check above.
+  runVolatilityRefresh();
+  setInterval(runVolatilityRefresh, 10 * 60 * 1000);
 
   // recommendation scorekeeping: log + resolve on a 30-minute cadence -- doesn't need to be
   // any tighter than that given the 4h resolution horizon (DESIGN.md §10 item 1).
