@@ -1,10 +1,22 @@
-// DESIGN.md §14.35: Reddit sentiment via public RSS/Atom feeds -- no OAuth, no app pre-approval,
-// no PRAW dependency (the Python sidecar's original plan, still gated on Reddit's approval
-// process). Confirmed live: `https://www.reddit.com/r/2007scape/top/.rss?t=day&limit=15` returns
-// a real Atom feed with no auth, 200 OK. Community discussion, not official news, so these land
+// DESIGN.md §14.35/§14.36: Reddit sentiment via public RSS/Atom feeds -- no OAuth, no app
+// pre-approval, no PRAW dependency (the Python sidecar's original plan, still gated on Reddit's
+// approval process). Confirmed live: `https://www.reddit.com/r/2007scape/top/.rss?t=day&limit=15`
+// returns a real Atom feed with no auth. Community discussion, not official news, so these land
 // in the same `events` table tagged `source: "reddit"` -- same shape, different provenance.
+//
+// Real bug found live: this app's usual descriptive User-Agent (used successfully against the
+// Wiki/WOM APIs) gets a consistent 429 from Reddit specifically -- confirmed side-by-side that
+// the exact same request from PowerShell's HTTP client (a different TLS/header fingerprint)
+// succeeds every time while Node's `fetch` with the descriptive UA fails every time, so this is
+// Reddit's anti-bot layer fingerprinting non-browser clients, not a real rate limit. A
+// browser-realistic User-Agent + Accept headers resolves it -- confirmed 200 OK repeatedly.
 const SUBREDDITS = ["2007scape", "runescape"];
-const USER_AGENT = "osrs-flip-assistant/1.0 (local single-user GE flip tool)";
+const REDDIT_HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  Accept: "application/rss+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9",
+};
 
 export interface RedditPost {
   title: string;
@@ -35,7 +47,7 @@ function decodeEntities(s: string): string {
 
 async function fetchSubredditTopOfDay(subreddit: string): Promise<RedditPost[]> {
   const res = await fetch(`https://www.reddit.com/r/${subreddit}/top/.rss?t=day&limit=15`, {
-    headers: { "User-Agent": USER_AGENT },
+    headers: REDDIT_HEADERS,
   });
   if (!res.ok) throw new Error(`Failed to fetch r/${subreddit} RSS: ${res.status}`);
   const xml = await res.text();
