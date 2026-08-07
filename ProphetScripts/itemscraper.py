@@ -1,18 +1,4 @@
 #!/usr/bin/env python3
-"""
-chaos_rune_562_no_buylimit.py
-
-Fetch Chaos rune (item id 562) data and write two CSVs:
- - chaos_rune_562_1year_daily.csv  -> daily data (last 365 days)
- - chaos_rune_562_lastweek_minute.csv -> minute-level data for last 7 days (resampled if necessary)
-
-Changes vs previous:
- - Removed buy_limit entirely (no column, no dependency).
- - potential_profit is computed as margin * daily_volume (may be negative).
- - ROI, margin, potential_profit, margin_x_volume are allowed to be negative.
- - Preserves all original fields where possible and stores raw JSON per row.
-"""
-
 import requests
 import pandas as pd
 import json
@@ -22,13 +8,13 @@ import sys
 from typing import Any, Dict, List, Optional
 
 # ---------- CONFIG ----------
-ITEM_ID = 562
+ITEM_ID = 12929
 HEADERS = {"User-Agent": "osrs-datascraper/1.0", "Accept": "application/json"}
 TIMESERIES_URL = "https://prices.runescape.wiki/api/v1/osrs/timeseries"
 LATEST_URL = "https://prices.runescape.wiki/api/v1/osrs/latest"
 
-OUT_DAILY = "chaos_rune_562_1year_daily.csv"
-OUT_MINUTE = "chaos_rune_562_lastweek_minute.csv"
+OUT_DAILY = f"chaos_rune_{ITEM_ID}_1year_daily.csv"
+OUT_MINUTE = f"chaos_rune_{ITEM_ID}_lastweek_minute.csv"
 
 REQUEST_TIMEOUT = 30
 RETRIES = 3
@@ -313,7 +299,7 @@ def build_minute_lastweek(snapshot_stats: Dict[str, Any]) -> pd.DataFrame:
 
     df = best_df.copy().dropna(subset=["ds"]).set_index("ds").sort_index()
     now = pd.Timestamp.now(tz="UTC")
-    start = now - pd.Timedelta(days=7)
+    start = now - pd.Timedelta(days=31)
     df_window = df[df.index >= start]
     if df_window.empty:
         earliest = df.index.min()
