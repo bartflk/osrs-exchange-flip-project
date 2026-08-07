@@ -1,9 +1,9 @@
 import type { FastifyInstance } from "fastify";
-import { getRecentEvents } from "../warehouse.js";
+import { getRecentEvents } from "../db.js";
 
 export async function newsRoutes(app: FastifyInstance) {
   app.get("/api/news", async () => {
-    const events = await getRecentEvents(50);
+    const events = getRecentEvents(50);
     return {
       events: events.map((e) => ({
         id: e.id,

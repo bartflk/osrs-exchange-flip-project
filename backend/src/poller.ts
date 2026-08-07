@@ -6,7 +6,7 @@ import { logRecommendationSnapshots, resolveRecommendationSnapshots } from "./sc
 import { runDailyRollup } from "./rollup.js";
 import { fetchOfficialNews } from "./news.js";
 import { fetchRedditPosts } from "./redditFeed.js";
-import { insertNewEvents } from "./warehouse.js";
+import { insertNewEvents, kvGet, kvSet } from "./db.js";
 
 // DESIGN.md §14.22: the frontend's own "next refresh" countdown (§14.21) was a guess based on
 // its own independent fetch cycle, not the real thing -- the backend polls the Wiki API on its
@@ -150,13 +150,27 @@ async function runRollup() {
   }
 }
 
+// DESIGN.md §14.37: `tsx watch` restarts the backend on every source edit, and each restart
+// re-runs the boot poll for every source. That's free against Jagex/the Wiki, but Reddit
+// aggressively rate-limits (and then 403s) a client that reconnects repeatedly -- during one
+// development session this alone was enough to get blocked for hours, which silently broke
+// ingestion. Persisting the last-poll timestamp (kv_cache, survives restarts) and skipping the
+// fetch if it's still fresh makes restarts free and caps real Reddit traffic at one request per
+// subreddit per interval, no matter how often the process reloads.
+async function shouldPoll(key: string, minIntervalMs: number): Promise<boolean> {
+  const last = kvGet(key);
+  if (last && Date.now() - Number(last.value) < minIntervalMs) return false;
+  kvSet(key, String(Date.now()));
+  return true;
+}
+
 // DESIGN.md §6.4: official OSRS news RSS -- updates release weekly (Wednesdays ~11:30 UTC), so a
-// daily poll picks up new ones same-day. Only the official-news source is wired up so far; Reddit
-// is gated on Reddit's app approval, and LLM item-linking isn't built yet.
+// daily poll picks up new ones same-day.
 async function runNewsPoll() {
+  if (!(await shouldPoll("lastPoll:officialNews", 12 * 60 * 60 * 1000))) return;
   try {
     const items = await fetchOfficialNews();
-    const inserted = await insertNewEvents(
+    const inserted = insertNewEvents(
       items.map((item) => ({
         event_date: new Date(item.pubDate).toISOString().slice(0, 10),
         title: item.title,
@@ -177,9 +191,10 @@ async function runNewsPoll() {
 // Polled hourly (community discussion moves faster than weekly patch notes, but top-of-day
 // rankings don't change meaningfully minute to minute).
 async function runRedditPoll() {
+  if (!(await shouldPoll("lastPoll:reddit", 55 * 60 * 1000))) return;
   try {
     const posts = await fetchRedditPosts();
-    const inserted = await insertNewEvents(
+    const inserted = insertNewEvents(
       posts.map((post) => ({
         event_date: new Date(post.updated).toISOString().slice(0, 10),
         title: post.title,

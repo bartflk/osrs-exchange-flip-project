@@ -2,6 +2,7 @@ import { getTrackRecord } from "./scorekeeping.js";
 import { computeTrend } from "./trends.js";
 import { getRecentAlerts } from "./alerts.js";
 import { generateDigest } from "./llm.js";
+import { kvGetFresh, kvSet } from "./db.js";
 
 // DESIGN.md §10 item 34: daily/weekly digest, now buildable without new data collection --
 // Track Record (§10 item 1), trend leaderboards (§10 item 9), and tiered alerts (§10 item 10)
@@ -24,16 +25,22 @@ export interface ResearchReport {
 // Cached per period -- the underlying data (track record, trend window) doesn't meaningfully
 // change minute to minute, and there's no reason to pay for a fresh LLM call every time the tab
 // is reopened. Daily refreshes more often than weekly, matching how fast each period's data moves.
+//
+// DESIGN.md §14.37: persisted to SQLite (kv_cache) rather than an in-memory Map. The Map was
+// wiped by every `tsx watch` restart, so in practice a reopened tab almost always paid for a
+// fresh 10-30s local-LLM generation -- the cache effectively never hit during development.
+// TTLs are also longer now: a digest is a periodic summary, not a live readout, and "Regenerate"
+// is always there for an on-demand refresh.
 const CACHE_TTL_MS: Record<ReportPeriod, number> = {
-  daily: 15 * 60 * 1000,
-  weekly: 60 * 60 * 1000,
+  daily: 6 * 60 * 60 * 1000,
+  weekly: 24 * 60 * 60 * 1000,
 };
-const cache = new Map<ReportPeriod, { at: number; report: ResearchReport }>();
 
 export async function getResearchReport(period: ReportPeriod, force = false): Promise<ResearchReport> {
-  const cached = cache.get(period);
-  if (!force && cached && Date.now() - cached.at < CACHE_TTL_MS[period]) {
-    return cached.report;
+  const cacheKey = `researchReport:${period}`;
+  if (!force) {
+    const cached = kvGetFresh<ResearchReport>(cacheKey, CACHE_TTL_MS[period]);
+    if (cached) return cached;
   }
 
   const window = period === "daily" ? "24h" : "7d";
@@ -106,6 +113,6 @@ export async function getResearchReport(period: ReportPeriod, force = false): Pr
   const narrative = await generateDigest(period, sections);
 
   const report: ResearchReport = { period, generatedAt: Date.now(), narrative, data };
-  cache.set(period, { at: Date.now(), report });
+  kvSet(cacheKey, JSON.stringify(report));
   return report;
 }

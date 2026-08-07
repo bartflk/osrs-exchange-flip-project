@@ -89,6 +89,35 @@ CREATE TABLE IF NOT EXISTS recommendation_snapshots (
 );
 CREATE INDEX IF NOT EXISTS idx_recommendation_snapshots_pending ON recommendation_snapshots(resolved_at, resolve_at);
 CREATE INDEX IF NOT EXISTS idx_recommendation_snapshots_item ON recommendation_snapshots(item_id, resolved_at);
+
+-- DESIGN.md §14.37: events (official patch notes + Reddit posts) live HERE, not in the DuckDB
+-- warehouse where they originally sat. The warehouse is explicitly a disposable, self-rebuilding
+-- analytical cache (warehouse.ts deletes and recreates it on any WAL replay failure) on the
+-- premise that everything in it re-derives from a source -- true for price rollups, and true for
+-- official news (Jagex's RSS is an archive that always carries the last ~15 items), but NOT true
+-- for Reddit: top/.rss?t=day is a rolling window, so once a day rolls over those posts are gone
+-- from the feed forever. A wiped warehouse silently and permanently lost them. Events are a
+-- source of truth once fetched, so they belong in the durable operational DB.
+CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_date TEXT NOT NULL,
+  title TEXT NOT NULL,
+  summary TEXT,
+  source TEXT NOT NULL,
+  link TEXT,
+  tags TEXT,
+  UNIQUE (source, title, event_date)
+);
+CREATE INDEX IF NOT EXISTS idx_events_date ON events(event_date DESC);
+
+-- Small durable key/value store for things that were previously in-memory and therefore lost on
+-- every "tsx watch" restart: external-poll timestamps (so a restart doesn't immediately re-hit a
+-- rate-limited third party) and cached LLM output (so a restart doesn't force a regeneration).
+CREATE TABLE IF NOT EXISTS kv_cache (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 `);
 
 const upsertItemStmt = db.prepare(`
@@ -320,4 +349,73 @@ const recentHistoryStmt = db.prepare(`
 export function getRecentHistoryForItem(itemId: number, limit: number): HistoryTick[] {
   const rows = recentHistoryStmt.all(itemId, limit) as unknown as HistoryTick[];
   return rows.reverse();
+}
+
+// DESIGN.md §14.37: events storage, moved here from the disposable DuckDB warehouse (see the
+// `events` table comment in the schema above for why). Dedup is enforced by the table's UNIQUE
+// constraint via INSERT OR IGNORE rather than a read-then-filter pass -- the previous
+// implementation hardcoded `WHERE source = 'official'` when building its "already seen" set, so
+// Reddit posts were compared against official-news titles only and re-inserted on every poll.
+export interface EventRow {
+  event_date: string;
+  title: string;
+  summary: string;
+  source: string;
+  link: string | null;
+  tags: string | null;
+}
+
+export interface EventRecord extends EventRow {
+  id: number;
+}
+
+const insertEventStmt = db.prepare(`
+  INSERT OR IGNORE INTO events (event_date, title, summary, source, link, tags)
+  VALUES (?, ?, ?, ?, ?, ?)
+`);
+
+export function insertNewEvents(rows: EventRow[]): number {
+  let inserted = 0;
+  for (const r of rows) {
+    const result = insertEventStmt.run(r.event_date, r.title, r.summary, r.source, r.link, r.tags);
+    inserted += Number(result.changes);
+  }
+  return inserted;
+}
+
+const recentEventsStmt = db.prepare(`
+  SELECT id, event_date, title, summary, source, link, tags
+  FROM events ORDER BY event_date DESC, id DESC LIMIT ?
+`);
+
+export function getRecentEvents(limit: number): EventRecord[] {
+  return recentEventsStmt.all(limit) as unknown as EventRecord[];
+}
+
+// Durable key/value cache -- survives `tsx watch` restarts, unlike the in-memory Maps these
+// replace. Used for external-poll throttling and cached LLM output.
+const kvGetStmt = db.prepare(`SELECT value, updated_at FROM kv_cache WHERE key = ?`);
+const kvSetStmt = db.prepare(`
+  INSERT INTO kv_cache (key, value, updated_at) VALUES (?, ?, ?)
+  ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+`);
+
+export function kvGet(key: string): { value: string; updatedAt: number } | null {
+  const row = kvGetStmt.get(key) as { value: string; updated_at: number } | undefined;
+  return row ? { value: row.value, updatedAt: row.updated_at } : null;
+}
+
+export function kvSet(key: string, value: string): void {
+  kvSetStmt.run(key, value, Date.now());
+}
+
+// Convenience wrapper: returns the parsed value only if it was written within `maxAgeMs`.
+export function kvGetFresh<T>(key: string, maxAgeMs: number): T | null {
+  const row = kvGet(key);
+  if (!row || Date.now() - row.updatedAt > maxAgeMs) return null;
+  try {
+    return JSON.parse(row.value) as T;
+  } catch {
+    return null;
+  }
 }

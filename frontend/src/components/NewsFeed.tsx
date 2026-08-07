@@ -10,11 +10,10 @@ function formatDate(dateStr: string): string {
   });
 }
 
-// DESIGN.md §6.4: Update News & Sentiment tab, official-news slice only for now. Reddit
-// sentiment and Claude's item-linking ({item_name, claimed_impact, confidence}) aren't built
-// yet -- Reddit needs a 2-4 week app pre-approval, Claude is blocked on Anthropic API billing
-// (§14.8). This is the skeleton: fetch, store, display, in the shape the other two sources will
-// slot into once they exist (chronological feed, source-tagged, newest first).
+// DESIGN.md §6.4/§14.35: official patch notes + Reddit top-of-day posts (r/2007scape,
+// r/runescape), both landing in the same events table, source-tagged. LLM item-linking
+// ({item_name, claimed_impact, confidence}) isn't built yet -- this is titles/links/dates only,
+// chronological, newest first.
 export function NewsFeed() {
   const [events, setEvents] = useState<NewsEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,12 +43,13 @@ export function NewsFeed() {
     <div>
       <div className="glass rounded-xl p-4 mb-4">
         <p className="text-sm text-gray-300">
-          Official OSRS patch notes, pulled daily from the game's own RSS feed.
+          Official OSRS patch notes (daily) and top-of-day posts from r/2007scape and r/runescape
+          (hourly) — titles, links, and post dates only, no comments or per-item impact tagging yet.
         </p>
         <p className="text-xs text-gray-500 mt-1">
-          Reddit sentiment and per-item impact tagging aren't wired in yet — Reddit needs a 2-4 week
-          app approval, item-linking needs Claude (currently blocked on Anthropic API billing). See
-          DESIGN.md §6.4 for the full plan.
+          These same events show as markers on item price charts, so you can eyeball whether a
+          patch or a busy Reddit day lined up with a price move. See DESIGN.md §14.35 for the
+          Reddit ingestion details.
         </p>
       </div>
 
@@ -81,8 +81,14 @@ export function NewsFeed() {
                         {e.tags}
                       </span>
                     )}
-                    <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-white/5 text-gray-400 border border-white/10">
-                      Official
+                    <span
+                      className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border ${
+                        e.source === "reddit"
+                          ? "bg-orange-500/15 text-orange-400 border-orange-500/30"
+                          : "bg-white/5 text-gray-400 border-white/10"
+                      }`}
+                    >
+                      {e.source === "reddit" ? "Reddit" : "Official"}
                     </span>
                   </div>
                   <p className="text-sm text-gray-400 mt-1">{e.summary}</p>
