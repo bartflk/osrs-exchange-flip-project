@@ -132,84 +132,11 @@ export function Portfolio({
         <SessionPanel />
       </div>
 
-      <div className="glass rounded-xl p-4 mb-4">
-        <h3 className="text-sm font-medium text-gray-200 mb-3">
-          GE slots{" "}
-          <span className="text-xs text-gray-500 font-normal">
-            live from RuneLite, refreshes every 20s
-          </span>
-        </h3>
-        {!portfolio?.slots.length ? (
-          <EmptyState title="No open offers" hint="Nothing is currently on the Grand Exchange." />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-[11px] uppercase tracking-wide text-gray-500 text-left">
-                  <th className="pb-2 pr-3 font-medium">Slot</th>
-                  <th className="pb-2 pr-3 font-medium">Item</th>
-                  <th className="pb-2 pr-3 font-medium text-right">Progress</th>
-                  <th className="pb-2 pr-3 font-medium text-right">Your price</th>
-                  <th className="pb-2 pr-3 font-medium text-right">Market</th>
-                  <th className="pb-2 font-medium text-right">Committed</th>
-                </tr>
-              </thead>
-              <tbody>
-                {portfolio.slots.map((s) => {
-                  const pct = s.totalQuantity ? (s.quantitySold / s.totalQuantity) * 100 : 0;
-                  return (
-                    <tr
-                      key={s.slot}
-                      onClick={() => openItem(s.itemId)}
-                      className="border-t border-white/5 hover:bg-white/5 cursor-pointer"
-                    >
-                      <td className="py-2 pr-3 text-gray-500 font-mono text-xs">{s.slot}</td>
-                      <td className="py-2 pr-3">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded ${
-                              s.type === "buy"
-                                ? "bg-rose-500/15 text-rose-400 border border-rose-500/30"
-                                : "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-                            }`}
-                          >
-                            {s.type}
-                          </span>
-                          {s.icon && (
-                            <img src={iconUrl(s.icon)} alt="" className="w-4 h-4 object-contain" />
-                          )}
-                          <span className="text-gray-200">{s.name}</span>
-                        </div>
-                      </td>
-                      <td className="py-2 pr-3 text-right">
-                        <div className="text-gray-300 font-mono text-xs">
-                          {s.quantitySold.toLocaleString()}/{s.totalQuantity.toLocaleString()}
-                        </div>
-                        <div className="h-1 mt-1 bg-white/10 rounded-full overflow-hidden">
-                          <div
-                            className={s.type === "buy" ? "h-full bg-rose-400/60" : "h-full bg-emerald-400/60"}
-                            style={{ width: `${Math.min(100, pct)}%` }}
-                          />
-                        </div>
-                      </td>
-                      <td className="py-2 pr-3 text-right font-mono text-gray-300">
-                        {formatGpFull(s.price)}
-                      </td>
-                      <td className="py-2 pr-3 text-right font-mono text-gray-500">
-                        {s.marketPrice != null ? formatGpFull(s.marketPrice) : "—"}
-                      </td>
-                      <td className="py-2 text-right font-mono text-gray-400">
-                        {s.committedGp ? formatGp(s.committedGp) : "—"}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
+      {/* DESIGN.md §14.42: the GE slots table that used to sit here is gone. It duplicated the
+          live slot board on the Signals tab, and the whole point of that board is to be the ONE
+          place you watch while trading ("i want this interface in 1 spot so i can actually
+          monitor and not switch between tabs constantly"). Portfolio keeps what the board isn't:
+          what you're holding, net worth over time, and session performance. */}
       <div className="glass rounded-xl p-4">
         <h3 className="text-sm font-medium text-gray-200 mb-3">
           Holdings{" "}

@@ -1,5 +1,4 @@
 import type { MarketItem } from "./api";
-import type { Offer } from "./offers";
 
 // DESIGN.md §10 item 17 / §14.16: reprice/cancel guidance for tracked GE offers. Deterministic,
 // rule-based, explainable from the same buy/sell prices already shown elsewhere in the app --
@@ -34,8 +33,16 @@ export const ACTION_TONE: Record<RepriceAction, string> = {
 // this was pulled out into a shared, reusable, and more actionable function.
 const SLIGHT_GAP = 0.02; // 2%
 
+// Minimal shape the rules actually need. Widened from the old `Offer` parameter (DESIGN.md
+// §14.42) so live GE slots read from RuneLite can be judged by the exact same rules as
+// hand-entered offers -- the alternative was a second copy of this logic that would drift.
+export interface PricedOffer {
+  type: "buy" | "sell";
+  price: number;
+}
+
 export function computeRepriceGuidance(
-  offer: Offer,
+  offer: PricedOffer,
   market: MarketItem | undefined,
 ): RepriceGuidance {
   if (!market) {

@@ -11,9 +11,9 @@ import { allocateCapital } from "../capitalAllocator";
 import { NumberInput, Chip, Button } from "./ui";
 import { type Offer, loadOffers, saveOffers } from "../offers";
 import { type Fill, loadFills, saveFills } from "../fills";
-import { computeRepriceGuidance, ACTION_LABEL, ACTION_TONE } from "../repriceGuidance";
-import { computeTradeHealth, TIER_TONE } from "../tradeHealth";
 import { GeOffersPanel } from "./GeOffersPanel";
+import { GeSlotBoard } from "./GeSlotBoard";
+import { buildSlotViews, countNeedsAction } from "../geSlots";
 import { diffAndSnapshotSignals, type SignalsDiff } from "../signalsDiff";
 
 function iconUrl(icon: string): string {
@@ -127,6 +127,13 @@ export function BuySignals({
     return names;
   }, [offers, portfolio]);
 
+  // Computed here as well as inside the board so the panel header can show the count without the
+  // board having to call back up. Cheap: a pure map over at most 8 slots.
+  const needsAction = useMemo(
+    () => countNeedsAction(buildSlotViews(portfolio?.slots ?? [], [], items)),
+    [portfolio, items],
+  );
+
   // Units already bought per item inside the current 4h GE limit window.
   const remainingLimits = useMemo(() => {
     const map = new Map<number, number>();
@@ -136,91 +143,11 @@ export function BuySignals({
     return map;
   }, [portfolio]);
 
-  function trackSlot(itemName: string, price: number, qty: number) {
-    const newOffer: Offer = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      type: "buy",
-      itemName,
-      price,
-      qty,
-      trackedAt: Math.floor(Date.now() / 1000),
-    };
-    setOffers([...offers, newOffer]);
-  }
-
-  // Marking a buy filled doesn't just clear the slot -- it hands off to a tracked sell offer
-  // for the same item/qty (seeded at the current recommended sell price, still editable/
-  // acceptable like any tracked price) so the round trip stays visible in the same grid until
-  // you actually sell. Marking a sell filled closes the loop and frees the slot.
-  function markFilled(offer: Offer, market: MarketItem | undefined) {
-    const fill: Fill = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      type: offer.type,
-      itemName: offer.itemName,
-      price: offer.price,
-      qty: offer.qty,
-      filledAt: Math.floor(Date.now() / 1000),
-    };
-    setFills([fill, ...fills]);
-    if (offer.type === "buy") {
-      const sellOffer: Offer = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        type: "sell",
-        itemName: offer.itemName,
-        price: market?.high ?? offer.price,
-        qty: offer.qty,
-        trackedAt: Math.floor(Date.now() / 1000),
-      };
-      setOffers([...offers.filter((o) => o.id !== offer.id), sellOffer]);
-    } else {
-      setOffers(offers.filter((o) => o.id !== offer.id));
-    }
-  }
-
-  function removeOffer(id: string) {
-    setOffers(offers.filter((o) => o.id !== id));
-  }
-
-  // "Try something else more profitable" -- when a tracked buy's guidance says cancel (the
-  // underlying margin went flat/negative, see repriceGuidance.ts), swap it for the current
-  // top-scoring item you're not already tracking, sized to roughly the same capital the bad
-  // offer was tying up. A single combined setOffers call (not remove-then-track) so the swap
-  // can't be lost to a stale closure over `offers` between two separate state updates.
-  function switchToAlternative(offerId: string, alt: MarketItem, qty: number) {
-    const newOffer: Offer = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      type: "buy",
-      itemName: alt.name,
-      price: alt.low ?? 0,
-      qty,
-      trackedAt: Math.floor(Date.now() / 1000),
-    };
-    setOffers([...offers.filter((o) => o.id !== offerId), newOffer]);
-  }
-
-  function applyReprice(offerId: string, price: number) {
-    setOffers(offers.map((o) => (o.id === offerId ? { ...o, price } : o)));
-  }
-
-  // Manual progress control -- the screenshot flow reads filledQty off the GE's own progress
-  // bar when it can, but that requires re-uploading a screenshot every time. This lets you just
-  // drag/type an update directly, same as accepting/editing a price below.
-  function applyFilledQty(offerId: string, filledQty: number) {
-    setOffers(
-      offers.map((o) => (o.id === offerId ? { ...o, filledQty: Math.max(0, Math.min(o.qty, filledQty)) } : o)),
-    );
-  }
-
-  // Accept-the-real-price flow: what you actually managed to place on the GE often isn't the
-  // exact suggested figure (rounding, a few ticks of market movement between "track" and
-  // clicking confirm in-game) -- both a fresh "Track this buy" and any already-tracked offer's
-  // price need to be hand-editable, not just auto-filled from the recommendation.
-  const [editingOfferId, setEditingOfferId] = useState<string | null>(null);
-  const [editPriceDraft, setEditPriceDraft] = useState(0);
-  const [editingFilledId, setEditingFilledId] = useState<string | null>(null);
-  const [editFilledDraft, setEditFilledDraft] = useState(0);
-  const [pendingTrackItemId, setPendingTrackItemId] = useState<number | null>(null);
-  const [pendingTrackPrice, setPendingTrackPrice] = useState(0);
+  // DESIGN.md §14.42: the manual-offer editing helpers (trackSlot / markFilled / removeOffer /
+  // switchToAlternative / applyReprice / applyFilledQty and their editing state) used to live
+  // here to drive the hand-typed slot cards. Those cards are gone -- GeSlotBoard renders the real
+  // GE slots from RuneLite -- so every one of them was unreachable. Removed rather than left
+  // dangling; the manual paste path still works via GeOffersPanel below, which owns its own state.
 
   // Screenshot -> vision model -> offers, moved here (was previously local to GeOffersPanel) so
   // paste/upload can cover the whole slot grid, not just a side panel -- per direct request,
@@ -416,30 +343,6 @@ export function BuySignals({
   // DESIGN.md §10 item 17 / §14.16: reprice/cancel guidance, re-evaluated fresh every time
   // `items` updates (i.e. every poll cycle) since computeRepriceGuidance is a pure function of
   // the offer + current market row -- no separate "re-check" trigger needed.
-  const offerRows = useMemo(() => {
-    // Ranked once per items update, reused for every offer that needs a replacement suggestion --
-    // same score everything else in the app ranks by, just filtered to what you're not already
-    // tracking (no point "switching" into an item that'd just occupy another slot).
-    const rankedCandidates = [...items]
-      .filter((i) => (i.net_margin ?? 0) > 0 && i.low && i.liquidity >= 20 && !trackedNames.has(i.name.toLowerCase()))
-      .sort((a, b) => b.score - a.score);
-
-    return offers.map((offer) => {
-      const market = items.find((i) => i.name.toLowerCase() === offer.itemName.toLowerCase());
-      const guidance = computeRepriceGuidance(offer, market);
-      const alternative =
-        guidance.action === "cancel" && offer.type === "buy"
-          ? rankedCandidates.find((i) => i.name.toLowerCase() !== offer.itemName.toLowerCase())
-          : undefined;
-      return {
-        offer,
-        market,
-        guidance,
-        health: computeTradeHealth(offer, market),
-        alternative,
-      };
-    });
-  }, [offers, items, trackedNames]);
 
   const minLiquidity = TIMEFRAMES.find((t) => t.key === timeframe)?.minLiquidity ?? 0;
 
@@ -553,14 +456,21 @@ export function BuySignals({
             <h3 className="text-sm font-medium text-gray-200">
               {/* Says what it's actually planning, rather than implying all 8 slots are yours to
                   fill when the GE says otherwise. */}
-              Capital allocator —{" "}
+              Grand Exchange —{" "}
               {suggestionSlots > 0
-                ? `fill your ${suggestionSlots} free GE slot${suggestionSlots === 1 ? "" : "s"}`
-                : "no free GE slots"}
+                ? `${suggestionSlots} free slot${suggestionSlots === 1 ? "" : "s"} to fill`
+                : "all slots in use"}
               {portfolio && (
                 <span className="ml-2 text-xs text-gray-500 font-normal">
-                  {occupiedSlots}/{numSlots} in use
+                  live · {occupiedSlots}/{numSlots} in use
                   {committedGp > 0 ? ` · ${formatGp(committedGp)} committed` : ""}
+                </span>
+              )}
+              {/* The whole point of the board: how many boxes are asking for a decision, visible
+                  without reading all eight. */}
+              {needsAction > 0 && (
+                <span className="ml-2 text-xs font-semibold text-amber-400">
+                  {needsAction} needs action
                 </span>
               )}
             </h3>
@@ -660,332 +570,18 @@ export function BuySignals({
             </Button>
           </div>
 
-          {offerRows.length === 0 && allocation.assignments.length === 0 ? (
-            // Distinguish the three ways this ends up empty -- "every slot is busy" and "you're
-            // out of gp" are very different situations and used to render identically.
-            <p className="text-xs text-gray-500">
-              {suggestionSlots === 0
-                ? `All ${numSlots} GE slots are in use — nothing to plan until one frees up.`
-                : availableBankroll <= 0
-                  ? `Bankroll fully committed (${formatGp(committedGp)} tied up in open buy offers).`
-                  : "No affordable slots at the current bankroll/allocation."}
-            </p>
-          ) : (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              {/* A tracked/open offer is a real GE slot already in use -- show it as one of the
-                  slot cards (not a separate side list) so the grid reflects your actual 8 slots,
-                  not just what the allocator would suggest from scratch. */}
-              {offerRows.map(({ offer, market, guidance, health, alternative }, idx) => {
-                const isWarning = guidance.action !== "hold" && guidance.action !== "unknown";
-                const isEditing = editingOfferId === offer.id;
-                return (
-                  <div
-                    key={offer.id}
-                    onClick={() => !isEditing && market && onSelectItem(market)}
-                    className={`text-left rounded-lg border p-3 transition-colors bg-white/[0.03] ${
-                      market && !isEditing ? "cursor-pointer hover:bg-white/[0.06]" : ""
-                    } ${
-                      guidance.action === "cancel"
-                        ? "border-rose-500/40"
-                        : isWarning
-                          ? "border-amber-500/40"
-                          : "border-white/10"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] uppercase tracking-wide text-gray-500">
-                        Slot {idx + 1}
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        {health && (
-                          <span
-                            className={`text-[10px] font-mono font-semibold ${TIER_TONE[health.tier]}`}
-                            title={
-                              health.reasons.length > 0
-                                ? `Trade health ${health.score}/100 — ${health.reasons.join("; ")}`
-                                : `Trade health ${health.score}/100 — no concerns`
-                            }
-                          >
-                            {health.score}
-                          </span>
-                        )}
-                        <span
-                          className={`text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded ${
-                            offer.type === "buy"
-                              ? "bg-rose-500/15 text-rose-400 border border-rose-500/30"
-                              : "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-                          }`}
-                        >
-                          {offer.type}
-                        </span>
-                      </div>
-                    </div>
-                    {health && health.reasons.length > 0 && (
-                      <div className="text-[10px] text-gray-500 mb-1 truncate" title={health.reasons.join("; ")}>
-                        {health.reasons[0]}
-                      </div>
-                    )}
-                    <div className="flex items-center gap-2 min-w-0">
-                      {market?.icon && (
-                        <img src={iconUrl(market.icon)} alt="" className="w-5 h-5 object-contain shrink-0" />
-                      )}
-                      <span className="text-sm text-gray-100 truncate">{offer.itemName}</span>
-                    </div>
-                    <div className="mt-2 flex items-center justify-between text-xs">
-                      <span className="text-gray-500">
-                        qty <span className="text-gray-200 font-mono">{offer.qty.toLocaleString()}</span>
-                      </span>
-                      {isEditing ? (
-                        <div
-                          className="flex items-center gap-1"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <NumberInput
-                            value={editPriceDraft}
-                            onChange={setEditPriceDraft}
-                            className="w-24 !py-0.5 !px-1.5 text-xs"
-                          />
-                          <button
-                            onClick={() => {
-                              applyReprice(offer.id, editPriceDraft);
-                              setEditingOfferId(null);
-                            }}
-                            className="text-emerald-400 hover:text-emerald-300 text-xs px-1"
-                            title="Save your actual order price"
-                          >
-                            ✓
-                          </button>
-                          <button
-                            onClick={() => setEditingOfferId(null)}
-                            className="text-gray-500 hover:text-rose-400 text-xs px-1"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingOfferId(offer.id);
-                            setEditPriceDraft(offer.price);
-                          }}
-                          className="text-gray-300 font-mono hover:text-white underline decoration-dotted decoration-gray-600 underline-offset-2"
-                          title="Click to enter the exact price you actually placed"
-                        >
-                          {formatGpFull(offer.price)}
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Fill progress: how many of qty have actually gone through. Read off the
-                        screenshot's progress bar when available (GeOffersPanel merges it in on
-                        re-upload), or set by hand here -- the GE's own partial-fill state isn't
-                        otherwise visible to this app at all. */}
-                    <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
-                      {editingFilledId === offer.id ? (
-                        <div className="flex items-center gap-1">
-                          <NumberInput
-                            value={editFilledDraft}
-                            onChange={setEditFilledDraft}
-                            className="w-16 !py-0.5 !px-1.5 text-xs"
-                          />
-                          <span className="text-[10px] text-gray-500">/ {offer.qty.toLocaleString()}</span>
-                          <button
-                            onClick={() => {
-                              applyFilledQty(offer.id, editFilledDraft);
-                              setEditingFilledId(null);
-                            }}
-                            className="text-emerald-400 hover:text-emerald-300 text-xs px-1"
-                            title="Save fill progress"
-                          >
-                            ✓
-                          </button>
-                          <button
-                            onClick={() => setEditingFilledId(null)}
-                            className="text-gray-500 hover:text-rose-400 text-xs px-1"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            setEditingFilledId(offer.id);
-                            setEditFilledDraft(offer.filledQty ?? 0);
-                          }}
-                          className="w-full text-left group"
-                          title="Click to update how much of this offer has actually filled"
-                        >
-                          <div className="flex items-center justify-between mb-0.5">
-                            <span className="text-[10px] text-gray-500 group-hover:text-gray-300">
-                              filled {(offer.filledQty ?? 0).toLocaleString()} / {offer.qty.toLocaleString()}
-                            </span>
-                            <span className="text-[10px] text-gray-600 group-hover:text-gray-400">
-                              {Math.round(((offer.filledQty ?? 0) / offer.qty) * 100)}%
-                            </span>
-                          </div>
-                          <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${offer.type === "buy" ? "bg-rose-400/70" : "bg-emerald-400/70"}`}
-                              style={{ width: `${Math.min(100, ((offer.filledQty ?? 0) / offer.qty) * 100)}%` }}
-                            />
-                          </div>
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="mt-1.5 text-[11px]">
-                      <span className={`font-medium ${ACTION_TONE[guidance.action]}`}>
-                        {isWarning ? "⚠ " : ""}
-                        {ACTION_LABEL[guidance.action]}
-                      </span>{" "}
-                      <span className="text-gray-500">{guidance.reason}</span>
-                    </div>
-                    {alternative && (
-                      <div
-                        className="mt-1.5 rounded-md bg-sky-500/10 border border-sky-500/20 px-2 py-1.5 flex items-center justify-between gap-2"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="min-w-0 flex items-center gap-1.5">
-                          {alternative.icon && (
-                            <img
-                              src={iconUrl(alternative.icon)}
-                              alt=""
-                              className="w-4 h-4 object-contain shrink-0"
-                            />
-                          )}
-                          <span className="text-[11px] text-gray-300 truncate">
-                            Try <span className="text-sky-300">{alternative.name}</span> instead —{" "}
-                            {formatPct(alternative.roi_pct)} ROI
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => {
-                            const qty = Math.max(
-                              1,
-                              Math.min(
-                                alternative.buy_limit ?? Infinity,
-                                Math.floor((offer.price * offer.qty) / (alternative.low ?? 1)),
-                              ),
-                            );
-                            switchToAlternative(offer.id, alternative, qty);
-                          }}
-                          className="text-[11px] text-sky-400 hover:text-sky-300 shrink-0"
-                          title="Remove this offer and track the alternative instead, sized to roughly the same capital"
-                        >
-                          Switch
-                        </button>
-                      </div>
-                    )}
-                    <div className="mt-2 flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
-                      {guidance.suggestedPrice != null && (
-                        <button
-                          onClick={() => applyReprice(offer.id, guidance.suggestedPrice!)}
-                          className="text-[11px] text-sky-400 hover:text-sky-300"
-                        >
-                          Accept {formatGpFull(guidance.suggestedPrice)}
-                        </button>
-                      )}
-                      {guidance.action !== "cancel" && (
-                        <button
-                          onClick={() => markFilled(offer, market)}
-                          className="text-[11px] text-emerald-400 hover:text-emerald-300"
-                        >
-                          {offer.type === "buy" ? "I bought it" : "I sold it"}
-                        </button>
-                      )}
-                      <button
-                        onClick={() => removeOffer(offer.id)}
-                        className={
-                          guidance.action === "cancel"
-                            ? "text-[11px] font-medium text-rose-400 hover:text-rose-300 ml-auto"
-                            : "text-[11px] text-gray-500 hover:text-rose-400 ml-auto"
-                        }
-                      >
-                        {guidance.action === "cancel" ? "⚠ Remove" : "Remove"}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {allocation.assignments.map((a) => (
-                <div
-                  key={a.slot}
-                  onClick={() => onSelectItem(a.item)}
-                  className="text-left rounded-lg border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] p-3 transition-colors cursor-pointer"
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] uppercase tracking-wide text-gray-500">
-                      Slot {offerRows.length + a.slot}
-                    </span>
-                    <span className="text-[10px] font-mono text-gray-500">
-                      {formatPct(a.item.roi_pct)}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 min-w-0">
-                    {a.item.icon && (
-                      <img
-                        src={`https://oldschool.runescape.wiki/images/${encodeURIComponent(a.item.icon.replace(/ /g, "_"))}`}
-                        alt=""
-                        className="w-5 h-5 object-contain shrink-0"
-                      />
-                    )}
-                    <span className="text-sm text-gray-100 truncate">{a.item.name}</span>
-                  </div>
-                  <div className="mt-2 flex items-center justify-between text-xs">
-                    <span className="text-gray-500">
-                      qty{" "}
-                      <span className="text-gray-200 font-mono">{a.qty.toLocaleString()}</span>
-                    </span>
-                    <span className="text-emerald-400 font-mono">
-                      +{formatGp(a.projectedProfit)}
-                    </span>
-                  </div>
-                  {pendingTrackItemId === a.item.id ? (
-                    <div
-                      className="mt-2 flex items-center gap-1.5"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <NumberInput
-                        value={pendingTrackPrice}
-                        onChange={setPendingTrackPrice}
-                        className="flex-1 !py-1 !px-1.5 text-xs"
-                        title="Enter the price you're actually placing this buy at"
-                      />
-                      <button
-                        onClick={() => {
-                          trackSlot(a.item.name, pendingTrackPrice, a.qty);
-                          setPendingTrackItemId(null);
-                        }}
-                        className="text-emerald-400 hover:text-emerald-300 text-xs px-1.5"
-                        title="Confirm and track at this price"
-                      >
-                        ✓
-                      </button>
-                      <button
-                        onClick={() => setPendingTrackItemId(null)}
-                        className="text-gray-500 hover:text-rose-400 text-xs px-1.5"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setPendingTrackItemId(a.item.id);
-                        setPendingTrackPrice(a.item.low ?? 0);
-                      }}
-                      className="mt-2 w-full text-[11px] py-1 rounded-md transition-colors bg-sky-500/15 text-sky-400 hover:bg-sky-500/25 border border-sky-500/30"
-                    >
-                      Track this buy
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+          {/* DESIGN.md §14.42: one board mirroring the in-game GE. Replaces the old grid, which
+              rendered hand-typed offers as slot cards while using the live RuneLite data only to
+              count slots -- so it could show an offer that wasn't in the game while the real ones
+              appeared nowhere. Occupied boxes come from RuneLite; empty ones get the allocator's
+              suggestion. */}
+          <GeSlotBoard
+            slots={portfolio?.slots ?? []}
+            suggestions={allocation.assignments}
+            items={items}
+            onSelectItem={onSelectItem}
+            showHeader={false}
+          />
         </div>
       </div>
 
