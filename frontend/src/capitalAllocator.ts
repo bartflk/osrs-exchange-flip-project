@@ -40,6 +40,11 @@ export function allocateCapital(
     // for one of the *remaining* slots -- that would double-count the same item against two
     // slots at once. Matched case-insensitively by name, same key GeOffersPanel/offers.ts uses.
     excludeNames?: Set<string>;
+    // DESIGN.md §14.41: units of each item already bought inside the current 4h GE limit window,
+    // keyed by item id. Without this the allocator sizes against the catalogue buy limit and
+    // suggests quantities the GE will simply refuse -- e.g. 11,000 Diamond when 9,360 of that
+    // limit is already spent. Absent id = nothing bought recently = full limit available.
+    remainingLimits?: Map<number, number>;
   },
 ): AllocationResult {
   const maxPerItem = opts.bankroll * (opts.maxAllocationPct / 100);
@@ -67,7 +72,13 @@ export function allocateCapital(
     if (!item.low) continue;
     const capForItem = Math.min(maxPerItem, remaining);
     const affordableQty = Math.floor(capForItem / item.low);
-    const qty = Math.max(0, Math.min(item.buy_limit ?? Infinity, affordableQty));
+    // Cap by whichever limit is actually binding: the catalogue buy limit, or what's left of it
+    // in the current 4h window once recent purchases are netted off.
+    const limitFromLedger = opts.remainingLimits?.get(item.id);
+    const effectiveLimit = Math.min(item.buy_limit ?? Infinity, limitFromLedger ?? Infinity);
+    const qty = Math.max(0, Math.min(effectiveLimit, affordableQty));
+    // qty of 0 here can mean "can't afford one" or "limit already spent" -- either way it isn't a
+    // placeable suggestion, so it's skipped rather than shown as a slot you can't actually fill.
     if (qty <= 0) continue;
 
     const cost = qty * item.low;

@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { extractGeOffersFromScreenshot, fetchTrackRecord, type MarketItem } from "../api";
+import {
+  extractGeOffersFromScreenshot,
+  fetchTrackRecord,
+  fetchPortfolio,
+  type MarketItem,
+  type PortfolioResponse,
+} from "../api";
 import { formatGp, formatGpFull, formatPct } from "../format";
 import { allocateCapital } from "../capitalAllocator";
 import { NumberInput, Chip, Button } from "./ui";
@@ -90,10 +96,45 @@ export function BuySignals({
     saveFills(next);
   }
 
-  const trackedNames = useMemo(
-    () => new Set(offers.map((o) => o.itemName.toLowerCase())),
-    [offers],
-  );
+  // DESIGN.md §14.41: the allocator now plans against the real Grand Exchange, not against
+  // hand-typed offers. Polled on the same 20s cadence the backend reads the slot files.
+  const [portfolio, setPortfolio] = useState<PortfolioResponse | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    function load() {
+      fetchPortfolio()
+        .then((p) => !cancelled && setPortfolio(p))
+        .catch(() => {});
+    }
+    load();
+    const id = setInterval(load, 20_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  // Don't suggest an item that's already on the GE or already sitting in inventory unsold:
+  // in both cases you'd be adding to a position rather than opening a new flip, and the
+  // allocator's per-item cap wouldn't know about the exposure it already has.
+  //
+  // Still unions in `offers` (the manual list) so anything hand-entered keeps working, but the
+  // live slots are what actually populate this now.
+  const trackedNames = useMemo(() => {
+    const names = new Set(offers.map((o) => o.itemName.toLowerCase()));
+    for (const s of portfolio?.slots ?? []) names.add(s.name.toLowerCase());
+    for (const p of portfolio?.positions ?? []) names.add(p.name.toLowerCase());
+    return names;
+  }, [offers, portfolio]);
+
+  // Units already bought per item inside the current 4h GE limit window.
+  const remainingLimits = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const b of portfolio?.buyLimits ?? []) {
+      if (b.remaining != null) map.set(b.itemId, b.remaining);
+    }
+    return map;
+  }, [portfolio]);
 
   function trackSlot(itemName: string, price: number, qty: number) {
     const newOffer: Offer = {
@@ -402,22 +443,39 @@ export function BuySignals({
 
   const minLiquidity = TIMEFRAMES.find((t) => t.key === timeframe)?.minLiquidity ?? 0;
 
-  // A tracked/open offer is already occupying one of your real GE slots -- it shouldn't also
-  // eat one of the *remaining* suggested slots, and the item shouldn't be suggested again while
-  // you already have an open offer on it (excludeNames below).
-  const suggestionSlots = Math.max(0, numSlots - offers.length);
+  // DESIGN.md §14.41: slots occupied on the real GE can't be planned into. This used to count
+  // only hand-entered offers, which meant that once the manual list fell out of use it read 0 and
+  // the allocator confidently laid out 8 buys against a Grand Exchange that was already 8/8 full.
+  const occupiedSlots = portfolio?.slots.length ?? offers.length;
+  const suggestionSlots = Math.max(0, numSlots - occupiedSlots);
+
+  // Cash committed to open buy offers is already spent -- planning with it would double-spend the
+  // same gp. Bankroll stays the user's number; this just nets off what the GE is holding.
+  const committedGp = portfolio?.totals.cashInBuyOffers ?? 0;
+  const availableBankroll = Math.max(0, bankroll - committedGp);
 
   const allocation = useMemo(
     () =>
       allocateCapital(items, {
-        bankroll,
+        bankroll: availableBankroll,
         numSlots: suggestionSlots,
         maxAllocationPct: allocationPct,
         minLiquidity,
         skipCount: rerollCount * numSlots,
         excludeNames: trackedNames,
+        remainingLimits,
       }),
-    [items, bankroll, suggestionSlots, numSlots, allocationPct, minLiquidity, rerollCount, trackedNames],
+    [
+      items,
+      availableBankroll,
+      suggestionSlots,
+      numSlots,
+      allocationPct,
+      minLiquidity,
+      rerollCount,
+      trackedNames,
+      remainingLimits,
+    ],
   );
 
   const signals = useMemo(() => {
@@ -493,7 +551,18 @@ export function BuySignals({
         <div className="glass rounded-xl p-4">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <h3 className="text-sm font-medium text-gray-200">
-              Capital allocator — fill your {numSlots} GE slots
+              {/* Says what it's actually planning, rather than implying all 8 slots are yours to
+                  fill when the GE says otherwise. */}
+              Capital allocator —{" "}
+              {suggestionSlots > 0
+                ? `fill your ${suggestionSlots} free GE slot${suggestionSlots === 1 ? "" : "s"}`
+                : "no free GE slots"}
+              {portfolio && (
+                <span className="ml-2 text-xs text-gray-500 font-normal">
+                  {occupiedSlots}/{numSlots} in use
+                  {committedGp > 0 ? ` · ${formatGp(committedGp)} committed` : ""}
+                </span>
+              )}
             </h3>
             <div className="flex items-center gap-4 text-xs">
               <span className="text-gray-500">
@@ -592,8 +661,14 @@ export function BuySignals({
           </div>
 
           {offerRows.length === 0 && allocation.assignments.length === 0 ? (
+            // Distinguish the three ways this ends up empty -- "every slot is busy" and "you're
+            // out of gp" are very different situations and used to render identically.
             <p className="text-xs text-gray-500">
-              No affordable slots at the current bankroll/allocation.
+              {suggestionSlots === 0
+                ? `All ${numSlots} GE slots are in use — nothing to plan until one frees up.`
+                : availableBankroll <= 0
+                  ? `Bankroll fully committed (${formatGp(committedGp)} tied up in open buy offers).`
+                  : "No affordable slots at the current bankroll/allocation."}
             </p>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">

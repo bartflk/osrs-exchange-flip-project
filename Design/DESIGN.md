@@ -1015,6 +1015,23 @@ The screens (Portfolio, Visualize flip, Missed flips, the session panel) look li
 - Verified live end-to-end, not just typechecked: backfill imported exactly 50 transactions (matching the 50 offer events counted in the file beforehand), live capture recorded real fills within seconds (`16 x Emerald @ 407`, `15 x Diamond @ 1702`), and the UI renders 9 positions, 8/8 slots, and flips with correct FIFO profit (Law rune +150 @ 2.42% ROI, Diamond +2.6k @ 0.29%). Backend typechecks clean apart from the 3 known pre-existing `SQLOutputValue` errors.
 - **Still open:** `GeOffersPanel` (the manual paste tool) is still mounted in Actions/Signals and is now redundant — left in place rather than half-removed, since it touches components outside this pass. The RuneLite plugin itself is specced in `Design/RUNELITE_PLUGIN_GUIDE.md` but not built; the app works fully without it.
 
+## 14.41 Status note — Capital Allocator plans against the real Grand Exchange — 2026-08-09
+
+Direct request: *"the GE slots live from runelite should be integrated with the signals/capital allocator one. You can find out why i want that."*
+
+The reason, once you look at the call site: **the allocator was giving advice that was physically impossible to act on**, in four independent ways. It already had the right *shape* — it subtracted occupied slots and excluded already-held items — but every input came from `offers.ts`, the hand-typed localStorage list that §14.40 just retired. With nothing hand-entered (`localStorage.geOffers === null`, confirmed live), all of that logic silently evaluated to "you have nothing going on."
+
+1. **Slots that don't exist.** `suggestionSlots = numSlots - offers.length` read `8 - 0 = 8` while the real GE was 8/8 full. It laid out eight confident buys against zero free boxes.
+2. **Gp that was already spent.** Bankroll is a user-typed number with no awareness of cash locked in open buy offers, so the plan double-spent the same coins.
+3. **Buy limits already consumed.** `qty = min(buy_limit, affordable)` used the catalogue 4h limit. With 9,360 of an 11,000 Diamond limit already bought, real headroom was 1,640 — so both suggested quantity and projected profit were inflated. **This one was unfixable before the ledger existed**; nothing in the app previously knew what had been bought recently.
+4. **Duplicate suggestions.** `excludeNames` was built from the dead manual list, so an item already on the GE or sitting unsold could be suggested again, and the per-item allocation cap wouldn't know about the exposure already on the books.
+
+- `computeBuyLimitUsage()` (`flips.ts`) sums buys per item over a trailing 4h. Stated in-comment as an approximation: the real window starts at your first purchase of that item and expires 4h later, per item, so a trailing sum can under-state headroom just after a rollover. It is never *optimistic*, which is the right direction to be wrong when the output is "how much may I buy."
+- `/api/portfolio` gained `buyLimits` and `totals.freeSlots`. `allocateCapital()` gained `remainingLimits`, capping quantity by `min(buy_limit, remaining)`.
+- `BuySignals.tsx` polls `/api/portfolio` on the same 20s cadence the backend reads the slot files. Occupied slots, committed gp and excluded names now come from live slots + open positions, unioned with the manual list so anything hand-entered still works.
+- The header states what it's actually planning ("fill your 4 free GE slots · 4/8 in use · X committed") instead of implying all eight are available, and the empty state distinguishes "all slots busy" from "bankroll fully committed" from "nothing affordable" — three very different situations that previously rendered identically.
+- Verified live: `/api/portfolio` reported `freeSlots: 4` with real headroom (Grapes 4,099/20,000 used → 15,901 remaining; Diamond 822/11,000 → 10,178), and the UI rendered "fill your 4 free GE slots · 4/8 in use" with exactly four suggestions, none of them items already held or on the GE. Both packages typecheck clean apart from the known pre-existing errors.
+
 ## 15. Key references
 
 - [RuneScape:Real-time Prices — OSRS Wiki](https://oldschool.runescape.wiki/w/RuneScape:Real-time_Prices)

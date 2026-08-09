@@ -275,6 +275,54 @@ export function computePositions(): Position[] {
   return out.sort((a, b) => (b.marketValue ?? 0) - (a.marketValue ?? 0));
 }
 
+// DESIGN.md §14.41: GE buy limits are per-item and reset on a 4-hour cycle, so the limit that
+// matters when deciding what to buy is the *remaining* one, not the catalogue value. The Capital
+// Allocator has always sized quantities against the full limit because nothing in the app knew
+// what had already been bought -- the ledger is the first thing that does.
+//
+// Approximation, stated plainly: the real window starts at your first purchase of that item and
+// expires 4h later, per item. This sums purchases over a trailing 4h instead, which can
+// under-state remaining headroom slightly right after a window rolls over. It is never optimistic,
+// which is the correct direction to be wrong in when the output is "how much may I buy."
+const BUY_LIMIT_WINDOW_SECONDS = 4 * 60 * 60;
+
+export interface BuyLimitUsage {
+  itemId: number;
+  name: string;
+  limit: number | null;
+  boughtInWindow: number;
+  remaining: number | null;
+  oldestBuyInWindow: number | null;
+}
+
+const buyLimitStmt = db.prepare(`
+  SELECT t.item_id, i.name, i.buy_limit,
+         SUM(t.quantity) AS bought, MIN(t.occurred_at) AS oldest
+  FROM ge_transactions t
+  LEFT JOIN items i ON i.id = t.item_id
+  WHERE t.type = 'buy' AND t.occurred_at >= ?
+  GROUP BY t.item_id
+`);
+
+export function computeBuyLimitUsage(): BuyLimitUsage[] {
+  const since = Math.floor(Date.now() / 1000) - BUY_LIMIT_WINDOW_SECONDS;
+  const rows = buyLimitStmt.all(since) as unknown as {
+    item_id: number;
+    name: string | null;
+    buy_limit: number | null;
+    bought: number;
+    oldest: number;
+  }[];
+  return rows.map((r) => ({
+    itemId: r.item_id,
+    name: r.name ?? `Item ${r.item_id}`,
+    limit: r.buy_limit,
+    boughtInWindow: r.bought,
+    remaining: r.buy_limit != null ? Math.max(0, r.buy_limit - r.bought) : null,
+    oldestBuyInWindow: r.oldest,
+  }));
+}
+
 export interface SessionStats {
   since: number;
   realizedProfit: number;

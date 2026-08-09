@@ -674,15 +674,28 @@ export interface GeSlot {
   marketPrice: number | null;
 }
 
+// DESIGN.md §14.41: how much of each item's 4h GE buy limit is already spent, so the Capital
+// Allocator can size against real headroom instead of the catalogue limit.
+export interface BuyLimitUsage {
+  itemId: number;
+  name: string;
+  limit: number | null;
+  boughtInWindow: number;
+  remaining: number | null;
+  oldestBuyInWindow: number | null;
+}
+
 export interface PortfolioResponse {
   positions: Position[];
   slots: GeSlot[];
+  buyLimits: BuyLimitUsage[];
   totals: {
     assetsValue: number;
     cashInBuyOffers: number;
     unrealizedProfit: number;
     uniqueItems: number;
     slotsUsed: number;
+    freeSlots: number;
   };
   sources: { copilot: boolean; flippingUtilities: boolean };
   captureStartedAt: number | null;

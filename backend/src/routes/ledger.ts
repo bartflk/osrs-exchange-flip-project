@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { computeFlips, computePositions, computeSession } from "../flips.js";
+import { computeFlips, computePositions, computeSession, computeBuyLimitUsage } from "../flips.js";
 import { getGeTransactions } from "../db.js";
 import { getCaptureStartedAt } from "../geLedger.js";
 import { readCopilotSlots, runeliteSourcesAvailable } from "../runeliteImport.js";
@@ -47,12 +47,17 @@ export async function ledgerRoutes(app: FastifyInstance) {
     return {
       positions,
       slots: slots.sort((a, b) => a.slot - b.slot),
+      // DESIGN.md §14.41: consumed 4h buy limits, so the Capital Allocator can size against what
+      // you may still buy rather than the catalogue limit.
+      buyLimits: computeBuyLimitUsage(),
       totals: {
         assetsValue,
         cashInBuyOffers,
         unrealizedProfit,
         uniqueItems: positions.length,
         slotsUsed: slots.length,
+        // GE gives 8 boxes; anything the plugin reports as occupied is one we can't plan into.
+        freeSlots: Math.max(0, 8 - slots.length),
       },
       sources: runeliteSourcesAvailable(),
       captureStartedAt: getCaptureStartedAt(),
