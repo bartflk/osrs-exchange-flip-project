@@ -42,3 +42,6 @@ __pycache__
 *.sln
 *.sw?
 .claude/scheduled_tasks.lock
+
+# Stray software installers dropped in Design/ -- ~154MB of unrelated binaries
+*.exe

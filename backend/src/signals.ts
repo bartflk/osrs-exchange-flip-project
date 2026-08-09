@@ -12,6 +12,22 @@ export function geTax(sellPrice: number): number {
   return Math.min(tax, 5_000_000);
 }
 
+// DESIGN.md §10 item 46 (Execution Edge, from Design/new suggestions.txt): net_margin assumes
+// buying at exactly `low` and selling at exactly `high` fills instantly, which is optimistic --
+// low/high are the most recent FILL, not a live order book, so an offer placed at either price
+// can sit unfilled. A more realistic suggestion nudges the buy slightly above `low` and the sell
+// slightly below `high` -- "undercut/overcut" to jump the queue at a small, explicit cost, same
+// mechanic `repriceGuidance.ts`'s SLIGHT_GAP threshold already reasons about for tracked offers.
+// The nudge size is a simple %-of-price heuristic (min 1gp), NOT the real GE tick-size table --
+// deliberately flagged as a placeholder since the source suggestion itself says this should
+// "eventually be data-driven" once real fill-rate history exists to calibrate against (that data
+// doesn't exist yet -- Track Record, §10 item 1, logs buy-price vs. resolved price, not whether a
+// specific offer price filled).
+const EXECUTION_NUDGE_PCT = 0.005; // 0.5% of price, minimum 1gp
+function executionNudge(price: number): number {
+  return Math.max(1, Math.round(price * EXECUTION_NUDGE_PCT));
+}
+
 // Old school bond (13190): technically has a GE buy/sell spread like any other item, but it's
 // not something people actually flip -- getting a sellable bond onto the GE in the first place
 // means either paying real money for it or already holding one from membership, not buying it
@@ -45,6 +61,12 @@ export interface ScoredItem extends ItemRow {
   // Coefficient of variation of the high price over a trailing 24h (volatility.ts) -- null
   // until enough history exists, not a fake 0.
   volatility_pct: number | null;
+  // Execution Edge (see executionNudge above): a more realistic buy/sell pair than the raw
+  // low/high, and the margin you'd actually clear at those prices after tax. Null under the
+  // same conditions net_margin is null (no current high/low, or low <= 0).
+  execution_buy_price: number | null;
+  execution_sell_price: number | null;
+  execution_margin: number | null;
 }
 
 export function scoreItem(row: ItemRow): ScoredItem {
@@ -65,8 +87,15 @@ export function scoreItem(row: ItemRow): ScoredItem {
       score: -Infinity,
       tax,
       volatility_pct: null,
+      execution_buy_price: null,
+      execution_sell_price: null,
+      execution_margin: null,
     };
   }
+
+  let execution_buy_price: number | null = null;
+  let execution_sell_price: number | null = null;
+  let execution_margin: number | null = null;
 
   if (high != null && low != null && low > 0) {
     tax = geTax(high);
@@ -75,6 +104,12 @@ export function scoreItem(row: ItemRow): ScoredItem {
     if (buy_limit) {
       limit_adjusted_profit = net_margin * buy_limit;
     }
+
+    execution_buy_price = low + executionNudge(low);
+    // Guard against a pathologically thin spread collapsing the two prices past each other --
+    // sell must clear at least 1gp above the nudged buy price.
+    execution_sell_price = Math.max(execution_buy_price + 1, high - executionNudge(high));
+    execution_margin = execution_sell_price - execution_buy_price - geTax(execution_sell_price);
   }
 
   // liquidity: minimum of 5m and 1h volume on both sides, so a burst on one side
@@ -101,5 +136,8 @@ export function scoreItem(row: ItemRow): ScoredItem {
     score,
     tax,
     volatility_pct,
+    execution_buy_price,
+    execution_sell_price,
+    execution_margin,
   };
 }

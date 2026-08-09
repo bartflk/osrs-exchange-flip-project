@@ -10,7 +10,9 @@
 // succeeds every time while Node's `fetch` with the descriptive UA fails every time, so this is
 // Reddit's anti-bot layer fingerprinting non-browser clients, not a real rate limit. A
 // browser-realistic User-Agent + Accept headers resolves it -- confirmed 200 OK repeatedly.
-const SUBREDDITS = ["2007scape", "runescape"];
+// OSRS only -- r/runescape is the RS3 community, a separate game with its own economy and its own
+// updates, so its posts are noise against this app's price data rather than signal.
+const SUBREDDITS = ["2007scape"];
 const REDDIT_HEADERS = {
   "User-Agent":
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -74,10 +76,18 @@ async function fetchSubredditTopOfDay(subreddit: string): Promise<RedditPost[]> 
 export async function fetchRedditPosts(): Promise<RedditPost[]> {
   const results = await Promise.allSettled(SUBREDDITS.map(fetchSubredditTopOfDay));
   const posts: RedditPost[] = [];
-  for (const r of results) {
-    if (r.status === "fulfilled") posts.push(...r.value);
+  results.forEach((r, i) => {
     // A single subreddit fetch failing (rate limit, transient error) shouldn't drop the others --
     // same "additive, not load-bearing" principle as the sidecar's Reddit/Discord collectors.
-  }
+    if (r.status === "fulfilled") {
+      posts.push(...r.value);
+      return;
+    }
+    // ...but it must not fail *silently*. Found live: r/2007scape had zero rows in the events
+    // table while r/runescape had 18, because its fetch was rejecting inside this allSettled and
+    // nobody ever saw it. A swallowed rejection here looks identical to "the subreddit had no
+    // posts today," which is exactly the wrong thing to be ambiguous about.
+    console.error(`[reddit] r/${SUBREDDITS[i]} fetch failed:`, r.reason);
+  });
   return posts;
 }

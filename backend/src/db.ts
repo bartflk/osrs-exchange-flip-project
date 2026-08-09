@@ -118,6 +118,49 @@ CREATE TABLE IF NOT EXISTS kv_cache (
   value TEXT NOT NULL,
   updated_at INTEGER NOT NULL
 );
+
+-- DESIGN.md §14.40: the real trade ledger -- what YOU actually bought and sold, as opposed to
+-- recommendation_snapshots (what the app predicted) or the old offers.ts/fills.ts (hand-typed
+-- localStorage, capped at 50, no item ids). Every Flipping-Copilot-style screen -- Portfolio,
+-- Session, Flips, Visualize flip, Missed flips -- is a view over this one table.
+--
+-- Source of truth, never a cache: same lesson as events in §14.37. A fill observed once can never
+-- be re-derived, because the GE slot that produced it gets reused the moment the offer clears.
+CREATE TABLE IF NOT EXISTS ge_transactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_hash TEXT NOT NULL,
+  item_id INTEGER NOT NULL,
+  type TEXT NOT NULL,             -- buy | sell
+  quantity INTEGER NOT NULL,      -- units filled by THIS transaction, not the offer total
+  price INTEGER NOT NULL,         -- gp per unit actually paid/received for this fill
+  spent INTEGER NOT NULL,         -- gp moved by this fill (quantity * price, stored for audit)
+  slot INTEGER,                   -- GE box 0-7, null for backfilled history that predates capture
+  occurred_at INTEGER NOT NULL,   -- unix seconds
+  source TEXT NOT NULL,           -- slot-diff | flipping-utilities | plugin
+  -- Dedup is a table constraint rather than a read-then-filter query, for the exact reason given
+  -- in §14.37: a hardcoded WHERE clause silently drifted from the writer and let duplicates in.
+  -- A slot can only produce one distinct fill per (item, price, cumulative qty) at one instant.
+  UNIQUE (account_hash, item_id, type, occurred_at, price, quantity, slot)
+);
+CREATE INDEX IF NOT EXISTS idx_ge_tx_time ON ge_transactions(occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ge_tx_item ON ge_transactions(item_id, occurred_at);
+
+-- Last-seen state per GE slot. Only exists so the next poll can diff against it: a rising
+-- quantitySold on the same offer IS a fill, deterministically, no inference. Genuinely
+-- disposable -- losing it costs at most one poll cycle of granularity.
+CREATE TABLE IF NOT EXISTS ge_slot_state (
+  account_hash TEXT NOT NULL,
+  slot INTEGER NOT NULL,
+  item_id INTEGER NOT NULL,
+  type TEXT NOT NULL,
+  price INTEGER NOT NULL,
+  total_quantity INTEGER NOT NULL,
+  quantity_sold INTEGER NOT NULL,
+  spent INTEGER NOT NULL,
+  state TEXT NOT NULL,
+  observed_at INTEGER NOT NULL,
+  PRIMARY KEY (account_hash, slot)
+);
 `);
 
 const upsertItemStmt = db.prepare(`
@@ -417,5 +460,118 @@ export function kvGetFresh<T>(key: string, maxAgeMs: number): T | null {
     return JSON.parse(row.value) as T;
   } catch {
     return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// GE trade ledger (DESIGN.md §14.40)
+// ---------------------------------------------------------------------------
+
+export interface GeTransaction {
+  id: number;
+  account_hash: string;
+  item_id: number;
+  type: "buy" | "sell";
+  quantity: number;
+  price: number;
+  spent: number;
+  slot: number | null;
+  occurred_at: number;
+  source: string;
+}
+
+export type NewGeTransaction = Omit<GeTransaction, "id">;
+
+const insertTxStmt = db.prepare(`
+  INSERT OR IGNORE INTO ge_transactions
+    (account_hash, item_id, type, quantity, price, spent, slot, occurred_at, source)
+  VALUES (@account_hash, @item_id, @type, @quantity, @price, @spent, @slot, @occurred_at, @source)
+`);
+
+// Returns how many rows were genuinely new. INSERT OR IGNORE against the UNIQUE constraint means
+// re-importing the same history file, or re-reading an unchanged slot, is a no-op rather than a
+// duplicate -- the caller doesn't have to know what it already stored.
+export function insertGeTransactions(rows: NewGeTransaction[]): number {
+  if (!rows.length) return 0;
+  let inserted = 0;
+  // node:sqlite's DatabaseSync has no better-sqlite3-style .transaction() helper -- explicit
+  // BEGIN/COMMIT, matching upsertItems above.
+  db.exec("BEGIN");
+  try {
+    for (const r of rows) {
+      inserted += Number(insertTxStmt.run(r as unknown as Record<string, never>).changes);
+    }
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+  return inserted;
+}
+
+const txSinceStmt = db.prepare(`
+  SELECT t.*, i.name, i.icon
+  FROM ge_transactions t LEFT JOIN items i ON i.id = t.item_id
+  WHERE t.occurred_at >= ? ORDER BY t.occurred_at DESC, t.id DESC LIMIT ?
+`);
+
+export function getGeTransactions(sinceUnix: number, limit = 500) {
+  return txSinceStmt.all(sinceUnix, limit) as unknown as (GeTransaction & {
+    name: string | null;
+    icon: string | null;
+  })[];
+}
+
+const txForItemStmt = db.prepare(`
+  SELECT * FROM ge_transactions WHERE item_id = ? ORDER BY occurred_at ASC
+`);
+
+export function getGeTransactionsForItem(itemId: number): GeTransaction[] {
+  return txForItemStmt.all(itemId) as unknown as GeTransaction[];
+}
+
+const allTxStmt = db.prepare(`SELECT * FROM ge_transactions ORDER BY occurred_at ASC`);
+
+export function getAllGeTransactions(): GeTransaction[] {
+  return allTxStmt.all() as unknown as GeTransaction[];
+}
+
+export interface GeSlotState {
+  account_hash: string;
+  slot: number;
+  item_id: number;
+  type: "buy" | "sell";
+  price: number;
+  total_quantity: number;
+  quantity_sold: number;
+  spent: number;
+  state: string;
+  observed_at: number;
+}
+
+const getSlotStatesStmt = db.prepare(`SELECT * FROM ge_slot_state`);
+const upsertSlotStateStmt = db.prepare(`
+  INSERT INTO ge_slot_state
+    (account_hash, slot, item_id, type, price, total_quantity, quantity_sold, spent, state, observed_at)
+  VALUES (@account_hash, @slot, @item_id, @type, @price, @total_quantity, @quantity_sold, @spent, @state, @observed_at)
+  ON CONFLICT(account_hash, slot) DO UPDATE SET
+    item_id=excluded.item_id, type=excluded.type, price=excluded.price,
+    total_quantity=excluded.total_quantity, quantity_sold=excluded.quantity_sold,
+    spent=excluded.spent, state=excluded.state, observed_at=excluded.observed_at
+`);
+
+export function getGeSlotStates(): GeSlotState[] {
+  return getSlotStatesStmt.all() as unknown as GeSlotState[];
+}
+
+export function upsertGeSlotStates(rows: GeSlotState[]): void {
+  if (!rows.length) return;
+  db.exec("BEGIN");
+  try {
+    for (const r of rows) upsertSlotStateStmt.run(r as unknown as Record<string, never>);
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
   }
 }

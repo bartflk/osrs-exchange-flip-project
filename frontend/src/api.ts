@@ -24,6 +24,11 @@ export interface MarketItem {
   // Coefficient of variation of the high price over a trailing 24h -- null until 24h of local
   // history has accumulated for this item (§14.12).
   volatility_pct: number | null;
+  // Execution Edge (§10 item 46): a more realistic buy/sell pair than the raw low/high (nudged
+  // to jump the fill queue) and the margin actually clearable at those prices. See signals.ts.
+  execution_buy_price: number | null;
+  execution_sell_price: number | null;
+  execution_margin: number | null;
 }
 
 export interface ItemsResponse {
@@ -212,6 +217,10 @@ export interface TrackRecordSummary {
   winRate: number | null;
   avgNetMargin: number | null;
   avgRoiPct: number | null;
+  // realized ÷ projected avg net margin across resolved picks, clamped [0, 1.5]. Null until
+  // enough picks have resolved to trust it (see backend/src/scorekeeping.ts). Multiply a
+  // "projected profit" figure by this for a number already discounted by real-world track record.
+  realizationRatio: number | null;
 }
 
 export type TrackRecordOutcome = "win" | "loss" | "flat" | null;
@@ -629,5 +638,146 @@ export async function fetchResearchReport(
 ): Promise<ResearchReport> {
   const res = await fetch(`/api/research-report?period=${period}${refresh ? "&refresh=true" : ""}`);
   if (!res.ok) throw new Error(`Failed to generate research report: ${res.status}`);
+  return res.json();
+}
+
+// DESIGN.md §14.40: GE trade ledger -- real positions and flips derived from the transaction
+// data RuneLite plugins write to local disk, as opposed to the app's own predictions
+// (TrackRecord) or the hand-entered offers/fills this replaces.
+
+export interface Position {
+  itemId: number;
+  name: string;
+  icon: string | null;
+  quantity: number;
+  avgBuyPrice: number;
+  costBasis: number;
+  marketPrice: number | null;
+  marketValue: number | null;
+  unrealizedProfit: number | null;
+  unrealizedRoiPct: number | null;
+}
+
+export interface GeSlot {
+  slot: number;
+  itemId: number;
+  name: string;
+  icon: string | null;
+  type: "buy" | "sell";
+  state: string;
+  price: number;
+  totalQuantity: number;
+  quantitySold: number;
+  remaining: number;
+  spent: number;
+  committedGp: number;
+  marketPrice: number | null;
+}
+
+export interface PortfolioResponse {
+  positions: Position[];
+  slots: GeSlot[];
+  totals: {
+    assetsValue: number;
+    cashInBuyOffers: number;
+    unrealizedProfit: number;
+    uniqueItems: number;
+    slotsUsed: number;
+  };
+  sources: { copilot: boolean; flippingUtilities: boolean };
+  captureStartedAt: number | null;
+}
+
+export type FlipStatus = "BUYING" | "SELLING" | "FINISHED";
+
+export interface Flip {
+  itemId: number;
+  name: string;
+  icon: string | null;
+  firstBuyTime: number | null;
+  lastSellTime: number | null;
+  status: FlipStatus;
+  bought: number;
+  sold: number;
+  avgBuyPrice: number;
+  avgSellPrice: number;
+  tax: number;
+  profit: number;
+  profitEach: number;
+  roiPct: number | null;
+  transactionCount?: number;
+  transactions?: GeTransaction[];
+}
+
+export interface GeTransaction {
+  id: number;
+  item_id: number;
+  type: "buy" | "sell";
+  quantity: number;
+  price: number;
+  spent: number;
+  slot: number | null;
+  occurred_at: number;
+  source: string;
+  name?: string | null;
+  icon?: string | null;
+}
+
+export interface SessionStats {
+  since: number;
+  realizedProfit: number;
+  unrealizedProfit: number;
+  flipsFinished: number;
+  transactions: number;
+  taxPaid: number;
+  turnover: number;
+  roiPct: number | null;
+  gpPerHour: number | null;
+  elapsedSeconds: number;
+  positionsValue: number;
+  captureStartedAt: number | null;
+  excludedUnmatchedFlips: number;
+  excludedUnmatchedRevenue: number;
+}
+
+export async function fetchPortfolio(): Promise<PortfolioResponse> {
+  const res = await fetch("/api/portfolio");
+  if (!res.ok) throw new Error(`Failed to load portfolio: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchFlips(
+  status?: FlipStatus,
+): Promise<{ flips: Flip[]; total: number; captureStartedAt: number | null }> {
+  const res = await fetch(`/api/flips${status ? `?status=${status}` : ""}`);
+  if (!res.ok) throw new Error(`Failed to load flips: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchFlipsForItem(itemId: number): Promise<{ flips: Flip[] }> {
+  const res = await fetch(`/api/flips/${itemId}`);
+  if (!res.ok) throw new Error(`Failed to load flip: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchTransactions(since = 0): Promise<{ transactions: GeTransaction[] }> {
+  const res = await fetch(`/api/transactions?since=${since}`);
+  if (!res.ok) throw new Error(`Failed to load transactions: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchSession(since?: number): Promise<SessionStats> {
+  const res = await fetch(`/api/session${since ? `?since=${since}` : ""}`);
+  if (!res.ok) throw new Error(`Failed to load session: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchMissedFlips(): Promise<{
+  unmatchedSells: Flip[];
+  stalled: Flip[];
+  captureStartedAt: number | null;
+}> {
+  const res = await fetch("/api/missed-flips");
+  if (!res.ok) throw new Error(`Failed to load missed flips: ${res.status}`);
   return res.json();
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { MarketItem } from "../api";
+import { extractGeOffersFromScreenshot, fetchTrackRecord, type MarketItem } from "../api";
 import { formatGp, formatGpFull, formatPct } from "../format";
 import { allocateCapital } from "../capitalAllocator";
 import { NumberInput, Chip, Button } from "./ui";
@@ -181,6 +181,197 @@ export function BuySignals({
   const [pendingTrackItemId, setPendingTrackItemId] = useState<number | null>(null);
   const [pendingTrackPrice, setPendingTrackPrice] = useState(0);
 
+  // Screenshot -> vision model -> offers, moved here (was previously local to GeOffersPanel) so
+  // paste/upload can cover the whole slot grid, not just a side panel -- per direct request,
+  // screenshotting your GE and pasting is now the primary flow, the old textbox is a fallback.
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [screenshotLoading, setScreenshotLoading] = useState(false);
+  const [screenshotMessage, setScreenshotMessage] = useState<string | null>(null);
+  // Offers the screenshot claims are now in an "Empty" slot, held for confirmation rather than
+  // removed immediately -- a small local vision model reporting "this slot is empty" turned out
+  // live-testing to be unreliable on anything less than a full, uncropped 8-slot screenshot (it
+  // can claim every slot is empty even when it only actually saw one), so silently trusting that
+  // to delete tracked offers risked wiping real, still-open trades. Cheap and additive updates
+  // (new offers, price/progress refreshes) still apply immediately; only the destructive part
+  // waits for a click.
+  const [pendingClear, setPendingClear] = useState<Offer[]>([]);
+
+  async function handleScreenshotFile(file: File) {
+    if (!file.type.startsWith("image/")) {
+      setScreenshotMessage("That's not an image file.");
+      return;
+    }
+    setScreenshotLoading(true);
+    setScreenshotMessage(null);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
+        reader.readAsDataURL(file);
+      });
+      const { offers: extracted, emptySlotIndexes } = await extractGeOffersFromScreenshot(dataUrl);
+      if (extracted.length === 0 && emptySlotIndexes.length === 0) {
+        // Genuinely ambiguous from here: either nothing in the shot was readable, or it's a
+        // slot mid-setup (item/qty chosen but no price typed in yet) -- neither is a model
+        // failure. Say so instead of implying something broke. (If emptySlotIndexes is non-empty
+        // but extracted is empty, that's NOT ambiguous -- it means the visible grid really is all
+        // empty, and freed-slot cleanup below still needs to run.)
+        setScreenshotMessage(
+          "No offers with both a price and quantity visible -- either the GE is empty, or a slot is still mid-setup (no price entered yet).",
+        );
+        return;
+      }
+
+      // Re-screenshotting the same open offer (e.g. to update fill progress) shouldn't create a
+      // second slot for the same item -- match against what's already tracked and update in
+      // place (price/qty/filledQty), keeping id and trackedAt so Trade Health's staleness clock
+      // doesn't reset. Only genuinely new offers get appended as new slots.
+      //
+      // The SAME item can legitimately occupy several real GE slots at once (e.g. 3 sell offers
+      // + 1 buy offer on the same item, all visible in one screenshot) -- name+type alone can't
+      // tell those apart on a re-screenshot without risking one slot's price/progress getting
+      // silently overwritten with another slot's data. slotIndex (the actual 1-8 GE slot
+      // position, when the model could read it) is matched first since it's unambiguous; name+
+      // type is only used as a fallback, and only when there's exactly one candidate on both
+      // sides -- if it's ambiguous, the extracted offer is added as new rather than guessing
+      // which existing slot it belongs to (a stray duplicate is a much smaller problem than
+      // silently corrupting a different slot's tracked price).
+      let updated = 0;
+      let added = 0;
+      const now = Math.floor(Date.now() / 1000);
+      const remainingExtracted = [...extracted];
+      const sameKey = (a: { type: string; itemName: string }, b: { type: string; itemName: string }) =>
+        a.type === b.type && a.itemName.toLowerCase() === b.itemName.toLowerCase();
+      // A physical GE slot can only ever be one type at a time -- if a candidate's slotIndex
+      // matches but its type doesn't, that's the model producing conflicting data within the
+      // same response (seen live: the same slotIndex reported for both a buy and a sell entry
+      // in one read), not a real match.
+      const slotMatch = (
+        a: { type: string; slotIndex?: number | null },
+        b: { type: string; slotIndex?: number | null },
+      ) => a.slotIndex != null && b.slotIndex != null && a.slotIndex === b.slotIndex && a.type === b.type;
+      // A same-name candidate that reports a DIFFERENT known slotIndex than the existing offer is
+      // clearly a different physical offer, not an update to this one -- excluding it from the
+      // name-based fallback is what stops that from silently overwriting the wrong tracked slot.
+      const slotConflict = (a: { slotIndex?: number | null }, b: { slotIndex?: number | null }) =>
+        a.slotIndex != null && b.slotIndex != null && a.slotIndex !== b.slotIndex;
+
+      const merged = offers.map((existing) => {
+        let idx = remainingExtracted.findIndex((e) => slotMatch(e, existing));
+        if (idx === -1) {
+          const candidates = remainingExtracted
+            .map((e, i) => ({ e, i }))
+            .filter(({ e }) => sameKey(e, existing) && !slotConflict(e, existing));
+          if (candidates.length === 1) idx = candidates[0].i;
+        }
+        if (idx === -1) return existing;
+        const [match] = remainingExtracted.splice(idx, 1);
+        updated++;
+        return {
+          ...existing,
+          price: match.price,
+          qty: match.qty,
+          filledQty: match.filledQty,
+          slotIndex: match.slotIndex ?? existing.slotIndex,
+        };
+      });
+      for (const e of remainingExtracted) {
+        added++;
+        merged.push({
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          type: e.type,
+          itemName: e.itemName,
+          price: e.price,
+          qty: e.qty,
+          filledQty: e.filledQty,
+          slotIndex: e.slotIndex,
+          trackedAt: now,
+        });
+      }
+
+      // Additions/updates apply immediately -- they only add information or refresh a
+      // price/progress you can still see and correct yourself. Everything the screenshot claims
+      // is now "Empty" STAYS in the tracked list (nothing is removed here) and is only flagged
+      // for the confirmation banner below -- see pendingClear above for why the actual removal
+      // waits for a click instead of happening on the spot.
+      setOffers(merged);
+      const emptySet = new Set(emptySlotIndexes);
+      const toClear = merged.filter((o) => o.slotIndex != null && emptySet.has(o.slotIndex));
+      if (toClear.length > 0) setPendingClear(toClear);
+
+      const parts: string[] = [];
+      if (added > 0) parts.push(`added ${added}`);
+      if (updated > 0) parts.push(`updated ${updated} existing`);
+      setScreenshotMessage(
+        parts.length > 0
+          ? `Screenshot read: ${parts.join(", ")} -- check the slots, prices may need a nudge.`
+          : "Screenshot read: no changes.",
+      );
+    } catch (err) {
+      setScreenshotMessage(err instanceof Error ? err.message : "Failed to read the screenshot.");
+    } finally {
+      setScreenshotLoading(false);
+    }
+  }
+
+  // User confirmed these slots really are empty now -- apply the same completion logic that
+  // would've run automatically: log a fill for whatever actually filled (using filledQty, not
+  // the full requested qty, since a cancel-with-partial-fill is real too), and hand a completed
+  // buy off to a tracked sell at the current market price, same as clicking "I bought it".
+  function confirmClear() {
+    const now = Math.floor(Date.now() / 1000);
+    const clearIds = new Set(pendingClear.map((o) => o.id));
+    const newFills: Fill[] = [];
+    const newSellOffers: Offer[] = [];
+    for (const o of pendingClear) {
+      const filled = o.filledQty ?? 0;
+      if (filled <= 0) continue; // never filled, then cancelled -- nothing to log
+      newFills.push({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        type: o.type,
+        itemName: o.itemName,
+        price: o.price,
+        qty: filled,
+        filledAt: now,
+      });
+      if (o.type === "buy") {
+        const market = items.find((i) => i.name.toLowerCase() === o.itemName.toLowerCase());
+        newSellOffers.push({
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          type: "sell",
+          itemName: o.itemName,
+          price: market?.high ?? o.price,
+          qty: filled,
+          filledQty: 0,
+          slotIndex: null,
+          trackedAt: now,
+        });
+      }
+    }
+    // Single combined update -- the actual removal happens here, not before the confirm click,
+    // so a wrongly-flagged "empty" slot never disappears from tracking without you agreeing to it.
+    setOffers([...offers.filter((o) => !clearIds.has(o.id)), ...newSellOffers]);
+    if (newFills.length > 0) setFills([...newFills, ...fills]);
+    setPendingClear([]);
+  }
+
+  function dismissClear() {
+    setPendingClear([]);
+  }
+
+  // Screenshots taken with Win+Shift+S (or copied from any image viewer) land on the clipboard
+  // as image data, not text -- catching paste at the container level means "screenshot, then
+  // Ctrl+V anywhere in this panel" just works, no need to save-to-file first.
+  function handlePanelPaste(e: ClipboardEvent) {
+    const item = Array.from(e.clipboardData?.items ?? []).find((i) => i.type.startsWith("image/"));
+    if (!item) return; // let normal text paste (e.g. into the textarea) proceed untouched
+    const file = item.getAsFile();
+    if (!file) return;
+    e.preventDefault();
+    handleScreenshotFile(file);
+  }
+
   // DESIGN.md §10 item 17 / §14.16: reprice/cancel guidance, re-evaluated fresh every time
   // `items` updates (i.e. every poll cycle) since computeRepriceGuidance is a pure function of
   // the offer + current market row -- no separate "re-check" trigger needed.
@@ -254,6 +445,18 @@ export function BuySignals({
     setSignalsDiff(diffAndSnapshotSignals(signals.map((s) => s.item.name)));
   }, [signals]);
 
+  // DESIGN.md §10 item 12: discount displayed "projected profit" by how well projections have
+  // actually panned out historically (Track Record's realized ÷ projected ratio), not just report
+  // win rate as an easy-to-ignore separate stat. Fetched once independently rather than lifted
+  // from <TrackRecord/> above -- same self-contained-per-component pattern the rest of this app
+  // already uses, and this is the only other place on the page that needs the number.
+  const [realizationRatio, setRealizationRatio] = useState<number | null>(null);
+  useEffect(() => {
+    fetchTrackRecord()
+      .then((res) => setRealizationRatio(res.summary.realizationRatio))
+      .catch(() => {});
+  }, []);
+
   return (
     <div>
       <div className="glass rounded-xl p-4 mb-4 flex flex-wrap items-end gap-6">
@@ -282,9 +485,11 @@ export function BuySignals({
 
       {/* DESIGN.md §11.3 item 7: capital allocator -- fills your actual GE slots, one item each,
           respecting the per-item cap and the total bankroll (not just "everything affordable").
-          §14.20: Open GE offers now sits next to it (was at the bottom of the Actions tab) --
-          allocator says what to buy, offers panel tracks/re-evaluates it as the market moves. */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-4 items-start">
+          Full width, 4-wide grid to actually resemble the real GE's 4x2 slot layout instead of a
+          cramped 2-wide column squeezed next to a side panel -- per direct request. onPaste
+          covers this whole section (not just a corner textbox) since screenshot+Ctrl-V is the
+          primary way offers get tracked now, not the fallback. */}
+      <div className="mb-4" onPaste={handlePanelPaste}>
         <div className="glass rounded-xl p-4">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <h3 className="text-sm font-medium text-gray-200">
@@ -307,8 +512,57 @@ export function BuySignals({
                   {formatGp(allocation.totalProfit)}
                 </span>
               </span>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = (e.target as HTMLInputElement).files?.[0];
+                  if (file) handleScreenshotFile(file);
+                  (e.target as HTMLInputElement).value = "";
+                }}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={screenshotLoading}
+                title="Or just paste (Ctrl+V) a screenshot anywhere in this box -- a local vision model reads the slots"
+                className="px-2.5 py-1 rounded-lg text-xs bg-sky-500/15 text-sky-400 hover:bg-sky-500/25 border border-sky-500/30 disabled:opacity-50 disabled:cursor-wait"
+              >
+                {screenshotLoading ? "Reading screenshot…" : "📋 Upload/paste GE screenshot"}
+              </button>
             </div>
           </div>
+
+          {screenshotMessage && (
+            <p className="text-[11px] text-amber-400 mb-3">{screenshotMessage}</p>
+          )}
+
+          {pendingClear.length > 0 && (
+            <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-3 mb-3">
+              <p className="text-xs text-amber-300 mb-2">
+                The last screenshot shows {pendingClear.length} slot{pendingClear.length === 1 ? "" : "s"} you're
+                tracking as now <span className="font-medium">Empty</span>:{" "}
+                {pendingClear.map((o) => `${o.type} ${o.itemName}`).join(", ")}. Remove from tracking?
+                {pendingClear.some((o) => (o.filledQty ?? 0) > 0) &&
+                  " (Anything that had filled progress will be logged to Recently Filled first.)"}
+              </p>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={confirmClear}
+                  className="px-3 py-1.5 rounded-lg text-xs bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/40"
+                >
+                  Clear {pendingClear.length} slot{pendingClear.length === 1 ? "" : "s"}
+                </button>
+                <button
+                  onClick={dismissClear}
+                  className="px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-gray-200"
+                >
+                  Keep tracking them
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* DESIGN.md §10 item 21 / §14.23: timeframe changes which items qualify (liquidity
               floor), reroll cycles to the next batch of qualifying candidates deterministically. */}
@@ -342,7 +596,7 @@ export function BuySignals({
               No affordable slots at the current bankroll/allocation.
             </p>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               {/* A tracked/open offer is a real GE slot already in use -- show it as one of the
                   slot cards (not a separate side list) so the grid reflects your actual 8 slots,
                   not just what the allocator would suggest from scratch. */}
@@ -658,8 +912,10 @@ export function BuySignals({
             </div>
           )}
         </div>
+      </div>
 
-        <GeOffersPanel offers={offers} setOffers={setOffers} fills={fills} setFills={setFills} items={items} />
+      <div className="mb-4">
+        <GeOffersPanel offers={offers} setOffers={setOffers} fills={fills} setFills={setFills} />
       </div>
 
       {signalsDiff && signalsDiff.previousAt != null && (
@@ -731,10 +987,18 @@ export function BuySignals({
                 <div className="text-lg font-mono text-white">{qty.toLocaleString()}</div>
               </div>
               <div className="text-xs text-gray-500 text-right">
-                Projected profit
+                {realizationRatio != null ? "Calibrated profit" : "Projected profit"}
                 <div className="text-lg font-mono text-emerald-400">
-                  {formatGp(projectedProfit)}
+                  {formatGp(realizationRatio != null ? projectedProfit * realizationRatio : projectedProfit)}
                 </div>
+                {realizationRatio != null && (
+                  <div
+                    className="text-[10px] text-gray-600"
+                    title="Raw projection scaled by Track Record's realized-vs-projected ratio -- see the Realization stat above"
+                  >
+                    {formatGp(projectedProfit)} raw × {(realizationRatio * 100).toFixed(0)}%
+                  </div>
+                )}
               </div>
             </div>
           </div>

@@ -10,8 +10,9 @@ function formatDate(dateStr: string): string {
   });
 }
 
-// DESIGN.md §6.4/§14.35: official patch notes + Reddit top-of-day posts (r/2007scape,
-// r/runescape), both landing in the same events table, source-tagged. LLM item-linking
+// DESIGN.md §6.4/§14.35/§14.39: official patch notes + Reddit top-of-day posts (r/2007scape only
+// -- RS3's r/runescape was removed as irrelevant), both landing in the same events table,
+// source-tagged. LLM item-linking
 // ({item_name, claimed_impact, confidence}) isn't built yet -- this is titles/links/dates only,
 // chronological, newest first.
 export function NewsFeed() {
@@ -43,8 +44,8 @@ export function NewsFeed() {
     <div>
       <div className="glass rounded-xl p-4 mb-4">
         <p className="text-sm text-gray-300">
-          Official OSRS patch notes (daily) and top-of-day posts from r/2007scape and r/runescape
-          (hourly) — titles, links, and post dates only, no comments or per-item impact tagging yet.
+          Official OSRS patch notes (daily) and top-of-day posts from r/2007scape (hourly) —
+          titles, links, and post dates only, no comments or per-item impact tagging yet.
         </p>
         <p className="text-xs text-gray-500 mt-1">
           These same events show as markers on item price charts, so you can eyeball whether a

@@ -9,7 +9,8 @@ import {
 } from "./api";
 import { MarketTable } from "./components/MarketTable";
 import { BuySignals } from "./components/BuySignals";
-import { Watchlist } from "./components/Watchlist";
+import { Portfolio } from "./components/Portfolio";
+import { Flips } from "./components/Flips";
 import { ItemDetailModal } from "./components/ItemDetailModal";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { BankImport } from "./components/BankImport";
@@ -26,30 +27,36 @@ import { UpdateCycleBadge } from "./components/UpdateCycleBadge";
 import { MarketTemperatureGauge } from "./components/MarketTemperatureGauge";
 import { SettingsModal } from "./components/SettingsModal";
 import { ToastHost } from "./components/ToastHost";
+import { showToast } from "./toast";
 import { formatAgo, formatGp } from "./format";
-import { type WatchEntry, loadWatchlist, saveWatchlist } from "./watchlist";
+import { type WatchEntry, loadWatchlist, saveWatchlist, toggleWatch, updateWatchAlert } from "./watchlist";
 import { type BlockEntry, loadBlocklist, saveBlocklist, removeFromBlocklist } from "./blocklist";
 import { type HoldingEntry, loadHoldings, saveHoldings } from "./bankHoldings";
 import { type Settings, loadSettings, saveSettings } from "./settings";
 import type { BankValueItem } from "./api";
 import { Button, Chip, IconButton, Input, NumberInput, StatCard } from "./components/ui";
 
-type Tab = "market" | "signals" | "watchlist" | "bank" | "actions" | "sets" | "news";
+type Tab = "market" | "signals" | "portfolio" | "flips" | "bank" | "actions" | "sets" | "news";
 
+// Ordered to follow the actual workflow: browse (Market) -> decide what to buy (Signals) ->
+// track what you're holding/have open (Portfolio) -> value your bank (Bank) -> act on it
+// (Actions) -> specialized arbitrage tool (Sets) -> background context (News). Labels
+// standardized to single words to match Market/Bank/Actions/Sets rather than mixing verbose
+// phrases in with them.
 const TABS: { key: Tab; label: string }[] = [
   { key: "market", label: "Market" },
-  { key: "signals", label: "Buy Signals" },
-  { key: "watchlist", label: "Watchlist" },
+  { key: "signals", label: "Signals" },
+  { key: "portfolio", label: "Portfolio" },
+  { key: "flips", label: "Flips" },
   { key: "bank", label: "Bank" },
   { key: "actions", label: "Actions" },
   { key: "sets", label: "Sets" },
-  { key: "news", label: "Update News & Sentiment" },
+  { key: "news", label: "News" },
 ];
 
 function App() {
   const [tab, setTab] = useState<Tab>("market");
   const [items, setItems] = useState<MarketItem[]>([]);
-  const [watchedItems, setWatchedItems] = useState<MarketItem[]>([]);
   const [heldItems, setHeldItems] = useState<MarketItem[]>([]);
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [search, setSearch] = useState("");
@@ -57,6 +64,7 @@ function App() {
   const [minVolume, setMinVolume] = useState(() => loadSettings().defaultMinLiquidity);
   const [preset, setPreset] = useState<"none" | "volume" | "taxfree" | "pvm">("none");
   const [f2pOnly, setF2pOnly] = useState(false);
+  const [watchedOnly, setWatchedOnly] = useState(false);
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [showSettings, setShowSettings] = useState(false);
@@ -64,7 +72,6 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [watched, setWatchedRaw] = useState<Record<number, WatchEntry>>(() => loadWatchlist());
   const [blocked, setBlockedRaw] = useState<Record<number, BlockEntry>>(() => loadBlocklist());
-  const [alertBanner, setAlertBanner] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<MarketItem | null>(null);
   const [holdings, setHoldings] = useState<Record<number, HoldingEntry>>(() => loadHoldings());
   const [alerts, setAlerts] = useState<PriceAlert[]>([]);
@@ -85,6 +92,7 @@ function App() {
   const hasActiveFilters =
     preset !== "none" ||
     f2pOnly ||
+    watchedOnly ||
     minPrice !== "" ||
     maxPrice !== "" ||
     search !== "" ||
@@ -93,6 +101,7 @@ function App() {
   function clearFilters() {
     setPreset("none");
     setF2pOnly(false);
+    setWatchedOnly(false);
     setMinPrice("");
     setMaxPrice("");
     setSearch("");
@@ -104,6 +113,7 @@ function App() {
     if (preset === "taxfree" && (i.tax ?? 0) !== 0) return false;
     if (minPrice !== "" && (i.high ?? 0) < Number(minPrice)) return false;
     if (maxPrice !== "" && (i.high ?? 0) > Number(maxPrice)) return false;
+    if (watchedOnly && !watched[i.id]) return false;
     return true;
   });
 
@@ -157,7 +167,6 @@ function App() {
       ]);
       setItems(itemsRes.items);
       setStatus(statusRes);
-      setWatchedItems(watchedRes.items);
       setHeldItems(heldRes.items);
       setAlerts(alertsRes.alerts);
       setError(null);
@@ -230,7 +239,11 @@ function App() {
   function notify(message: string, source: "market" | "watchlist") {
     if (source === "market" && settings.muteMarketAlerts) return;
     if (source === "watchlist" && settings.muteWatchlistAlerts) return;
-    setAlertBanner(message);
+    // Was a persistent top-of-page banner -- consolidated onto the same toast surface the rest
+    // of the app already uses for "your click did something" feedback, so alerts don't fight
+    // with the MarketAlerts ticker (also top-of-page) for the same visual real estate. Longer
+    // duration than the default toast since this is genuinely worth noticing, not a click ack.
+    showToast(message, "neutral", 6000);
     if (typeof Notification !== "undefined" && Notification.permission === "granted") {
       new Notification("Project Flashwave", { body: message });
     }
@@ -312,11 +325,6 @@ function App() {
                 }`}
               >
                 {t.label}
-                {t.key === "watchlist" && Object.keys(watched).length > 0 && (
-                  <span className="ml-1.5 inline-flex items-center justify-center min-w-[1.1rem] h-[1.1rem] px-1 rounded-full text-[10px] font-semibold bg-amber-500/20 text-amber-300">
-                    {Object.keys(watched).length}
-                  </span>
-                )}
                 {t.key === "actions" && Object.keys(holdings).length > 0 && (
                   <span className="ml-1.5 inline-flex items-center justify-center min-w-[1.1rem] h-[1.1rem] px-1 rounded-full text-[10px] font-semibold bg-sky-500/20 text-sky-300">
                     {Object.keys(holdings).length}
@@ -360,18 +368,6 @@ function App() {
           </IconButton>
         </div>
       </header>
-
-      {alertBanner && (
-        <div className="bg-amber-500/15 border-b border-amber-500/30 text-amber-300 text-sm px-6 2xl:px-10 py-2 flex items-center justify-between">
-          <span className="flex items-center gap-2">🔔 {alertBanner}</span>
-          <IconButton
-            onClick={() => setAlertBanner(null)}
-            className="text-amber-400 hover:text-amber-200 w-6 h-6"
-          >
-            ✕
-          </IconButton>
-        </div>
-      )}
 
       <MarketAlerts alerts={alerts} items={alertItems} onSelectItem={setSelectedItem} />
 
@@ -472,6 +468,15 @@ function App() {
                 </Chip>
               </div>
 
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] uppercase tracking-wider text-gray-500 font-medium">
+                  Pinned
+                </label>
+                <Chip active={watchedOnly} onClick={() => setWatchedOnly((v) => !v)}>
+                  ★ Watched{Object.keys(watched).length > 0 ? ` (${Object.keys(watched).length})` : ""}
+                </Chip>
+              </div>
+
               <div className="flex flex-col gap-1 flex-1 min-w-[220px]">
                 <label className="text-[10px] uppercase tracking-wider text-gray-500 font-medium">
                   Presets
@@ -508,10 +513,6 @@ function App() {
             )}
             {error && <div className="text-xs text-rose-400 mb-2">{error}</div>}
 
-            <TrendLeaderboard items={items} onSelectItem={setSelectedItem} />
-            <SectorIndices />
-            <SubstitutionFlags items={items} onSelectItem={setSelectedItem} />
-
             <MarketTable
               items={marketItems}
               watched={watched}
@@ -522,6 +523,15 @@ function App() {
               hasActiveFilters={hasActiveFilters}
               onClearFilters={clearFilters}
             />
+
+            {/* Secondary/browsing panels sit below the primary table, not above it -- the price
+                table is what you're here for; leaderboards/indices/substitution flags are for
+                when you're curious, not the first thing that should compete for attention. */}
+            <div className="mt-6 space-y-4">
+              <TrendLeaderboard items={items} onSelectItem={setSelectedItem} />
+              <SectorIndices />
+              <SubstitutionFlags items={items} onSelectItem={setSelectedItem} />
+            </div>
           </>
         )}
         {tab === "signals" && (
@@ -533,14 +543,8 @@ function App() {
             />
           </>
         )}
-        {tab === "watchlist" && (
-          <Watchlist
-            items={watchedItems}
-            watched={watched}
-            setWatched={setWatched}
-            onSelectItem={setSelectedItem}
-          />
-        )}
+        {tab === "portfolio" && <Portfolio items={items} onSelectItem={setSelectedItem} />}
+        {tab === "flips" && <Flips items={items} onSelectItem={setSelectedItem} />}
         {tab === "bank" && (
           <BankImport
             onUseAsBankroll={handleUseAsBankroll}
@@ -569,6 +573,9 @@ function App() {
         <ItemDetailModal
           item={selectedItem}
           holding={holdings[selectedItem.id]}
+          watchEntry={watched[selectedItem.id]}
+          onToggleWatch={() => setWatched(toggleWatch(watched, selectedItem.id))}
+          onUpdateAlert={(patch) => setWatched(updateWatchAlert(watched, selectedItem.id, patch))}
           onClose={() => setSelectedItem(null)}
         />
       )}

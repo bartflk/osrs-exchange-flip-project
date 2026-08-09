@@ -14,6 +14,7 @@ import { substitutionsRoutes } from "./routes/substitutions.js";
 import { researchReportRoutes } from "./routes/researchReport.js";
 import { sectorsRoutes } from "./routes/sectors.js";
 import { indicatorsRoutes } from "./routes/indicators.js";
+import { ledgerRoutes } from "./routes/ledger.js";
 import { startPolling } from "./poller.js";
 import { closeWarehouse } from "./warehouse.js";
 
@@ -36,6 +37,7 @@ await app.register(substitutionsRoutes);
 await app.register(researchReportRoutes);
 await app.register(sectorsRoutes);
 await app.register(indicatorsRoutes);
+await app.register(ledgerRoutes);
 
 startPolling();
 

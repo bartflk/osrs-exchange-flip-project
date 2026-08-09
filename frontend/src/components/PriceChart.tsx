@@ -40,14 +40,27 @@ interface View {
   end: number; // exclusive
 }
 
+// DESIGN.md §14.40: your own fills drawn on the chart, for the Visualize Flip view. Deliberately
+// a prop on this chart rather than a second chart component -- pan/zoom, the volume strip, event
+// dots and tax markers all already work here, and a parallel implementation would drift.
+export interface ChartTrade {
+  ts: number; // unix seconds
+  price: number;
+  type: "buy" | "sell";
+  quantity: number;
+}
+
 export function PriceChart({
   points,
   blended = false,
   forecast,
   events,
+  trades,
 }: {
   points: TimeseriesPoint[];
   blended?: boolean;
+  // DESIGN.md §14.40: buy/sell markers for a specific flip.
+  trades?: ChartTrade[];
   // DESIGN.md §14.12: IQR prediction bands -- only meaningful appended to the most recent real
   // data, so it's only ever drawn when the view hasn't been panned/zoomed away from the present.
   forecast?: ForecastPoint[];
@@ -233,6 +246,25 @@ export function PriceChart({
     return [...buckets.values()];
   })();
 
+  // Your own fills, positioned with the same interpolation as the event/tax markers so they stay
+  // aligned through pan and zoom. Rendered as a dot at (fill time, fill price) plus a dashed
+  // horizontal line at the average buy and average sell -- that horizontal line is the part that
+  // actually answers "did I get a good price," because it reads directly against the price series.
+  const tradeMarkers = (trades ?? [])
+    .map((t) => ({ ...t, cx: markerX(t.ts), cy: y(t.price) }))
+    .filter((t): t is ChartTrade & { cx: number; cy: number } => t.cx != null);
+
+  function avgLine(type: "buy" | "sell"): { price: number; cy: number } | null {
+    const list = (trades ?? []).filter((t) => t.type === type);
+    if (!list.length) return null;
+    const units = list.reduce((s, t) => s + t.quantity, 0);
+    if (units <= 0) return null;
+    const price = Math.round(list.reduce((s, t) => s + t.price * t.quantity, 0) / units);
+    return { price, cy: y(price) };
+  }
+  const avgBuyLine = avgLine("buy");
+  const avgSellLine = avgLine("sell");
+
   // Simple moving-average overlay -- a light trend line, not a real forecast. Window scales with
   // how many points are currently in view so it stays legible whether zoomed to a day or a year.
   const maWindow = Math.max(3, Math.round(visibleCount / 15));
@@ -328,7 +360,9 @@ export function PriceChart({
           setHoverIdx(null);
           dragRef.current = null;
         }}
-        onDoubleClick={resetZoom}
+        // Preact spells this onDblClick; the React-style onDoubleClick left over from the §14.x
+        // migration was never bound, so double-click-to-reset-zoom silently did nothing.
+        onDblClick={resetZoom}
       >
         {/* gridlines */}
         {[0, 0.5, 1].map((t) => (
@@ -428,6 +462,74 @@ export function PriceChart({
             />
           </>
         )}
+
+        {/* DESIGN.md §14.40: your own fills for this flip. Average lines first so the individual
+            fill dots sit on top of them. */}
+        {avgBuyLine && (
+          <g>
+            <line
+              x1={PAD_LEFT}
+              x2={WIDTH - PAD_RIGHT}
+              y1={avgBuyLine.cy}
+              y2={avgBuyLine.cy}
+              stroke="#38bdf8"
+              stroke-width={1}
+              stroke-dasharray="5,4"
+              opacity={0.75}
+            />
+            <circle cx={WIDTH - PAD_RIGHT - 8} cy={avgBuyLine.cy} r={7} fill="#38bdf8" />
+            <text
+              x={WIDTH - PAD_RIGHT - 8}
+              y={avgBuyLine.cy + 3}
+              text-anchor="middle"
+              font-size={9}
+              font-weight="600"
+              fill="#0b1220"
+            >
+              B
+            </text>
+          </g>
+        )}
+        {avgSellLine && (
+          <g>
+            <line
+              x1={PAD_LEFT}
+              x2={WIDTH - PAD_RIGHT}
+              y1={avgSellLine.cy}
+              y2={avgSellLine.cy}
+              stroke="#fb923c"
+              stroke-width={1}
+              stroke-dasharray="5,4"
+              opacity={0.75}
+            />
+            <circle cx={WIDTH - PAD_RIGHT - 8} cy={avgSellLine.cy} r={7} fill="#fb923c" />
+            <text
+              x={WIDTH - PAD_RIGHT - 8}
+              y={avgSellLine.cy + 3}
+              text-anchor="middle"
+              font-size={9}
+              font-weight="600"
+              fill="#0b1220"
+            >
+              S
+            </text>
+          </g>
+        )}
+        {tradeMarkers.map((t, i) => (
+          <circle
+            key={`trade-${i}`}
+            cx={t.cx}
+            cy={t.cy}
+            r={3.5}
+            fill={t.type === "buy" ? "#38bdf8" : "#fb923c"}
+            stroke="#0b1220"
+            stroke-width={1}
+          >
+            <title>
+              {`${t.type === "buy" ? "Bought" : "Sold"} ${t.quantity.toLocaleString()} @ ${formatGp(t.price)}`}
+            </title>
+          </circle>
+        ))}
 
         {/* trend overlay -- a rolling average, not a forecast; purely visual context */}
         <path

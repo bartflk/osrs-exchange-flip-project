@@ -157,10 +157,24 @@ const summaryStmt = db.prepare(`
          SUM(CASE WHEN outcome = 'win' THEN 1 ELSE 0 END) AS wins,
          SUM(CASE WHEN outcome = 'loss' THEN 1 ELSE 0 END) AS losses,
          AVG(realized_net_margin) AS avg_net_margin,
-         AVG(realized_roi_pct) AS avg_roi_pct
+         AVG(realized_roi_pct) AS avg_roi_pct,
+         AVG(net_margin) AS avg_projected_net_margin
   FROM recommendation_snapshots
   WHERE resolved_at IS NOT NULL
 `);
+
+// DESIGN.md §10 item 12: "the single highest-value idea from the whole competitor pass" -- once
+// there's enough resolved history, discount the *projected* profit shown elsewhere (Buy Signals,
+// Capital Allocator) by how well projections have actually panned out, instead of only reporting
+// win rate as a separate, easy-to-ignore stat next to an unadjusted number. MIN_RESOLVED_FOR_RATIO
+// mirrors the same "no signal before validation" floor already used for the volume anomaly
+// detector (alerts.ts) and the manipulation baseline -- a ratio computed off a handful of
+// resolved picks would be noise dressed up as calibration.
+const MIN_RESOLVED_FOR_RATIO = 20;
+// Clamped so a lucky/unlucky short stretch can't produce an absurd multiplier (e.g. a ratio of
+// 4x on a small sample would overstate confidence as badly as showing the raw number does).
+const MIN_RATIO = 0;
+const MAX_RATIO = 1.5;
 
 export interface TrackRecordSummary {
   resolvedCount: number;
@@ -170,6 +184,12 @@ export interface TrackRecordSummary {
   winRate: number | null;
   avgNetMargin: number | null;
   avgRoiPct: number | null;
+  // realized avg net margin ÷ projected avg net margin across resolved picks, clamped to
+  // [0, 1.5]. Null until MIN_RESOLVED_FOR_RATIO picks have resolved, or if the projected average
+  // itself isn't positive (division would be meaningless). Multiply any "projected profit" figure
+  // by this to get a number that's already been shrunk by "and historically, calls like this only
+  // pan out this well in practice."
+  realizationRatio: number | null;
 }
 
 // DESIGN.md §14.12: per-item slice of the same track record, for the item detail modal --
@@ -217,7 +237,15 @@ export function getTrackRecord(): { summary: TrackRecordSummary; recent: TrackRe
     losses: number | null;
     avg_net_margin: number | null;
     avg_roi_pct: number | null;
+    avg_projected_net_margin: number | null;
   };
+  const realizationRatio =
+    row.total >= MIN_RESOLVED_FOR_RATIO &&
+    row.avg_projected_net_margin != null &&
+    row.avg_projected_net_margin > 0 &&
+    row.avg_net_margin != null
+      ? Math.max(MIN_RATIO, Math.min(MAX_RATIO, row.avg_net_margin / row.avg_projected_net_margin))
+      : null;
   const pendingRow = db
     .prepare(`SELECT COUNT(*) AS c FROM recommendation_snapshots WHERE resolved_at IS NULL`)
     .get() as { c: number };
@@ -251,6 +279,7 @@ export function getTrackRecord(): { summary: TrackRecordSummary; recent: TrackRe
       winRate: row.total > 0 ? (row.wins ?? 0) / row.total : null,
       avgNetMargin: row.avg_net_margin,
       avgRoiPct: row.avg_roi_pct,
+      realizationRatio,
     },
     recent: rows.map((r) => ({
       id: r.id,

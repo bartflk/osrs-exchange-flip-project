@@ -7,6 +7,7 @@ import { runDailyRollup } from "./rollup.js";
 import { fetchOfficialNews } from "./news.js";
 import { fetchRedditPosts } from "./redditFeed.js";
 import { insertNewEvents, kvGet, kvSet } from "./db.js";
+import { syncGeSlots, backfillFlippingUtilities } from "./geLedger.js";
 
 // DESIGN.md §14.22: the frontend's own "next refresh" countdown (§14.21) was a guess based on
 // its own independent fetch cycle, not the real thing -- the backend polls the Wiki API on its
@@ -187,7 +188,7 @@ async function runNewsPoll() {
 }
 
 // DESIGN.md §14.35: Reddit via public RSS (no OAuth/PRAW needed) -- top-of-day posts from
-// r/2007scape and r/runescape, same events table as official news, tagged `source: "reddit"`.
+// r/2007scape, same events table as official news, tagged `source: "reddit"`.
 // Polled hourly (community discussion moves faster than weekly patch notes, but top-of-day
 // rankings don't change meaningfully minute to minute).
 async function runRedditPoll() {
@@ -210,7 +211,35 @@ async function runRedditPoll() {
   }
 }
 
+// DESIGN.md §14.40: GE trade ledger. Reads local files written by an already-installed RuneLite
+// plugin -- no network call, no rate limit, no game interaction -- so this can run far more often
+// than any of the polls above. Frequency matters here in a way it doesn't elsewhere: the only
+// fills this can miss are ones where a slot was emptied and refilled entirely between two reads,
+// so a shorter interval is a strictly smaller blind spot.
+function runGeLedgerSync() {
+  try {
+    const { slotsRead, transactionsInserted } = syncGeSlots();
+    if (transactionsInserted) {
+      console.log(`[ledger] ${transactionsInserted} new transaction(s) from ${slotsRead} slots`);
+    }
+  } catch (err) {
+    console.error("[ledger] slot sync error", err);
+  }
+}
+
 export function startPolling() {
+  // Backfill first so the ledger has whatever local history exists before live capture starts.
+  try {
+    const backfilled = backfillFlippingUtilities();
+    if (backfilled) console.log(`[ledger] backfilled ${backfilled} historical transaction(s)`);
+  } catch (err) {
+    console.error("[ledger] backfill error", err);
+  }
+
+  const GE_LEDGER_POLL_MS = 20 * 1000;
+  runGeLedgerSync();
+  setInterval(runGeLedgerSync, GE_LEDGER_POLL_MS);
+
   // mapping changes rarely -- once at boot, then once a day
   pollMapping().catch((err) => console.error("[poller] mapping error", err));
   setInterval(

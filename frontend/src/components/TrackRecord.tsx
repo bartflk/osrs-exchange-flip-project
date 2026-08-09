@@ -114,6 +114,22 @@ export function TrackRecord() {
             <div className="text-gray-200 font-mono">{summary.pendingCount}</div>
             <div className="text-[10px] uppercase tracking-wide text-gray-500">Pending</div>
           </div>
+          <div className="text-center" title="Realized ÷ projected avg net margin across resolved picks -- Buy Signals' 'calibrated profit' figure is your raw projection times this.">
+            <div
+              className={`font-mono ${
+                summary.realizationRatio == null
+                  ? "text-gray-500"
+                  : summary.realizationRatio >= 0.7
+                    ? "text-emerald-400"
+                    : "text-amber-400"
+              }`}
+            >
+              {summary.realizationRatio != null
+                ? `${(summary.realizationRatio * 100).toFixed(0)}%`
+                : `${summary.resolvedCount}/20`}
+            </div>
+            <div className="text-[10px] uppercase tracking-wide text-gray-500">Realization</div>
+          </div>
         </div>
       </div>
 

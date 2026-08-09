@@ -13,6 +13,7 @@ import {
 import { formatGp, formatPct } from "../format";
 import { PriceChart, type ChartEvent } from "./PriceChart";
 import type { HoldingEntry } from "../bankHoldings";
+import type { WatchEntry } from "../watchlist";
 import { computeSizingTiers, type SizingTierName } from "../positionSizing";
 import { MarketIntelligencePanel } from "./MarketIntelligencePanel";
 
@@ -39,12 +40,23 @@ const LOOKBACKS: { key: Lookback; label: string }[] = [
 export function ItemDetailModal({
   item,
   holding,
+  watchEntry,
+  onToggleWatch,
+  onUpdateAlert,
   onClose,
 }: {
   item: MarketItem;
   holding?: HoldingEntry;
+  // Price-alert controls used to live only on the standalone Watchlist tab -- folded in here
+  // (right where you're already looking at the item) since that tab was retired in favor of
+  // Portfolio. Optional so the modal still works from call sites that haven't wired watchlist
+  // state through yet.
+  watchEntry?: WatchEntry;
+  onToggleWatch?: () => void;
+  onUpdateAlert?: (patch: { alertAbove?: number | null; alertBelow?: number | null }) => void;
   onClose: () => void;
 }) {
+  const [showAlertInputs, setShowAlertInputs] = useState(false);
   const [lookback, setLookback] = useState<Lookback>("24h");
   const [points, setPoints] = useState<TimeseriesPoint[]>([]);
   const [blended, setBlended] = useState(false);
@@ -173,10 +185,80 @@ export function ItemDetailModal({
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="text-gray-500 hover:text-white text-lg leading-none">
-            ✕
-          </button>
+          <div className="flex items-start gap-3">
+            {onToggleWatch && (
+              <button
+                onClick={() => {
+                  onToggleWatch();
+                  if (!watchEntry) setShowAlertInputs(true);
+                }}
+                className={`text-xl leading-none transition-colors ${
+                  watchEntry ? "text-amber-400" : "text-gray-600 hover:text-gray-300"
+                }`}
+                title={watchEntry ? "Remove from watchlist" : "Add to watchlist"}
+              >
+                ★
+              </button>
+            )}
+            <button onClick={onClose} className="text-gray-500 hover:text-white text-lg leading-none">
+              ✕
+            </button>
+          </div>
         </div>
+
+        {watchEntry && onUpdateAlert && (
+          <div className="glass rounded-lg px-3 py-2 mb-4 flex items-center gap-4 flex-wrap text-xs">
+            <button
+              onClick={() => setShowAlertInputs((v) => !v)}
+              className="text-gray-400 hover:text-gray-200 font-medium"
+            >
+              🔔 Price alerts {showAlertInputs ? "▲" : "▼"}
+            </button>
+            {!showAlertInputs && (watchEntry.alertAbove || watchEntry.alertBelow) && (
+              <span className="text-gray-500">
+                {watchEntry.alertAbove && `above ${formatGp(watchEntry.alertAbove)}gp`}
+                {watchEntry.alertAbove && watchEntry.alertBelow && " · "}
+                {watchEntry.alertBelow && `below ${formatGp(watchEntry.alertBelow)}gp`}
+              </span>
+            )}
+            {showAlertInputs && (
+              <>
+                <label className="flex items-center gap-1.5 text-gray-500">
+                  Notify above
+                  <input
+                    type="number"
+                    defaultValue={watchEntry.alertAbove ?? ""}
+                    placeholder="gp"
+                    onBlur={(e) =>
+                      onUpdateAlert({
+                        alertAbove: (e.target as HTMLInputElement).value
+                          ? Number((e.target as HTMLInputElement).value)
+                          : null,
+                      })
+                    }
+                    className="glass rounded-md px-2 py-1 w-28 outline-none text-gray-200"
+                  />
+                </label>
+                <label className="flex items-center gap-1.5 text-gray-500">
+                  Notify below
+                  <input
+                    type="number"
+                    defaultValue={watchEntry.alertBelow ?? ""}
+                    placeholder="gp"
+                    onBlur={(e) =>
+                      onUpdateAlert({
+                        alertBelow: (e.target as HTMLInputElement).value
+                          ? Number((e.target as HTMLInputElement).value)
+                          : null,
+                      })
+                    }
+                    className="glass rounded-md px-2 py-1 w-28 outline-none text-gray-200"
+                  />
+                </label>
+              </>
+            )}
+          </div>
+        )}
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           <Stat label="Buy at" value={formatGp(item.low)} />
@@ -218,6 +300,33 @@ export function ItemDetailModal({
             positive={item.volatility_pct != null ? item.volatility_pct < 0.05 : undefined}
           />
         </div>
+
+        {/* DESIGN.md §10 item 46 (Execution Edge, from Design/new suggestions.txt): the raw
+            Buy at/Sell at stats above assume instant fills at the last-traded price, which is
+            optimistic -- this is a more realistic offer pair (nudged to jump the fill queue) and
+            what you'd actually clear after tax at those prices. */}
+        {item.execution_buy_price != null && item.execution_sell_price != null && (
+          <div className="glass rounded-xl p-4 mb-4">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs uppercase tracking-wide text-gray-500">Execution edge</span>
+              <span
+                className="text-[10px] text-gray-600"
+                title="Nudge size is a %-of-price heuristic, not the real GE tick table -- treat as a starting offer, not a guarantee"
+              >
+                undercut/overcut, not the real GE tick table
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <Stat label="Recommended buy" value={formatGp(item.execution_buy_price)} />
+              <Stat label="Recommended sell" value={formatGp(item.execution_sell_price)} />
+              <Stat
+                label="Expected margin"
+                value={formatGp(item.execution_margin)}
+                positive={(item.execution_margin ?? 0) >= 0}
+              />
+            </div>
+          </div>
+        )}
 
         {/* DESIGN.md §10 item 7: quantity bands instead of one suggested qty, so the number
             itself communicates how sure the system is (a volatile item's bands shrink together). */}
