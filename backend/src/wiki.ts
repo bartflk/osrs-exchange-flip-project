@@ -73,6 +73,23 @@ export async function fetchTimeseries(
   return data.data;
 }
 
+// DESIGN.md §14.43: granularity actually returned per lookback, probed live against v2 so the
+// time-of-day analysis (tradingHours.ts) had a verified basis rather than an assumed one:
+//
+//   lookback=24h -> 288 points,  5min step, 24/24 hours of day, but only ~2 calendar days
+//   lookback=7d  -> 168 points, 60min step, 24/24 hours of day, 7 calendar days   <- hourly work
+//   lookback=30d -> 120 points,  6h  step,  4/24 hours of day                      <- unusable
+//
+// So 7d is the only lookback that gives full hour-of-day coverage over multiple days, and it caps
+// the seasonality window at 7 days. (v1 of this API exposes a `timestep` param that would give 15
+// days of hourly data, but v1 and v2 reject each other's parameters -- `timestep` on v2 returns
+// HTTP 400 "invalid query parameter" -- and mixing API versions for one feature isn't worth it.)
+//
+// This matters because local price_history CANNOT answer "what time of day is this cheapest":
+// the backend only records while it's running, so its hour coverage reflects when the app was
+// open, not the market. Measured on this install: 10 of 24 hours, identically for every item --
+// the tell that it's an artefact of uptime rather than anything about the items.
+
 // weirdgloop (run by the OSRS Wiki team, same operators as the Real-time Prices API above)
 // keeps the *full* GE price history back to each item's release, daily granularity -- this is
 // the only source for anything beyond the Real-time Prices API's confirmed 1y cap (probed

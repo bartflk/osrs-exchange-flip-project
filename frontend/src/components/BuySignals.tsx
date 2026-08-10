@@ -38,6 +38,14 @@ const TIMEFRAMES: { key: string; label: string; minLiquidity: number }[] = [
   { key: "1h", label: "1h", minLiquidity: 30 },
   { key: "2h", label: "2h", minLiquidity: 10 },
   { key: "6h", label: "6h", minLiquidity: 0 },
+  // DESIGN.md §14.43: overnight/multi-session holds. These share 6h's zero liquidity floor on
+  // purpose -- past a few hours the binding constraint stops being "can this fill in time" and
+  // becomes "am I willing to carry the price risk", which liquidity doesn't measure. Adding a
+  // fake extra filter here would imply a distinction the data doesn't support. The per-item
+  // timing edge in TradingHoursPanel is the thing that actually differentiates these.
+  { key: "12h", label: "12h", minLiquidity: 0 },
+  { key: "18h", label: "18h", minLiquidity: 0 },
+  { key: "24h", label: "24h", minLiquidity: 0 },
 ];
 
 export function BuySignals({

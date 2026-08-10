@@ -204,3 +204,61 @@ export async function generateMarketIntelligence(
   }
   return parseMarketIntelligence(text);
 }
+
+// DESIGN.md §14.43: narrate an item's time-of-day trading pattern.
+//
+// Same "narrate real numbers, never invent" split used everywhere else this app touches an LLM:
+// the model receives hours and already-formatted percentage strings and is asked only to turn
+// them into a sentence. It never sees raw price series and is never asked to do arithmetic --
+// the §14.30 bug (a raw 0.481 narrated as "0.48%") came from exactly that mistake.
+const TRADING_HOURS_SYSTEM_PROMPT = `You explain when to trade an Old School RuneScape item, for a flipper.
+
+You will get pre-computed facts about one item's daily price rhythm. Every number is already
+calculated and formatted. Your job is ONLY to turn them into 2-3 short sentences of plain advice.
+
+Rules:
+- Never invent or recalculate a number. Use the values exactly as given, including the % signs.
+- All times are UTC. Say "UTC" explicitly.
+- If reliable is false, lead with the caveat and do NOT give a confident recommendation.
+- If holdHours is given, say how long the hold is. The timing edge is not a quick flip: buying at
+  the best hour and selling at the best hour can mean holding most of a day, and the reader must
+  not mistake it for an instant margin.
+- Mention liquidity if busiest/quietest hours are given, and get the direction right: the BUSIEST
+  hour is when offers fill fastest, the QUIETEST is when they sit unfilled. Never suggest a quiet
+  hour is good for filling. (A live test inverted this, so it is stated explicitly.)
+- No preamble, no headings, no bullet points. Just the sentences.`;
+
+export interface TradingHoursNarrationInput {
+  itemName: string;
+  bestBuyHour: string | null;
+  bestSellHour: string | null;
+  buyDiscount: string | null;
+  sellPremium: string | null;
+  timingEdge: string | null;
+  holdHours: number | null;
+  busiestHour: string | null;
+  quietestHour: string | null;
+  daysCovered: number;
+  reliable: boolean;
+  caveat: string | null;
+}
+
+export async function generateTradingHoursSummary(
+  input: TradingHoursNarrationInput,
+): Promise<string> {
+  const response = await client.chat.completions.create({
+    model,
+    messages: [
+      { role: "system", content: TRADING_HOURS_SYSTEM_PROMPT },
+      { role: "user", content: JSON.stringify(input) },
+    ],
+  });
+  const text = response.choices[0]?.message?.content;
+  if (!text) throw new Error("Empty response from model");
+  // qwen3 is a reasoning model and can emit a <think>...</think> block before its answer. Stripped
+  // here because this returns prose straight to the UI. Note the other callers do NOT do this:
+  // generateMarketIntelligence is immune (it regex-extracts the JSON object, so a think block just
+  // gets skipped), but generateDigest would render one verbatim if the model ever emitted it --
+  // worth fixing there too rather than assuming it never will.
+  return text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+}

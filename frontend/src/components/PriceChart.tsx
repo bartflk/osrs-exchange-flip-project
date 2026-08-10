@@ -50,17 +50,29 @@ export interface ChartTrade {
   quantity: number;
 }
 
+// DESIGN.md §14.43: recurring time-of-day markers. Unlike events (one moment) or trades (one
+// fill), these mark an hour that repeats every day, so every occurrence inside the visible range
+// gets a marker -- which is the point: you see the rhythm, not a single instant.
+export interface HourMarker {
+  hourUtc: number;
+  kind: "buy" | "sell";
+  label: string;
+}
+
 export function PriceChart({
   points,
   blended = false,
   forecast,
   events,
   trades,
+  hourMarkers,
 }: {
   points: TimeseriesPoint[];
   blended?: boolean;
   // DESIGN.md §14.40: buy/sell markers for a specific flip.
   trades?: ChartTrade[];
+  // DESIGN.md §14.43: "cheapest hour to buy" / "dearest hour to sell", drawn at every occurrence.
+  hourMarkers?: HourMarker[];
   // DESIGN.md §14.12: IQR prediction bands -- only meaningful appended to the most recent real
   // data, so it's only ever drawn when the view hasn't been panned/zoomed away from the present.
   forecast?: ForecastPoint[];
@@ -265,6 +277,30 @@ export function PriceChart({
   const avgBuyLine = avgLine("buy");
   const avgSellLine = avgLine("sell");
 
+  // Every visible point whose UTC hour matches a marked hour. Deduped to one marker per contiguous
+  // run, because a 5-minute-granularity chart has twelve points inside the same hour and would
+  // otherwise draw twelve overlapping balls.
+  const hourMarkerDots = (() => {
+    if (!hourMarkers?.length) return [];
+    const out: { cx: number; kind: "buy" | "sell"; label: string; when: string }[] = [];
+    for (const m of hourMarkers) {
+      let lastIdx = -99;
+      for (let i = v.start; i < v.end && i < clean.length; i++) {
+        const d = new Date(clean[i].timestamp * 1000);
+        if (d.getUTCHours() !== m.hourUtc) continue;
+        if (i - lastIdx < 2) continue; // same hour block, already marked
+        lastIdx = i;
+        out.push({
+          cx: x(i - v.start),
+          kind: m.kind,
+          label: m.label,
+          when: d.toLocaleDateString([], { month: "short", day: "numeric" }),
+        });
+      }
+    }
+    return out;
+  })();
+
   // Simple moving-average overlay -- a light trend line, not a real forecast. Window scales with
   // how many points are currently in view so it stays legible whether zoomed to a day or a year.
   const maWindow = Math.max(3, Math.round(visibleCount / 15));
@@ -462,6 +498,43 @@ export function PriceChart({
             />
           </>
         )}
+
+        {/* DESIGN.md §14.43: recurring best-buy / best-sell hours. Drawn first so price lines and
+            your own fills stay on top -- these are background context, not the subject. */}
+        {hourMarkerDots.map((m, i) => (
+          <g key={`hm-${i}`}>
+            <line
+              x1={m.cx}
+              x2={m.cx}
+              y1={PAD_TOP}
+              y2={HEIGHT - PAD_BOTTOM - VOL_HEIGHT}
+              stroke={m.kind === "buy" ? "#38bdf8" : "#fb923c"}
+              stroke-width={1}
+              stroke-dasharray="2,4"
+              opacity={0.28}
+            />
+            <circle
+              cx={m.cx}
+              cy={PAD_TOP + 6}
+              r={5}
+              fill={m.kind === "buy" ? "#38bdf8" : "#fb923c"}
+              opacity={0.9}
+            >
+              <title>{`${m.label} — ${m.when}`}</title>
+            </circle>
+            <text
+              x={m.cx}
+              y={PAD_TOP + 9}
+              text-anchor="middle"
+              font-size={7}
+              font-weight="700"
+              fill="#0b1220"
+              pointer-events="none"
+            >
+              {m.kind === "buy" ? "B" : "S"}
+            </text>
+          </g>
+        ))}
 
         {/* DESIGN.md §14.40: your own fills for this flip. Average lines first so the individual
             fill dots sit on top of them. */}

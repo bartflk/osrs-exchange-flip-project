@@ -794,3 +794,45 @@ export async function fetchMissedFlips(): Promise<{
   if (!res.ok) throw new Error(`Failed to load missed flips: ${res.status}`);
   return res.json();
 }
+
+// DESIGN.md §14.43: time-of-day trading pattern for one item, from the Wiki API's 7d hourly
+// series (the only lookback with full 24-hour coverage across multiple days).
+export interface HourProfile {
+  hourUtc: number;
+  buyDeviation: number | null;
+  sellDeviation: number | null;
+  volume: number;
+  days: number;
+}
+
+export interface TradingHours {
+  itemId: number;
+  hours: HourProfile[];
+  bestBuyHourUtc: number | null;
+  bestSellHourUtc: number | null;
+  timingEdgePct: number | null;
+  holdHours: number | null;
+  busiestHourUtc: number | null;
+  quietestHourUtc: number | null;
+  daysCovered: number;
+  hoursCovered: number;
+  reliable: boolean;
+  caveat: string | null;
+}
+
+export async function fetchTradingHours(itemId: number): Promise<TradingHours> {
+  const res = await fetch(`/api/items/${itemId}/trading-hours`);
+  if (!res.ok) throw new Error(`Failed to load trading hours: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchTradingHoursSummary(
+  itemId: number,
+  refresh = false,
+): Promise<{ summary: string }> {
+  const res = await fetch(
+    `/api/items/${itemId}/trading-hours/summary${refresh ? "?refresh=true" : ""}`,
+  );
+  if (!res.ok) throw new Error(`Failed to generate summary: ${res.status}`);
+  return res.json();
+}

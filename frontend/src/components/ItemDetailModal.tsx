@@ -11,7 +11,9 @@ import {
   type ItemTrackRecord,
 } from "../api";
 import { formatGp, formatPct } from "../format";
-import { PriceChart, type ChartEvent } from "./PriceChart";
+import { PriceChart, type ChartEvent, type HourMarker } from "./PriceChart";
+import { TradingHoursPanel } from "./TradingHoursPanel";
+import { fetchTradingHours, type TradingHours } from "../api";
 import type { HoldingEntry } from "../bankHoldings";
 import type { WatchEntry } from "../watchlist";
 import { computeSizingTiers, type SizingTierName } from "../positionSizing";
@@ -66,6 +68,43 @@ export function ItemDetailModal({
   const [trackRecord, setTrackRecord] = useState<ItemTrackRecord | null>(null);
   const [chartEvents, setChartEvents] = useState<ChartEvent[]>([]);
   const sizingTiers = useMemo(() => computeSizingTiers(item), [item]);
+
+  // DESIGN.md §14.43: the item's daily rhythm, fetched once and used twice -- as the panel below
+  // the chart, and as the recurring B/S markers drawn on the chart itself.
+  const [tradingHours, setTradingHours] = useState<TradingHours | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setTradingHours(null);
+    fetchTradingHours(item.id)
+      .then((t) => !cancelled && setTradingHours(t))
+      .catch(() => {}); // additive: the chart is fully usable without it
+    return () => {
+      cancelled = true;
+    };
+  }, [item.id]);
+
+  // Only marked when the pattern passed the reliability gate -- drawing confident markers for an
+  // item whose price barely moves by hour would be exactly the false precision the gate exists
+  // to prevent.
+  const hourMarkers = useMemo<HourMarker[]>(() => {
+    if (!tradingHours?.reliable) return [];
+    const out: HourMarker[] = [];
+    if (tradingHours.bestBuyHourUtc != null) {
+      out.push({
+        hourUtc: tradingHours.bestBuyHourUtc,
+        kind: "buy",
+        label: `Cheapest hour to buy (${String(tradingHours.bestBuyHourUtc).padStart(2, "0")}:00 UTC)`,
+      });
+    }
+    if (tradingHours.bestSellHourUtc != null) {
+      out.push({
+        hourUtc: tradingHours.bestSellHourUtc,
+        kind: "sell",
+        label: `Dearest hour to sell (${String(tradingHours.bestSellHourUtc).padStart(2, "0")}:00 UTC)`,
+      });
+    }
+    return out;
+  }, [tradingHours]);
 
   useEffect(() => {
     let cancelled = false;
@@ -340,6 +379,12 @@ export function ItemDetailModal({
 
         <MarketIntelligencePanel key={item.id} itemId={item.id} />
 
+        {/* DESIGN.md §14.43: the same hourly data that drives the B/S markers on the chart above,
+            broken out per hour with an optional LLM reading of it. */}
+        <div className="mt-4">
+          <TradingHoursPanel key={item.id} itemId={item.id} />
+        </div>
+
         {/* DESIGN.md §14.12: grounded in this app's own resolved recommendation history
             (recommendation_snapshots), not an unexplained competitor badge -- most items won't
             have any history yet, shown honestly rather than faked. */}
@@ -389,7 +434,13 @@ export function ItemDetailModal({
             below.
           </p>
         )}
-        <PriceChart points={points} blended={blended} forecast={forecast} events={chartEvents} />
+        <PriceChart
+          points={points}
+          blended={blended}
+          forecast={forecast}
+          events={chartEvents}
+          hourMarkers={hourMarkers}
+        />
 
         {rangeStats && (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4 text-sm">
