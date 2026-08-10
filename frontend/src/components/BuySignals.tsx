@@ -13,6 +13,7 @@ import { type Offer, loadOffers, saveOffers } from "../offers";
 import { type Fill, loadFills, saveFills } from "../fills";
 import { GeOffersPanel } from "./GeOffersPanel";
 import { GeSlotBoard } from "./GeSlotBoard";
+import { ItemOfTheHour } from "./ItemOfTheHour";
 import { buildSlotViews, countNeedsAction } from "../geSlots";
 import { diffAndSnapshotSignals, type SignalsDiff } from "../signalsDiff";
 
@@ -458,6 +459,8 @@ export function BuySignals({
           cramped 2-wide column squeezed next to a side panel -- per direct request. onPaste
           covers this whole section (not just a corner textbox) since screenshot+Ctrl-V is the
           primary way offers get tracked now, not the fallback. */}
+      <ItemOfTheHour items={items} onSelectItem={onSelectItem} />
+
       <div className="mb-4" onPaste={handlePanelPaste}>
         <div className="glass rounded-xl p-4">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">

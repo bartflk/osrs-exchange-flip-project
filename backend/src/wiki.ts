@@ -80,15 +80,41 @@ export async function fetchTimeseries(
 //   lookback=7d  -> 168 points, 60min step, 24/24 hours of day, 7 calendar days   <- hourly work
 //   lookback=30d -> 120 points,  6h  step,  4/24 hours of day                      <- unusable
 //
-// So 7d is the only lookback that gives full hour-of-day coverage over multiple days, and it caps
-// the seasonality window at 7 days. (v1 of this API exposes a `timestep` param that would give 15
-// days of hourly data, but v1 and v2 reject each other's parameters -- `timestep` on v2 returns
-// HTTP 400 "invalid query parameter" -- and mixing API versions for one feature isn't worth it.)
+// So 7d is the only *v2 lookback* that gives full hour-of-day coverage over multiple days.
+//
+// v1 exposes a `timestep` parameter instead, and the two versions reject each other's params
+// (`timestep` on v2 -> HTTP 400, `lookback` on v1 -> HTTP 400). v1's timesteps, also probed live:
+//
+//   timestep=5m  -> 365 points,  5min step, 1.3 days
+//   timestep=30m -> 365 points, 30min step, 7.6 days   <- finest resolution available over a week
+//   timestep=1h  -> 365 points, 60min step, 15.2 days
+//   timestep=15m -> HTTP 400, not a valid timestep
+//
+// Every request is capped at 365 points whichever version you use, so there is no way to get four
+// weeks at 30-minute resolution from this API at all -- longer coverage can only be accumulated
+// locally over time (see item_slot_profile in db.ts).
 //
 // This matters because local price_history CANNOT answer "what time of day is this cheapest":
 // the backend only records while it's running, so its hour coverage reflects when the app was
 // open, not the market. Measured on this install: 10 of 24 hours, identically for every item --
 // the tell that it's an artefact of uptime rather than anything about the items.
+const V1_BASE = "https://prices.runescape.wiki/api/v1/osrs";
+
+export type Timestep = "5m" | "30m" | "1h" | "6h" | "24h";
+
+export async function fetchTimeseriesByStep(
+  itemId: number,
+  timestep: Timestep,
+): Promise<TimeseriesPoint[]> {
+  const res = await fetch(`${V1_BASE}/timeseries?id=${itemId}&timestep=${timestep}`, {
+    headers: { "User-Agent": USER_AGENT },
+  });
+  if (!res.ok) {
+    throw new Error(`Wiki v1 timeseries (${itemId}, ${timestep}) failed: ${res.status}`);
+  }
+  const json = (await res.json()) as { data: TimeseriesPoint[] };
+  return json.data ?? [];
+}
 
 // weirdgloop (run by the OSRS Wiki team, same operators as the Real-time Prices API above)
 // keeps the *full* GE price history back to each item's release, daily granularity -- this is

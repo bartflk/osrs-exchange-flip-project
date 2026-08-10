@@ -1,6 +1,7 @@
 import { fetchTimeseries } from "./wiki.js";
 import { kvGetFresh, kvSet } from "./db.js";
 import { geTax } from "./signals.js";
+import { median } from "./stats.js";
 
 // DESIGN.md §14.43: "what time of day is this item cheapest to buy and dearest to sell".
 //
@@ -18,11 +19,15 @@ import { geTax } from "./signals.js";
 // Method, deliberately simple and fully explainable (§1: no ML, no fitted models):
 //   1. Group the hourly points by UTC calendar day.
 //   2. Within each day, express every hour's price as a % deviation from THAT DAY's mean.
-//   3. Average each hour-of-day's deviation across all days.
+//   3. Take the MEDIAN of each hour-of-day's deviations across all days.
 //
-// Step 2 is the one that matters. Without it a trending item makes late hours look systematically
-// "expensive" purely because the price rose over the fortnight -- you'd be reading the trend and
-// calling it a daily rhythm. Detrending per day removes the level and leaves only the shape.
+// Step 2 is what removes the trend: without it a rising item makes late hours look systematically
+// "expensive" purely because the price rose over the week -- you'd be reading the trend and
+// calling it a daily rhythm.
+//
+// Step 3 is median rather than mean because one bad print otherwise decides the answer. See the
+// worked example in stats.ts: a single 419gp tick against a 117gp day-mean moved one slot's
+// average from +0.6% to +37%.
 
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const MIN_DAYS_PER_HOUR = 5; // below this an hour's average is one or two readings, i.e. noise
@@ -33,9 +38,9 @@ const MEANINGFUL_SWING_PCT = 0.004; // 0.4%
 
 export interface HourProfile {
   hourUtc: number;
-  /** Mean % deviation of the insta-buy (low) price from that day's average. Negative = cheaper. */
+  /** Median % deviation of the insta-buy (low) price from that day's mean. Negative = cheaper. */
   buyDeviation: number | null;
-  /** Mean % deviation of the insta-sell (high) price from that day's average. */
+  /** Median % deviation of the insta-sell (high) price from that day's mean. */
   sellDeviation: number | null;
   /** Mean units traded in this hour, both directions. */
   volume: number;
@@ -75,7 +80,7 @@ export async function computeTradingHours(itemId: number): Promise<TradingHours>
   // every cached entry serving the old object, so the UI rendered an empty value for hours after
   // the field shipped -- a silent, confusing failure rather than an obvious one. Bump this
   // whenever TradingHours gains or changes a field.
-  const cacheKey = `tradingHours:v2:${itemId}`;
+  const cacheKey = `tradingHours:v3:${itemId}`;
   const cached = kvGetFresh<TradingHours>(cacheKey, CACHE_TTL_MS);
   if (cached) return cached;
 
@@ -131,7 +136,6 @@ export async function computeTradingHours(itemId: number): Promise<TradingHours>
     }
   }
 
-  const mean = (a: number[]) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : null);
 
   const hours: HourProfile[] = [];
   for (let h = 0; h < 24; h++) {
@@ -140,8 +144,8 @@ export async function computeTradingHours(itemId: number): Promise<TradingHours>
     const v = volumeByHour.get(h);
     hours.push({
       hourUtc: h,
-      buyDeviation: b.length >= MIN_DAYS_PER_HOUR ? mean(b) : null,
-      sellDeviation: s.length >= MIN_DAYS_PER_HOUR ? mean(s) : null,
+      buyDeviation: b.length >= MIN_DAYS_PER_HOUR ? median(b) : null,
+      sellDeviation: s.length >= MIN_DAYS_PER_HOUR ? median(s) : null,
       volume: v && v.n > 0 ? Math.round(v.total / v.n) : 0,
       days: b.length,
     });

@@ -8,6 +8,7 @@ import { fetchOfficialNews } from "./news.js";
 import { fetchRedditPosts } from "./redditFeed.js";
 import { insertNewEvents, kvGet, kvSet } from "./db.js";
 import { syncGeSlots, backfillFlippingUtilities } from "./geLedger.js";
+import { refreshSlotProfiles } from "./slotProfiles.js";
 
 // DESIGN.md §14.22: the frontend's own "next refresh" countdown (§14.21) was a guess based on
 // its own independent fetch cycle, not the real thing -- the backend polls the Wiki API on its
@@ -227,7 +228,26 @@ function runGeLedgerSync() {
   }
 }
 
+// DESIGN.md §14.44: half-hour-of-day price profiles for the most liquid items. One Wiki API
+// request per item, deliberately spaced, so this is minutes long and runs twice a day -- the
+// refreshSlotProfiles() call short-circuits on its own interval, so calling it here is cheap.
+function runSlotProfileRefresh() {
+  refreshSlotProfiles()
+    .then((r) => {
+      if (!r.skipped) {
+        console.log(
+          `[slots] profiled ${r.profiled}/${r.attempted} items (${r.failed} failed)`,
+        );
+      }
+    })
+    .catch((err) => console.error("[slots] profile refresh error", err));
+}
+
 export function startPolling() {
+  // Delayed so it never competes with the first price/mapping polls for startup bandwidth.
+  setTimeout(runSlotProfileRefresh, 60 * 1000);
+  setInterval(runSlotProfileRefresh, 60 * 60 * 1000);
+
   // Backfill first so the ledger has whatever local history exists before live capture starts.
   try {
     const backfilled = backfillFlippingUtilities();

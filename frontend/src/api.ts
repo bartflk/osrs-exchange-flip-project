@@ -836,3 +836,40 @@ export async function fetchTradingHoursSummary(
   if (!res.ok) throw new Error(`Failed to generate summary: ${res.status}`);
   return res.json();
 }
+
+// DESIGN.md §14.44: "best item to buy" for a half-hour slot of the UTC day, across the market.
+export interface HourlyPick {
+  itemId: number;
+  name: string;
+  icon: string | null;
+  slot: number;
+  slotLabel: string;
+  buyDeviation: number;
+  bestSellSlot: number | null;
+  bestSellSlotLabel: string | null;
+  sellDeviation: number | null;
+  timingEdgePct: number | null;
+  holdSlots: number | null;
+  holdHours: number | null;
+  volume: number;
+  days: number;
+  price: number | null;
+  buyLimit: number | null;
+  projectedProfitPerLimit: number | null;
+  score: number;
+}
+
+export interface ItemOfTheHourResponse {
+  slot: number;
+  slotLabel: string;
+  currentSlot: number;
+  picks: HourlyPick[];
+  itemsProfiled: number;
+  lastRun: number | null;
+}
+
+export async function fetchItemOfTheHour(slot?: number): Promise<ItemOfTheHourResponse> {
+  const res = await fetch(`/api/item-of-the-hour${slot != null ? `?slot=${slot}` : ""}`);
+  if (!res.ok) throw new Error(`Failed to load item of the hour: ${res.status}`);
+  return res.json();
+}

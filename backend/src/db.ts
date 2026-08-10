@@ -145,6 +145,26 @@ CREATE TABLE IF NOT EXISTS ge_transactions (
 CREATE INDEX IF NOT EXISTS idx_ge_tx_time ON ge_transactions(occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ge_tx_item ON ge_transactions(item_id, occurred_at);
 
+-- DESIGN.md §14.44: per-item, per-half-hour-of-day price profile, so "what's the best thing to
+-- buy right now" can be answered by time of day across the whole market rather than one item at
+-- a time. 48 slots per item (00:00, 00:30, ... 23:30), all times UTC.
+--
+-- Stored rather than computed on demand because building it costs one Wiki API request per item:
+-- fine as a slow background refresh, impossible per page load. Also the only route to a history
+-- longer than the API's 365-point cap (7.6 days at 30m) -- rows accumulate locally, so coverage
+-- grows past what any single request can return.
+CREATE TABLE IF NOT EXISTS item_slot_profile (
+  item_id INTEGER NOT NULL,
+  slot INTEGER NOT NULL,          -- 0-47, half-hour index into the UTC day
+  buy_deviation REAL,             -- median % deviation of insta-buy price from that day's mean
+  sell_deviation REAL,            -- same for insta-sell
+  volume INTEGER NOT NULL,        -- mean units traded in this slot
+  days INTEGER NOT NULL,          -- distinct days contributing
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (item_id, slot)
+);
+CREATE INDEX IF NOT EXISTS idx_slot_profile_slot ON item_slot_profile(slot);
+
 -- Last-seen state per GE slot. Only exists so the next poll can diff against it: a rising
 -- quantitySold on the same offer IS a fill, deterministically, no inference. Genuinely
 -- disposable -- losing it costs at most one poll cycle of granularity.
@@ -574,4 +594,100 @@ export function upsertGeSlotStates(rows: GeSlotState[]): void {
     db.exec("ROLLBACK");
     throw err;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Per-half-hour slot profiles (DESIGN.md §14.44)
+// ---------------------------------------------------------------------------
+
+export interface SlotProfileRow {
+  item_id: number;
+  slot: number;
+  buy_deviation: number | null;
+  sell_deviation: number | null;
+  volume: number;
+  days: number;
+  updated_at: number;
+}
+
+const upsertSlotProfileStmt = db.prepare(`
+  INSERT INTO item_slot_profile (item_id, slot, buy_deviation, sell_deviation, volume, days, updated_at)
+  VALUES (@item_id, @slot, @buy_deviation, @sell_deviation, @volume, @days, @updated_at)
+  ON CONFLICT(item_id, slot) DO UPDATE SET
+    buy_deviation=excluded.buy_deviation, sell_deviation=excluded.sell_deviation,
+    volume=excluded.volume, days=excluded.days, updated_at=excluded.updated_at
+`);
+
+export function upsertSlotProfiles(rows: SlotProfileRow[]): void {
+  if (!rows.length) return;
+  db.exec("BEGIN");
+  try {
+    for (const r of rows) upsertSlotProfileStmt.run(r as unknown as Record<string, never>);
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+}
+
+const profiledItemsStmt = db.prepare(
+  `SELECT item_id, MAX(updated_at) AS updated_at FROM item_slot_profile GROUP BY item_id`,
+);
+
+export function getProfiledItems(): { item_id: number; updated_at: number }[] {
+  return profiledItemsStmt.all() as unknown as { item_id: number; updated_at: number }[];
+}
+
+// The whole slot profile for one item, used to find where its best sell slot is.
+const profileForItemStmt = db.prepare(
+  `SELECT * FROM item_slot_profile WHERE item_id = ? ORDER BY slot ASC`,
+);
+
+export function getSlotProfile(itemId: number): SlotProfileRow[] {
+  return profileForItemStmt.all(itemId) as unknown as SlotProfileRow[];
+}
+
+// Every profiled item's row for one slot, joined to live prices -- the input to the
+// "best item to buy right now" ranking.
+const itemsAtSlotStmt = db.prepare(`
+  SELECT p.item_id, p.slot, p.buy_deviation, p.sell_deviation, p.volume, p.days,
+         i.name, i.icon, i.buy_limit,
+         s.high, s.low
+  FROM item_slot_profile p
+  JOIN items i ON i.id = p.item_id
+  LEFT JOIN latest_snapshot s ON s.item_id = p.item_id
+  WHERE p.slot = ? AND p.buy_deviation IS NOT NULL
+`);
+
+export interface ItemAtSlot {
+  item_id: number;
+  slot: number;
+  buy_deviation: number;
+  sell_deviation: number | null;
+  volume: number;
+  days: number;
+  name: string;
+  icon: string | null;
+  buy_limit: number | null;
+  high: number | null;
+  low: number | null;
+}
+
+export function getItemsAtSlot(slot: number): ItemAtSlot[] {
+  return itemsAtSlotStmt.all(slot) as unknown as ItemAtSlot[];
+}
+
+// Candidates for profiling: the most liquid items, since a time-of-day pattern on something
+// that trades twice a day is noise, and each item costs one API request to profile.
+const liquidItemsStmt = db.prepare(`
+  SELECT s.item_id
+  FROM latest_snapshot s JOIN items i ON i.id = s.item_id
+  WHERE s.high IS NOT NULL AND s.low IS NOT NULL
+  ORDER BY MIN(COALESCE(s.vol_high_1h, 0), COALESCE(s.vol_low_1h, 0)) DESC
+  LIMIT ?
+`);
+
+export function getMostLiquidItemIds(limit: number): number[] {
+  const rows = liquidItemsStmt.all(limit) as unknown as { item_id: number }[];
+  return rows.map((r) => r.item_id);
 }

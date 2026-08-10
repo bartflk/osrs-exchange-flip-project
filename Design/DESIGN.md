@@ -1064,6 +1064,19 @@ Direct request: *"add recommendations for 12 hour and 18 and 24 hours and times 
 - Also found: **no LLM caller strips `<think>` blocks.** `generateMarketIntelligence` is immune (it regex-extracts JSON), but `generateDigest` would render one verbatim. The new `generateTradingHoursSummary` strips them; a follow-up task was filed for the digest rather than silently widening this change's scope.
 - Verified live end-to-end: `/api/items/1631/trading-hours` returns 7 days / 24 hours / reliable, buy 08:00 → sell 07:00, ~23h hold, 1.78% edge after tax; the regenerated summary states the hold and the liquidity direction correctly; and the item modal renders the panel, the 24-hour bars, the volume strip, local-time conversion, and six B / six S balls on the chart. Both packages typecheck and lint clean apart from the known pre-existing errors.
 
+## 14.44 Status note — "Item of the hour": market-wide best buy by half-hour of day — 2026-08-10
+
+Direct request: *"a per 30 minutes 'Best item to buy' on the time of day, i want the analysis from at least a week or 4 weeks… in the signals tab as an 'Item of the hour sorted by volume and profit at the sell point'."*
+
+- **30-minute resolution exists; four weeks of it does not.** Probed every timestep on v1: `5m` → 1.3 days, **`30m` → 365 points / 7.6 days**, `1h` → 15.2 days, `15m` → HTTP 400. Every request is capped at 365 points regardless of timestep, so ~7.6 days is the hard ceiling at 30-minute granularity on any endpoint. Delivered on that; the only route to longer coverage is accumulating rows locally, which is why `item_slot_profile` is a table rather than a cache.
+- **Architecture follows from cost**: one Wiki API request per item, so profiling is a background job (250 most-liquid items, 400ms apart, twice a day, oldest-first so an interrupted run resumes) writing 48 rows per item, and the ranking then reads SQLite instantly.
+- **A single bad print was deciding the top recommendation.** The first live run put **Sandworms at the top with a 41.5% timing edge** — implausible for a daily rhythm, so I checked rather than shipped it. On 2026-08-05 at 19:00 Sandworms printed **419gp against a day-mean of 117** (a thin trade or a dump), a +259% deviation for that one slot. Across seven days that single reading pulled the slot's **mean to +37.1% while the median was +0.59%**. Every aggregation now uses a median (`stats.ts`, with the worked example recorded there), and **`tradingHours.ts` had the identical flaw** and was fixed with it. After the fix the top picks are Red dragon leather / Dragon dart tip / Moonlight antler bolts at 3–8% edges with real volume — plausible, and arguable from the visible inputs.
+  - Worth stating plainly: the mean is the obvious choice and it was the wrong one. OSRS prices are heavy-tailed enough that one tick can outvote a week.
+- **Scoring is a transparent weighted sum**, not a tuned formula: normalised timing edge (0.45), volume at this slot (0.25), and gp-at-full-buy-limit (0.30). Every input is returned in the row, so any pick can be argued with. Items whose best sell slot has already passed are excluded — buying a discount only pays if a richer sell point is still ahead.
+- **The hold is always shown** next to the edge, for the same reason as §14.43: a 3.4% edge that needs a 10.5-hour hold is not a 3.4% flip.
+- Slot browsing (all 48) is deliberate — *"what should I be buying at 03:00"* is a planning question as much as a live one.
+- Verified live: 250 items profiled, panel renders in Signals at `00:30 UTC (02:30 AM local) · now`, top row Red dragon leather at 2,551gp, −1.62% discount, sell 11:00, 10.5h hold, 3.43% edge, 33,948 volume, 961.3k at buy limit. Both packages typecheck and lint clean apart from the known pre-existing errors.
+
 ## 15. Key references
 
 - [RuneScape:Real-time Prices — OSRS Wiki](https://oldschool.runescape.wiki/w/RuneScape:Real-time_Prices)
