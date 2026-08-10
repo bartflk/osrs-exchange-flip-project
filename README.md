@@ -85,6 +85,27 @@ price-related works exactly as before.
 
 ## Run it
 
+### One click (Windows)
+
+Double-click **`Start Flashwave.bat`**. That's the whole thing — it checks Node, installs
+dependencies on first run, starts both servers in their own labelled windows, waits for them, and
+opens the app in your browser.
+
+It's a `.bat` rather than a `.ps1` on purpose: Windows won't run a PowerShell script on
+double-click by default (the execution policy blocks it, and the shell's default action for `.ps1`
+is to open Notepad). The `.bat` launches `start.ps1` with `-ExecutionPolicy Bypass`, which keeps it
+to one click without changing any machine-wide setting.
+
+- Copy `Start Flashwave.bat` to your Desktop if you want it there; it finds the project by path.
+- Moved or renamed the project folder? Right-click the `.bat` → Edit and update the `PROJECT` line.
+- **To stop:** close the two `Flashwave backend` / `Flashwave frontend` windows.
+- Re-running while it's already up is harmless — it detects the listening ports and skips them.
+- It also reports, without blocking, whether Ollama is up and whether the RuneLite GE files are
+  present, so a missing optional piece is visible immediately instead of showing up later as an
+  empty tab.
+
+### Manually
+
 Two processes, each in its own terminal:
 
 ```bash
