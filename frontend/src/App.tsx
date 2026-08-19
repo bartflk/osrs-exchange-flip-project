@@ -307,10 +307,10 @@ function App() {
       : null;
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_20%_-10%,#1e2130_0%,#0b0c10_55%)]">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_15%_-15%,rgba(168,85,247,0.20)_0%,transparent_40%),radial-gradient(circle_at_100%_0%,rgba(56,132,255,0.14)_0%,transparent_35%),radial-gradient(circle_at_20%_-10%,#1e2130_0%,#0b0c10_55%)]">
       <header className="glass sticky top-0 z-20 px-6 2xl:px-10 py-3 flex items-center justify-between border-b border-white/10">
         <div className="flex items-center gap-6 2xl:gap-8">
-          <h1 className="text-lg 2xl:text-xl font-semibold tracking-tight text-white">
+          <h1 className="text-lg 2xl:text-xl font-semibold tracking-tight bg-gradient-to-r from-violet-400 via-fuchsia-400 to-sky-400 bg-clip-text text-transparent">
             Project Flashwave
           </h1>
           <nav className="flex gap-1">
@@ -318,15 +318,15 @@ function App() {
               <button
                 key={t.key}
                 onClick={() => setTab(t.key)}
-                className={`relative px-3 py-1.5 rounded-lg text-sm 2xl:text-base font-medium transition-colors ${
+                className={`relative px-3 py-1.5 rounded-lg text-sm 2xl:text-base font-medium transition-colors border ${
                   tab === t.key
-                    ? "bg-white/10 text-white"
-                    : "text-gray-400 hover:text-gray-200 hover:bg-white/5"
+                    ? "bg-gradient-to-r from-violet-500/20 to-sky-500/10 text-white border-violet-400/30"
+                    : "text-gray-400 hover:text-gray-200 hover:bg-white/5 border-transparent"
                 }`}
               >
                 {t.label}
                 {t.key === "actions" && Object.keys(holdings).length > 0 && (
-                  <span className="ml-1.5 inline-flex items-center justify-center min-w-[1.1rem] h-[1.1rem] px-1 rounded-full text-[10px] font-semibold bg-sky-500/20 text-sky-300">
+                  <span className="ml-1.5 inline-flex items-center justify-center min-w-[1.1rem] h-[1.1rem] px-1 rounded-full text-[10px] font-semibold bg-violet-500/20 text-violet-300">
                     {Object.keys(holdings).length}
                   </span>
                 )}
@@ -425,7 +425,13 @@ function App() {
                 <label className="text-[10px] uppercase tracking-wider text-gray-500 font-medium">
                   Min liquidity/hr
                 </label>
-                <NumberInput value={minVolume} onChange={setMinVolume} className="w-28" />
+                <NumberInput
+                  value={minVolume}
+                  onChange={setMinVolume}
+                  zeroDisplaysBlank
+                  placeholder="0"
+                  className="w-28"
+                />
               </div>
 
               <div className="flex flex-col gap-1">

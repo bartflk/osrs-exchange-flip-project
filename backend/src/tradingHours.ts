@@ -42,6 +42,9 @@ export interface HourProfile {
   buyDeviation: number | null;
   /** Median % deviation of the insta-sell (high) price from that day's mean. */
   sellDeviation: number | null;
+  /** Median absolute gp paid/received in this hour (§14.45). */
+  buyPrice: number | null;
+  sellPrice: number | null;
   /** Mean units traded in this hour, both directions. */
   volume: number;
   /** How many distinct days contributed to this hour. */
@@ -53,7 +56,7 @@ export interface TradingHours {
   hours: HourProfile[];
   bestBuyHourUtc: number | null;
   bestSellHourUtc: number | null;
-  /** Round-trip edge from timing alone: sell-high deviation minus buy-low deviation, after tax. */
+  /** Real after-tax return from timing: (sell_price - tax - buy_price) / buy_price (§14.45). */
   timingEdgePct: number | null;
   /**
    * Hours you'd have to hold to go from the best buy hour to the next best sell hour, wrapping
@@ -80,7 +83,7 @@ export async function computeTradingHours(itemId: number): Promise<TradingHours>
   // every cached entry serving the old object, so the UI rendered an empty value for hours after
   // the field shipped -- a silent, confusing failure rather than an obvious one. Bump this
   // whenever TradingHours gains or changes a field.
-  const cacheKey = `tradingHours:v3:${itemId}`;
+  const cacheKey = `tradingHours:v4:${itemId}`;
   const cached = kvGetFresh<TradingHours>(cacheKey, CACHE_TTL_MS);
   if (cached) return cached;
 
@@ -112,6 +115,8 @@ export async function computeTradingHours(itemId: number): Promise<TradingHours>
   // --- per-day detrending ---------------------------------------------------------------------
   const buyDevs = new Map<number, number[]>();
   const sellDevs = new Map<number, number[]>();
+  const buyAbs = new Map<number, number[]>();
+  const sellAbs = new Map<number, number[]>();
 
   for (const bucket of days.values()) {
     const lows = bucket.prices.map((p) => p.low).filter((v): v is number => v != null && v > 0);
@@ -127,11 +132,17 @@ export async function computeTradingHours(itemId: number): Promise<TradingHours>
         const arr = buyDevs.get(p.hour) ?? [];
         arr.push((p.low - lowMean) / lowMean);
         buyDevs.set(p.hour, arr);
+        const abs = buyAbs.get(p.hour) ?? [];
+        abs.push(p.low);
+        buyAbs.set(p.hour, abs);
       }
       if (p.high != null && p.high > 0 && highMean > 0) {
         const arr = sellDevs.get(p.hour) ?? [];
         arr.push((p.high - highMean) / highMean);
         sellDevs.set(p.hour, arr);
+        const abs = sellAbs.get(p.hour) ?? [];
+        abs.push(p.high);
+        sellAbs.set(p.hour, abs);
       }
     }
   }
@@ -146,6 +157,8 @@ export async function computeTradingHours(itemId: number): Promise<TradingHours>
       hourUtc: h,
       buyDeviation: b.length >= MIN_DAYS_PER_HOUR ? median(b) : null,
       sellDeviation: s.length >= MIN_DAYS_PER_HOUR ? median(s) : null,
+      buyPrice: b.length >= MIN_DAYS_PER_HOUR ? median(buyAbs.get(h) ?? []) : null,
+      sellPrice: s.length >= MIN_DAYS_PER_HOUR ? median(sellAbs.get(h) ?? []) : null,
       volume: v && v.n > 0 ? Math.round(v.total / v.n) : 0,
       days: b.length,
     });
@@ -179,13 +192,32 @@ export async function computeTradingHours(itemId: number): Promise<TradingHours>
       Math.min(...usableSell.map((h) => h.sellDeviation!))
     : 0;
 
-  if (bestBuyHourUtc != null && bestSellHourUtc != null) {
-    const buyDev = hours[bestBuyHourUtc].buyDeviation!;
-    const sellDev = hours[bestSellHourUtc].sellDeviation!;
-    // Gross timing edge, then taxed: 2% comes off the sale regardless of how well you timed it,
-    // so quoting the pre-tax figure would overstate what timing is actually worth.
-    const gross = sellDev - buyDev;
-    timingEdgePct = gross * (1 - geTax(10_000) / 10_000);
+  // §14.45: computed from real gp, not by subtracting two deviations that were measured against
+  // two different daily means and then shaving 2% off the difference. GE tax is 2% OF THE SALE,
+  // which on a ~2% daily swing is most of the edge -- the old formula reported +1.78% for Uncut
+  // dragonstone where the true after-tax return was +0.03%.
+  //
+  // The best sell hour is also chosen by realised profit rather than by the largest deviation.
+  let bestProfit = 0;
+  const buyPriceAt = bestBuyHourUtc != null ? hours[bestBuyHourUtc].buyPrice : null;
+  if (buyPriceAt != null && buyPriceAt > 0) {
+    let chosen: number | null = null;
+    for (let offset = 1; offset <= 24; offset++) {
+      const h = (bestBuyHourUtc! + offset) % 24;
+      const sp = hours[h].sellPrice;
+      if (sp == null || sp <= 0) continue;
+      const profit = sp - geTax(Math.round(sp)) - buyPriceAt;
+      if (profit > bestProfit) {
+        bestProfit = profit;
+        chosen = h;
+      }
+    }
+    if (chosen != null) {
+      bestSellHourUtc = chosen;
+      timingEdgePct = bestProfit / buyPriceAt;
+    } else {
+      timingEdgePct = null;
+    }
   }
 
   // Wraps past midnight: buying at 20:00 and selling at 04:00 is an 8-hour hold, not -16.

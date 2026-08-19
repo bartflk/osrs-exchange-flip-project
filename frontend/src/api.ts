@@ -429,12 +429,6 @@ export type MeanReversionSignal = "oversold" | "overbought" | "neutral";
 export type SupplyDemandShock = "supply_shock" | "demand_shock" | "none";
 export type FlipSaturation = "low" | "moderate" | "high" | "unknown";
 
-export interface IntradayEdge {
-  bestBuyHourUtc: number | null;
-  bestSellHourUtc: number | null;
-  sampleDays: number;
-}
-
 export interface IndicatorBundle {
   liquidityScore: number;
   buyPressure: BuyPressure;
@@ -444,7 +438,6 @@ export interface IndicatorBundle {
   meanReversionSignal: MeanReversionSignal;
   supplyDemandShock: SupplyDemandShock;
   flipSaturation: FlipSaturation;
-  intradayEdge: IntradayEdge | null;
   opportunityScore: number;
   sampleSize: number;
 }
@@ -465,6 +458,50 @@ export interface MarketIntelligence {
 export async function fetchMarketIntelligence(itemId: number): Promise<MarketIntelligence> {
   const res = await fetch(`/api/items/${itemId}/intelligence`);
   if (!res.ok) throw new Error(`Failed to fetch market intelligence: ${res.status}`);
+  return res.json();
+}
+
+export interface MacdResult {
+  macd: number;
+  signal: number | null;
+  histogram: number | null;
+}
+
+export interface BollingerBands {
+  mid: number;
+  upper: number;
+  lower: number;
+}
+
+export interface CalendarFlags {
+  hourUtc: number;
+  dayOfWeekUtc: number;
+  isWeekendUtc: boolean;
+  isUpdateDayUtc: boolean;
+}
+
+export interface TechnicalIndicators {
+  daysAvailable: number;
+  sma5: number | null;
+  sma20: number | null;
+  ema12: number | null;
+  ema26: number | null;
+  macd: MacdResult | null;
+  rsi14: number | null;
+  bollinger20: BollingerBands | null;
+  atr14: number | null;
+  velocityPct: number | null;
+  accelerationPct: number | null;
+  trendSlopePctPerDay: number | null;
+  buyLimitUtilization: number | null;
+  daysSinceCrash: number | null;
+  daysSinceSpike: number | null;
+  calendar: CalendarFlags;
+}
+
+export async function fetchTechnicalIndicators(itemId: number): Promise<TechnicalIndicators> {
+  const res = await fetch(`/api/items/${itemId}/technicals`);
+  if (!res.ok) throw new Error(`Failed to fetch technical indicators: ${res.status}`);
   return res.json();
 }
 
@@ -801,6 +838,8 @@ export interface HourProfile {
   hourUtc: number;
   buyDeviation: number | null;
   sellDeviation: number | null;
+  buyPrice: number | null;
+  sellPrice: number | null;
   volume: number;
   days: number;
 }
@@ -849,6 +888,10 @@ export interface HourlyPick {
   bestSellSlotLabel: string | null;
   sellDeviation: number | null;
   timingEdgePct: number | null;
+  // §14.45: the gp behind the percentage, so it can be checked rather than trusted.
+  buyPrice: number | null;
+  sellPrice: number | null;
+  profitPerUnit: number | null;
   holdSlots: number | null;
   holdHours: number | null;
   volume: number;

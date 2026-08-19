@@ -18,6 +18,7 @@ import type { HoldingEntry } from "../bankHoldings";
 import type { WatchEntry } from "../watchlist";
 import { computeSizingTiers, type SizingTierName } from "../positionSizing";
 import { MarketIntelligencePanel } from "./MarketIntelligencePanel";
+import { TechnicalIndicatorsPanel } from "./TechnicalIndicatorsPanel";
 
 function iconUrl(icon: string): string {
   if (!icon) return "";
@@ -194,7 +195,7 @@ export function ItemDetailModal({
       onClick={onClose}
     >
       <div
-        className="glass rounded-2xl w-full max-w-6xl p-6 max-h-[92vh] overflow-auto"
+        className="glass rounded-2xl w-full max-w-[1500px] p-6 2xl:p-8 max-h-[92vh] overflow-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between mb-4">
@@ -207,7 +208,7 @@ export function ItemDetailModal({
                 <h2 className="text-lg font-semibold text-white">{item.name}</h2>
                 {holding && holding.qty > 0 && (
                   <span
-                    className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-400 border border-sky-500/30"
+                    className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-400 border border-violet-500/30"
                     title={
                       holding.priced
                         ? `Worth ${formatGp(holding.value)}gp at current price`
@@ -299,7 +300,7 @@ export function ItemDetailModal({
           </div>
         )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-6 gap-3 mb-4">
           <Stat label="Buy at" value={formatGp(item.low)} />
           <Stat label="Sell at" value={formatGp(item.high)} />
           <Stat
@@ -377,7 +378,10 @@ export function ItemDetailModal({
           </div>
         )}
 
-        <MarketIntelligencePanel key={item.id} itemId={item.id} />
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
+          <MarketIntelligencePanel key={`intel-${item.id}`} itemId={item.id} />
+          <TechnicalIndicatorsPanel key={`technicals-${item.id}`} itemId={item.id} />
+        </div>
 
         {/* DESIGN.md §14.43: the same hourly data that drives the B/S markers on the chart above,
             broken out per hour with an optional LLM reading of it. */}

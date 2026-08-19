@@ -149,7 +149,7 @@ function valueEntries(entries: BankEntry[]): {
     WHERE i.id IN (${placeholders})
   `,
     )
-    .all(...allIds) as BankRow[];
+    .all(...allIds) as unknown as BankRow[];
 
   const byId = new Map(rows.map((r) => [r.id, r]));
 

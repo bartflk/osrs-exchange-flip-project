@@ -150,13 +150,18 @@ CREATE INDEX IF NOT EXISTS idx_ge_tx_item ON ge_transactions(item_id, occurred_a
 -- a time. 48 slots per item (00:00, 00:30, ... 23:30), all times UTC.
 --
 -- Stored rather than computed on demand because building it costs one Wiki API request per item:
--- fine as a slow background refresh, impossible per page load. Also the only route to a history
--- longer than the API's 365-point cap (7.6 days at 30m) -- rows accumulate locally, so coverage
--- grows past what any single request can return.
+-- fine as a slow background refresh, impossible per page load.
+--
+-- NOTE (§14.45): this does NOT accumulate history. upsertSlotProfiles() overwrites each row, so
+-- every refresh replaces the profile with a fresh 7.6-day window rather than extending it. An
+-- earlier version of this comment claimed otherwise; growing the window past the API's 365-point
+-- cap would need an append-only observations table, which is not built.
 CREATE TABLE IF NOT EXISTS item_slot_profile (
   item_id INTEGER NOT NULL,
   slot INTEGER NOT NULL,          -- 0-47, half-hour index into the UTC day
   buy_deviation REAL,             -- median % deviation of insta-buy price from that day's mean
+  buy_price REAL,                 -- median ABSOLUTE gp you pay in this slot (see §14.45)
+  sell_price REAL,                -- median ABSOLUTE gp you receive in this slot
   sell_deviation REAL,            -- same for insta-sell
   volume INTEGER NOT NULL,        -- mean units traded in this slot
   days INTEGER NOT NULL,          -- distinct days contributing
@@ -182,6 +187,19 @@ CREATE TABLE IF NOT EXISTS ge_slot_state (
   PRIMARY KEY (account_hash, slot)
 );
 `);
+
+// Migrations for columns added after a table shipped. CREATE TABLE IF NOT EXISTS silently does
+// nothing on an existing table, so new columns have to be added explicitly or every existing
+// install keeps the old shape and fails at runtime rather than at startup.
+for (const [table, column, type] of [
+  ["item_slot_profile", "buy_price", "REAL"],
+  ["item_slot_profile", "sell_price", "REAL"],
+] as const) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as unknown as { name: string }[];
+  if (!cols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  }
+}
 
 const upsertItemStmt = db.prepare(`
   INSERT INTO items (id, name, examine, members, lowalch, highalch, buy_limit, value, icon)
@@ -605,16 +623,21 @@ export interface SlotProfileRow {
   slot: number;
   buy_deviation: number | null;
   sell_deviation: number | null;
+  /** Median absolute gp paid/received in this slot -- the basis for real after-tax profit. */
+  buy_price: number | null;
+  sell_price: number | null;
   volume: number;
   days: number;
   updated_at: number;
 }
 
 const upsertSlotProfileStmt = db.prepare(`
-  INSERT INTO item_slot_profile (item_id, slot, buy_deviation, sell_deviation, volume, days, updated_at)
-  VALUES (@item_id, @slot, @buy_deviation, @sell_deviation, @volume, @days, @updated_at)
+  INSERT INTO item_slot_profile
+    (item_id, slot, buy_deviation, sell_deviation, buy_price, sell_price, volume, days, updated_at)
+  VALUES (@item_id, @slot, @buy_deviation, @sell_deviation, @buy_price, @sell_price, @volume, @days, @updated_at)
   ON CONFLICT(item_id, slot) DO UPDATE SET
     buy_deviation=excluded.buy_deviation, sell_deviation=excluded.sell_deviation,
+    buy_price=excluded.buy_price, sell_price=excluded.sell_price,
     volume=excluded.volume, days=excluded.days, updated_at=excluded.updated_at
 `);
 
@@ -650,13 +673,17 @@ export function getSlotProfile(itemId: number): SlotProfileRow[] {
 // Every profiled item's row for one slot, joined to live prices -- the input to the
 // "best item to buy right now" ranking.
 const itemsAtSlotStmt = db.prepare(`
-  SELECT p.item_id, p.slot, p.buy_deviation, p.sell_deviation, p.volume, p.days,
+  SELECT p.item_id, p.slot, p.buy_deviation, p.sell_deviation, p.buy_price, p.sell_price,
+         p.volume, p.days, p.updated_at,
          i.name, i.icon, i.buy_limit,
          s.high, s.low
   FROM item_slot_profile p
   JOIN items i ON i.id = p.item_id
   LEFT JOIN latest_snapshot s ON s.item_id = p.item_id
-  WHERE p.slot = ? AND p.buy_deviation IS NOT NULL
+  -- §14.45: a stale profile was ranked exactly like a fresh one. Items that drop out of the
+  -- top-liquidity refresh list never update, so 109 of them were being recommended on 9-day-old
+  -- patterns paired with today's prices. Freshness is now a condition of being ranked at all.
+  WHERE p.slot = ? AND p.buy_deviation IS NOT NULL AND p.updated_at >= ?
 `);
 
 export interface ItemAtSlot {
@@ -664,8 +691,11 @@ export interface ItemAtSlot {
   slot: number;
   buy_deviation: number;
   sell_deviation: number | null;
+  buy_price: number | null;
+  sell_price: number | null;
   volume: number;
   days: number;
+  updated_at: number;
   name: string;
   icon: string | null;
   buy_limit: number | null;
@@ -673,8 +703,16 @@ export interface ItemAtSlot {
   low: number | null;
 }
 
-export function getItemsAtSlot(slot: number): ItemAtSlot[] {
-  return itemsAtSlotStmt.all(slot) as unknown as ItemAtSlot[];
+export function getItemsAtSlot(slot: number, freshSince: number): ItemAtSlot[] {
+  return itemsAtSlotStmt.all(slot, freshSince) as unknown as ItemAtSlot[];
+}
+
+// Drop profiles stale beyond any usefulness, so the table doesn't grow forever with items that
+// fell out of the refresh list and will never be updated again.
+const pruneProfilesStmt = db.prepare(`DELETE FROM item_slot_profile WHERE updated_at < ?`);
+
+export function pruneStaleSlotProfiles(olderThan: number): number {
+  return Number(pruneProfilesStmt.run(olderThan).changes);
 }
 
 // Candidates for profiling: the most liquid items, since a time-of-day pattern on something

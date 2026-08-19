@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
-import type { MouseEvent } from "preact/compat";
+import type { JSX } from "preact";
 import {
   postBankValue,
   saveBankImport,
@@ -187,7 +187,7 @@ export function BankImport({
     }
   }
 
-  async function handleDeleteSnapshot(id: number, e: MouseEvent) {
+  async function handleDeleteSnapshot(id: number, e: JSX.TargetedMouseEvent<HTMLButtonElement>) {
     e.stopPropagation();
     setDeletingId(id);
     try {

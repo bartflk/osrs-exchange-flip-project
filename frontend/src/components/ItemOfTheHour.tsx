@@ -122,10 +122,11 @@ export function ItemOfTheHour({
                 <thead>
                   <tr className="text-[11px] uppercase tracking-wide text-gray-500 text-left">
                     <th className="pb-2 pr-3 font-medium">Item</th>
-                    <th className="pb-2 pr-3 font-medium text-right">Price now</th>
-                    <th className="pb-2 pr-3 font-medium text-right">Discount</th>
+                    <th className="pb-2 pr-3 font-medium text-right">Buy @</th>
+                    <th className="pb-2 pr-3 font-medium text-right">Sell @</th>
                     <th className="pb-2 pr-3 font-medium text-right">Sell at</th>
                     <th className="pb-2 pr-3 font-medium text-right">Hold</th>
+                    <th className="pb-2 pr-3 font-medium text-right">Profit/u</th>
                     <th className="pb-2 pr-3 font-medium text-right">Edge</th>
                     <th className="pb-2 pr-3 font-medium text-right">Volume</th>
                     <th className="pb-2 pr-3 font-medium text-right">At buy limit</th>
@@ -148,22 +149,21 @@ export function ItemOfTheHour({
                         </div>
                       </td>
                       <td className="py-2 pr-3 text-right font-mono text-gray-300">
-                        {p.price != null ? formatGpFull(p.price) : "—"}
+                        {p.buyPrice != null ? formatGpFull(p.buyPrice) : "—"}
                       </td>
-                      {/* Negative = cheaper than its own daily average right now, which is the
-                          reason it's on this list at all. */}
-                      <td
-                        className={`py-2 pr-3 text-right font-mono ${
-                          p.buyDeviation < 0 ? "text-emerald-400" : "text-gray-500"
-                        }`}
-                      >
-                        {(p.buyDeviation * 100).toFixed(2)}%
+                      {/* §14.45: real gp at the sell slot, so buy@ -> sell@ -> profit/unit is
+                          arithmetic the reader can check, not a percentage to take on faith. */}
+                      <td className="py-2 pr-3 text-right font-mono text-orange-300">
+                        {p.sellPrice != null ? formatGpFull(p.sellPrice) : "—"}
                       </td>
                       <td className="py-2 pr-3 text-right font-mono text-orange-300">
                         {p.bestSellSlotLabel ?? "—"}
                       </td>
                       <td className="py-2 pr-3 text-right font-mono text-gray-400">
                         {p.holdHours != null ? `${p.holdHours}h` : "—"}
+                      </td>
+                      <td className="py-2 pr-3 text-right font-mono text-gray-200">
+                        {p.profitPerUnit != null ? formatGpFull(p.profitPerUnit) : "—"}
                       </td>
                       <td className="py-2 pr-3 text-right font-mono text-emerald-400">
                         {p.timingEdgePct != null ? `${(p.timingEdgePct * 100).toFixed(2)}%` : "—"}
@@ -187,8 +187,8 @@ export function ItemOfTheHour({
           <p className="text-[10px] text-gray-600 mt-2 leading-relaxed">
             30-minute buckets over 7.6 days (the finest resolution this API offers over a week),
             detrended per day and aggregated with a median so one bad print can't decide a ranking.
-            "Edge" is the sell-slot premium minus the discount now, after GE tax; it requires
-            holding for the stated time, and is not an instant margin.
+"Edge" is the real after-tax return: (sell − 2% tax − buy) ÷ buy, from median gp
+            at each slot. It requires holding for the stated time and is not an instant margin.
           </p>
         </>
       )}

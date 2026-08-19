@@ -5,6 +5,7 @@ import {
   getMostLiquidItemIds,
   getItemsAtSlot,
   getSlotProfile,
+  pruneStaleSlotProfiles,
   kvGet,
   kvSet,
   type SlotProfileRow,
@@ -21,8 +22,8 @@ import { median } from "./stats.js";
 // Granularity, probed live (see the table in wiki.ts): timestep=30m returns 365 points = 7.6 days
 // at 30-minute resolution. That's the finest resolution available over a week. Four weeks at this
 // resolution is NOT obtainable -- every timeseries request is capped at 365 points regardless of
-// timestep -- so longer coverage can only come from accumulating these rows locally over time,
-// which is exactly why they're stored rather than recomputed.
+// timestep. Note these rows are REPLACED on each refresh, not appended to, so the window stays
+// 7.6 days -- extending it would need an append-only observations table, which is not built.
 
 const SLOTS_PER_DAY = 48; // 30-minute slots
 const REFRESH_INTERVAL_MS = 12 * 60 * 60 * 1000;
@@ -36,6 +37,11 @@ const MAX_ITEMS = 250;
 // is no deadline on a background job that refreshes twice a day.
 const REQUEST_SPACING_MS = 400;
 const MIN_DAYS_PER_SLOT = 4;
+// §14.45: items that fall out of the top-MAX_ITEMS liquidity list never get refreshed again, so
+// without an age limit their profiles are ranked forever against current prices. Measured: 109
+// items were being recommended on 9-day-old patterns.
+const MAX_PROFILE_AGE_SECONDS = 3 * 24 * 60 * 60;
+const PRUNE_AGE_SECONDS = 14 * 24 * 60 * 60;
 
 function slotOf(date: Date): number {
   return date.getUTCHours() * 2 + (date.getUTCMinutes() >= 30 ? 1 : 0);
@@ -82,6 +88,10 @@ export async function profileItem(itemId: number): Promise<SlotProfileRow[]> {
 
   const buyDevs = new Map<number, number[]>();
   const sellDevs = new Map<number, number[]>();
+  // §14.45: absolute gp, not just deviations. Profit is (sell*0.98 - buy)/buy in real coins;
+  // it cannot be recovered from two deviations measured against two different daily means.
+  const buyPrices = new Map<number, number[]>();
+  const sellPrices = new Map<number, number[]>();
 
   for (const readings of byDay.values()) {
     const lows = readings.map((r) => r.low).filter((v): v is number => v != null && v > 0);
@@ -97,11 +107,17 @@ export async function profileItem(itemId: number): Promise<SlotProfileRow[]> {
         const arr = buyDevs.get(r.slot) ?? [];
         arr.push((r.low - lowMean) / lowMean);
         buyDevs.set(r.slot, arr);
+        const abs = buyPrices.get(r.slot) ?? [];
+        abs.push(r.low);
+        buyPrices.set(r.slot, abs);
       }
       if (r.high != null && r.high > 0) {
         const arr = sellDevs.get(r.slot) ?? [];
         arr.push((r.high - highMean) / highMean);
         sellDevs.set(r.slot, arr);
+        const abs = sellPrices.get(r.slot) ?? [];
+        abs.push(r.high);
+        sellPrices.set(r.slot, abs);
       }
     }
   }
@@ -118,6 +134,8 @@ export async function profileItem(itemId: number): Promise<SlotProfileRow[]> {
       slot,
       buy_deviation: b.length >= MIN_DAYS_PER_SLOT ? median(b) : null,
       sell_deviation: s.length >= MIN_DAYS_PER_SLOT ? median(s) : null,
+      buy_price: b.length >= MIN_DAYS_PER_SLOT ? median(buyPrices.get(slot) ?? []) : null,
+      sell_price: s.length >= MIN_DAYS_PER_SLOT ? median(sellPrices.get(slot) ?? []) : null,
       volume: v && v.n > 0 ? Math.round(v.total / v.n) : 0,
       days: b.length,
       updated_at: now,
@@ -165,6 +183,9 @@ export async function refreshSlotProfiles(force = false): Promise<ProfileRunResu
     await new Promise((r) => setTimeout(r, REQUEST_SPACING_MS));
   }
 
+  const pruned = pruneStaleSlotProfiles(Math.floor(Date.now() / 1000) - PRUNE_AGE_SECONDS);
+  if (pruned) console.log(`[slots] pruned ${pruned} stale profile row(s)`);
+
   return { attempted: candidates.length, profiled, failed, skipped: false };
 }
 
@@ -179,8 +200,12 @@ export interface HourlyPick {
   bestSellSlot: number | null;
   bestSellSlotLabel: string | null;
   sellDeviation: number | null;
-  /** Sell-point premium minus buy-point discount, after GE tax. The actual timing profit. */
+  /** Real after-tax return: (sell_price - tax - buy_price) / buy_price. §14.45. */
   timingEdgePct: number | null;
+  /** The gp figures behind it, so the number can be checked rather than trusted. */
+  buyPrice: number | null;
+  sellPrice: number | null;
+  profitPerUnit: number | null;
   holdSlots: number | null;
   holdHours: number | null;
   volume: number;
@@ -200,40 +225,53 @@ export interface HourlyPick {
  * tuned formula: every input is visible in the returned row, so a pick can always be argued with.
  */
 export function computeItemOfTheHour(slot: number, limit = 12): HourlyPick[] {
-  const rows = getItemsAtSlot(slot);
+  const freshSince = Math.floor(Date.now() / 1000) - MAX_PROFILE_AGE_SECONDS;
+  const rows = getItemsAtSlot(slot, freshSince);
   const picks: HourlyPick[] = [];
 
   for (const r of rows) {
     if (r.days < MIN_DAYS_PER_SLOT) continue;
     if (r.volume <= 0) continue;
 
-    // Where does this item peak *after* now? Buying at a discount only pays if a richer sell slot
-    // is still ahead of you; a peak that already passed today means waiting ~24h for the next one.
+    if (r.buy_price == null || r.buy_price <= 0) continue;
+
+    // Index the profile by its own slot column rather than array position: relying on the array
+    // being exactly 48 ordered rows is true today only because the writer always emits 48.
     const profile = getSlotProfile(r.item_id);
+    const bySlot = new Map(profile.map((p) => [p.slot, p]));
+
+    // Where does this item peak *after* now? Buying cheap only pays if a richer sell slot is
+    // still ahead; a peak that already passed means waiting ~24h for the next one.
+    //
+    // §14.45: pick the best sell slot by REALISED PROFIT, not by the largest sell deviation.
+    // The old version maximised a deviation measured against the sell-side daily mean, then
+    // subtracted a deviation measured against the *buy-side* daily mean and called the difference
+    // profit -- two different baselines, and the 2% GE tax applied to the difference rather than
+    // to the sale. Measured live: 12/12 picks misstated, 3 of them actually loss-making.
     let bestSellSlot: number | null = null;
-    let bestSellDev: number | null = null;
+    let bestProfit = 0;
     for (let offset = 1; offset < SLOTS_PER_DAY; offset++) {
       const s = (slot + offset) % SLOTS_PER_DAY;
-      const row = profile[s];
-      if (!row || row.sell_deviation == null) continue;
-      if (bestSellDev == null || row.sell_deviation > bestSellDev) {
-        bestSellDev = row.sell_deviation;
+      const row = bySlot.get(s);
+      if (!row || row.sell_price == null || row.sell_price <= 0) continue;
+      const profit = row.sell_price - geTax(Math.round(row.sell_price)) - r.buy_price;
+      if (profit > bestProfit) {
+        bestProfit = profit;
         bestSellSlot = s;
       }
     }
 
-    if (bestSellDev == null || bestSellSlot == null) continue;
+    if (bestSellSlot == null || bestProfit <= 0) continue; // no timing profit available from here
 
-    const grossEdge = bestSellDev - r.buy_deviation;
-    if (grossEdge <= 0) continue; // no timing profit available from here
-
-    const timingEdge = grossEdge * (1 - geTax(10_000) / 10_000);
+    const bestSellRow = bySlot.get(bestSellSlot)!;
+    const bestSellDev = bestSellRow.sell_deviation;
+    // Real after-tax return on what you actually tie up.
+    const timingEdge = bestProfit / r.buy_price;
     const holdSlots = (bestSellSlot - slot + SLOTS_PER_DAY) % SLOTS_PER_DAY;
     const holdHours = holdSlots / 2;
 
-    const price = r.low ?? r.high;
-    const projectedProfitPerLimit =
-      price != null && r.buy_limit ? Math.round(price * timingEdge * r.buy_limit) : null;
+    const price = r.buy_price;
+    const projectedProfitPerLimit = r.buy_limit ? Math.round(bestProfit * r.buy_limit) : null;
 
     // Normalised so no single term can dominate: a 0.1% edge on a huge-volume item and a 5% edge
     // on a thin one should both be able to surface, and the caller can see which is which.
@@ -254,6 +292,9 @@ export function computeItemOfTheHour(slot: number, limit = 12): HourlyPick[] {
       bestSellSlotLabel: slotLabel(bestSellSlot),
       sellDeviation: bestSellDev,
       timingEdgePct: timingEdge,
+      buyPrice: Math.round(r.buy_price),
+      sellPrice: Math.round(bestSellRow.sell_price!),
+      profitPerUnit: Math.round(bestProfit),
       holdSlots,
       holdHours,
       volume: r.volume,

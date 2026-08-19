@@ -26,7 +26,7 @@ export async function itemsRoutes(app: FastifyInstance) {
       WHERE s.high IS NOT NULL AND s.low IS NOT NULL
     `,
       )
-      .all() as ItemRow[];
+      .all() as unknown as ItemRow[];
 
     let scored = rows.map(scoreItem).filter((r) => r.net_margin != null);
 
@@ -135,7 +135,7 @@ export async function itemsRoutes(app: FastifyInstance) {
       LIMIT 20
     `,
       )
-      .all(needle) as (ItemRow & { value: number })[];
+      .all(needle) as unknown as (ItemRow & { value: number })[];
 
     return {
       items: rows.map((r) => ({

@@ -13,8 +13,8 @@ const MIN_WINDOW_MS = 5 * 60 * 1000; // don't evaluate until the buffer actually
 // single-tick noise on thin items reads as a 30%+ move. Found live: without this, cold start
 // fired half a dozen bogus alerts in the first two minutes of the fixed version running.
 const COOLDOWN_MS = 30 * 60 * 1000; // don't re-fire the same item+direction more than once per 30min
-const CRASH_PCT = -0.1; // -10% within the window
-const SPIKE_PCT = 0.15; // +15% within the window
+export const CRASH_PCT = -0.1; // -10% within the window
+export const SPIKE_PCT = 0.15; // +15% within the window
 const MIN_PRICE = 1000; // skip cheap items -- a few-gp tick swings %, but means nothing
 // Live testing found MIN_LIQUIDITY=5 on a one-sided (summed) volume check let thinly-traded
 // cosmetics through -- e.g. "Topaz ring" reading as a -51% "crash" off a single stale tick.

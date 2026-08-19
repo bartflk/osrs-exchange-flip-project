@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { WheelEvent, MouseEvent } from "preact/compat";
+// preact/compat does not re-export WheelEvent (only React-shaped types it actually mirrors), so
+// these come from Preact's own JSX namespace, which is the canonical source for DOM handler types.
+import type { JSX } from "preact";
 import type { TimeseriesPoint, ForecastPoint } from "../api";
 import { formatGp } from "../format";
 
@@ -182,18 +184,18 @@ export function PriceChart({
     setView(clampView({ start, end: start + newWidth }));
   }
 
-  function handleWheel(e: WheelEvent<SVGSVGElement>) {
+  function handleWheel(e: JSX.TargetedWheelEvent<SVGSVGElement>) {
     e.preventDefault();
     const rect = e.currentTarget.getBoundingClientRect();
     const svgX = ((e.clientX - rect.left) / rect.width) * WIDTH;
     zoomAt(svgX, e.deltaY > 0 ? 1.2 : 1 / 1.2);
   }
 
-  function handleMouseDown(e: MouseEvent<SVGSVGElement>) {
+  function handleMouseDown(e: JSX.TargetedMouseEvent<SVGSVGElement>) {
     dragRef.current = { startClientX: e.clientX, startView: v };
   }
 
-  function handleMouseMove(e: MouseEvent<SVGSVGElement>) {
+  function handleMouseMove(e: JSX.TargetedMouseEvent<SVGSVGElement>) {
     if (dragRef.current) {
       const rect = e.currentTarget.getBoundingClientRect();
       const deltaPx = e.clientX - dragRef.current.startClientX;

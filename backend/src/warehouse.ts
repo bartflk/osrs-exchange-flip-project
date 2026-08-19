@@ -274,6 +274,27 @@ export async function getPriceDailyAsOf(cutoffDay: string): Promise<DailyPriceAs
   return reader.getRowObjectsJson() as unknown as DailyPriceAsOf[];
 }
 
+// DESIGN.md §10 item 25 (technicalIndicators.ts): the one place classic TA indicators (SMA, EMA,
+// MACD, RSI, Bollinger, ATR, trend slope) source their daily series from -- price_daily is the
+// only table that retains history indefinitely (raw price_history is pruned to a few days,
+// §11.2 Fix 2), so anything needing more than a handful of days has to come from here.
+export async function getPriceDailyForItem(itemId: number, days: number): Promise<PriceDailyRow[]> {
+  const conn = await getWarehouseConnection();
+  const reader = await conn.runAndReadAll(
+    `
+    SELECT item_id, CAST(day AS VARCHAR) AS day, open_high, close_high, min_high, max_high,
+           open_low, close_low, min_low, max_low, avg_volume, sample_count
+    FROM price_daily
+    WHERE item_id = ?
+    ORDER BY day DESC
+    LIMIT ?
+  `,
+    [itemId, days],
+  );
+  const rows = reader.getRowObjectsJson() as unknown as PriceDailyRow[];
+  return rows.reverse(); // oldest first -- every indicator below expects chronological order
+}
+
 export interface WarehouseStatus {
   priceDailyRows: number;
   priceDailyItems: number;

@@ -27,12 +27,6 @@ const historyStmt = db.prepare(`
   ORDER BY ts ASC
 `);
 
-export interface IntradayEdge {
-  bestBuyHourUtc: number | null;
-  bestSellHourUtc: number | null;
-  sampleDays: number;
-}
-
 export type BuyPressure = "bullish" | "bearish" | "neutral";
 export type MeanReversionSignal = "oversold" | "overbought" | "neutral";
 export type SupplyDemandShock = "supply_shock" | "demand_shock" | "none";
@@ -47,7 +41,6 @@ export interface IndicatorBundle {
   meanReversionSignal: MeanReversionSignal;
   supplyDemandShock: SupplyDemandShock;
   flipSaturation: FlipSaturation;
-  intradayEdge: IntradayEdge | null;
   opportunityScore: number; // 0-100 composite of the above -- not backtested, see DESIGN.md caveat
   sampleSize: number; // raw ticks the history-dependent indicators drew on
 }
@@ -97,7 +90,6 @@ export function computeIndicatorBundle(item: ScoredItem): IndicatorBundle {
   let meanReversionZ: number | null = null;
   let meanReversionSignal: MeanReversionSignal = "neutral";
   let supplyDemandShock: SupplyDemandShock = "none";
-  let intradayEdge: IntradayEdge | null = null;
 
   const usable = rows.filter((r) => r.high != null && r.low != null && r.high > 0);
   if (usable.length >= MIN_SAMPLES) {
@@ -140,48 +132,6 @@ export function computeIndicatorBundle(item: ScoredItem): IndicatorBundle {
         (recentRows[recentRows.length - 1].high! - priorRows[0].high!) / priorRows[0].high!;
       if (volJump > 0.5 && priceChange < -0.03) supplyDemandShock = "supply_shock";
       else if (volJump > 0.5 && priceChange > 0.03) supplyDemandShock = "demand_shock";
-    }
-
-    // Intraday edge: average buy/sell price by hour-of-day (UTC) -- best buy hour is the lowest
-    // average `low`, best sell hour the highest average `high`. Honest about sample depth (the
-    // 3-day raw retention window means this firms up over days, not weeks).
-    const byHour = new Map<number, { lowSum: number; lowN: number; highSum: number; highN: number }>();
-    for (const r of usable) {
-      const hour = new Date(r.ts * 1000).getUTCHours();
-      const bucket = byHour.get(hour) ?? { lowSum: 0, lowN: 0, highSum: 0, highN: 0 };
-      if (r.low != null) {
-        bucket.lowSum += r.low;
-        bucket.lowN += 1;
-      }
-      if (r.high != null) {
-        bucket.highSum += r.high;
-        bucket.highN += 1;
-      }
-      byHour.set(hour, bucket);
-    }
-    if (byHour.size >= 6) {
-      let bestBuyHourUtc: number | null = null;
-      let bestBuyAvg = Infinity;
-      let bestSellHourUtc: number | null = null;
-      let bestSellAvg = -Infinity;
-      for (const [hour, bucket] of byHour) {
-        if (bucket.lowN > 0) {
-          const avg = bucket.lowSum / bucket.lowN;
-          if (avg < bestBuyAvg) {
-            bestBuyAvg = avg;
-            bestBuyHourUtc = hour;
-          }
-        }
-        if (bucket.highN > 0) {
-          const avg = bucket.highSum / bucket.highN;
-          if (avg > bestSellAvg) {
-            bestSellAvg = avg;
-            bestSellHourUtc = hour;
-          }
-        }
-      }
-      const sampleDays = (usable[usable.length - 1].ts - usable[0].ts) / 86400;
-      intradayEdge = { bestBuyHourUtc, bestSellHourUtc, sampleDays: Math.round(sampleDays * 10) / 10 };
     }
   }
 
@@ -236,7 +186,6 @@ export function computeIndicatorBundle(item: ScoredItem): IndicatorBundle {
     meanReversionSignal,
     supplyDemandShock,
     flipSaturation,
-    intradayEdge,
     opportunityScore,
     sampleSize: usable.length,
   };

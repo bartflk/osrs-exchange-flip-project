@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { db } from "../db.js";
 import { scoreItem, type ItemRow } from "../signals.js";
 import { computeIndicatorBundle, type IndicatorBundle } from "../indicatorBundle.js";
+import { computeTechnicalIndicators, type TechnicalIndicators } from "../technicalIndicators.js";
 import { computeMarketTemperature } from "../marketTemperature.js";
 import { generateMarketIntelligence, type MarketIntelligence } from "../llm.js";
 import type { TrendWindow } from "../trends.js";
@@ -69,6 +70,18 @@ export async function indicatorsRoutes(app: FastifyInstance) {
       req.log.error(err);
       return reply.code(502).send({ error: "failed to get market intelligence from the model" });
     }
+  });
+
+  app.get("/api/items/:id/technicals", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const itemId = Number(id);
+    const loaded = loadScoredItem(itemId);
+    if (!loaded) return reply.code(404).send({ error: "item not found" });
+    if (loaded.scored.high == null || loaded.scored.low == null) {
+      return reply.code(400).send({ error: "item not currently tradeable" });
+    }
+    const technicals: TechnicalIndicators = await computeTechnicalIndicators(loaded.scored);
+    return technicals;
   });
 
   app.get("/api/market-temperature", async (req, reply) => {

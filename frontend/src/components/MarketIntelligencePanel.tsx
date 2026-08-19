@@ -74,7 +74,7 @@ export function MarketIntelligencePanel({ itemId }: { itemId: number }) {
           <button
             onClick={load}
             disabled={loading}
-            className="px-3 py-1.5 rounded-lg text-xs bg-white/10 hover:bg-white/15 text-white transition-colors shrink-0 disabled:opacity-50"
+            className="px-3 py-1.5 rounded-lg text-xs bg-gradient-to-r from-violet-500 to-sky-500 hover:from-violet-400 hover:to-sky-400 text-white transition-colors shrink-0 disabled:opacity-50"
           >
             {loading ? "Analyzing…" : "Analyze"}
           </button>
@@ -145,22 +145,15 @@ export function MarketIntelligencePanel({ itemId }: { itemId: number }) {
           value={SATURATION_LABEL[ind.flipSaturation]}
           tone={ind.flipSaturation === "high" ? "text-rose-400" : undefined}
         />
-        {ind.intradayEdge && (
-          <IndicatorStat
-            label="Best buy/sell hour (UTC)"
-            value={
-              ind.intradayEdge.bestBuyHourUtc != null && ind.intradayEdge.bestSellHourUtc != null
-                ? `${ind.intradayEdge.bestBuyHourUtc}:00 / ${ind.intradayEdge.bestSellHourUtc}:00`
-                : "—"
-            }
-          />
-        )}
+        {/* DESIGN.md §14.45: the "best buy/sell hour" stat that used to sit here was computed
+            from local price_history, which only covers the hours the backend happened to be
+            running (measured: 13 of 24, identically for every item). It contradicted the
+            Best-times-to-trade panel below, which uses complete hourly data from the Wiki API.
+            Two answers to one question, one of them structurally incapable of being right. */}
       </div>
 
       <p className="text-[11px] text-gray-600">
-        Based on {ind.sampleSize} local price ticks
-        {ind.intradayEdge ? ` over ~${ind.intradayEdge.sampleDays}d` : ""} — heuristic, not
-        backtested. Opportunity score combines all of the above; see DESIGN.md §10 items 36-45.
+        Based on {ind.sampleSize} local price ticks — heuristic, not backtested. Opportunity score combines all of the above; see DESIGN.md §10 items 36-45.
       </p>
     </div>
   );

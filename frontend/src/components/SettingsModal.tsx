@@ -173,7 +173,7 @@ export function SettingsModal({
           >
             <select
               value={settings.refreshIntervalSec}
-              onChange={(e) => set("refreshIntervalSec", Number(e.target.value))}
+              onChange={(e) => set("refreshIntervalSec", Number(e.currentTarget.value))}
               className="glass rounded-lg px-2 py-1 text-sm text-gray-100 outline-none"
             >
               <option value={15}>15s</option>

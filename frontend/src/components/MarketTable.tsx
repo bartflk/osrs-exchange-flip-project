@@ -18,6 +18,7 @@ function BlockIcon({ className = "" }: { className?: string }) {
 }
 
 type SortKey =
+  | "name"
   | "score"
   | "low"
   | "high"
@@ -26,7 +27,12 @@ type SortKey =
   | "roi_pct"
   | "liquidity"
   | "buy_limit"
-  | "potential_profit";
+  | "potential_profit"
+  | "updated_at";
+
+// Sort keys whose "natural" first click is ascending (A-Z, soonest-first) rather than the
+// descending "biggest number first" every gp/pct/score column defaults to.
+const ASC_FIRST: Partial<Record<SortKey, true>> = { name: true };
 
 // Potential profit = net margin over a full buy-limit cycle (the most you could pocket
 // flipping this item to its GE limit right now) -- not tracked server-side, since it's a
@@ -35,6 +41,58 @@ type SortKey =
 function potentialProfit(item: MarketItem): number | null {
   if (item.net_margin == null || item.buy_limit == null) return null;
   return item.net_margin * item.buy_limit;
+}
+
+// Per-column filter rules (funnel icon in each numeric header) -- distinct from the global
+// filter bar above the table (search/preset/price-range/membership), which stays in App.tsx.
+// Kept self-contained here since nothing outside this table needs to know about them.
+type FilterOp = "gte" | "lte" | "eq" | "neq" | "gt" | "lt" | "between";
+
+const OP_LABELS: Record<FilterOp, string> = {
+  gte: "≥ Greater than or equal",
+  lte: "≤ Less than or equal",
+  eq: "= Equals",
+  neq: "≠ Not equal to",
+  gt: "> Greater than",
+  lt: "< Less than",
+  between: "↔ Between",
+};
+
+interface ColumnFilter {
+  op: FilterOp;
+  value: number;
+  value2?: number; // only used by "between"
+}
+
+// ROI is stored as a fraction (0.05 = 5%) but displayed and typed as a percent -- convert once
+// here rather than asking the user to type "0.05" to mean 5%.
+const PERCENT_KEYS: Partial<Record<SortKey, true>> = { roi_pct: true };
+
+function columnValue(item: MarketItem, key: SortKey): number | null {
+  if (key === "name" || key === "updated_at") return null; // not filterable, no funnel on those headers
+  const raw = key === "potential_profit" ? potentialProfit(item) : item[key];
+  if (raw == null) return null;
+  return PERCENT_KEYS[key] ? raw * 100 : raw;
+}
+
+function matchesFilter(value: number | null, filter: ColumnFilter): boolean {
+  if (value == null) return false; // no data can't satisfy a numeric rule
+  switch (filter.op) {
+    case "gte":
+      return value >= filter.value;
+    case "lte":
+      return value <= filter.value;
+    case "eq":
+      return value === filter.value;
+    case "neq":
+      return value !== filter.value;
+    case "gt":
+      return value > filter.value;
+    case "lt":
+      return value < filter.value;
+    case "between":
+      return value >= filter.value && value <= (filter.value2 ?? filter.value);
+  }
 }
 
 const columns: { key: SortKey; label: string; align?: "right"; title?: string }[] = [
@@ -76,7 +134,94 @@ function iconUrl(icon: string): string {
 
 function SortIcon({ active, dir }: { active: boolean; dir: 1 | -1 }) {
   if (!active) return <span className="inline-block w-3 text-gray-700">↕</span>;
-  return <span className="inline-block w-3 text-sky-400">{dir === 1 ? "↑" : "↓"}</span>;
+  return <span className="inline-block w-3 text-violet-400">{dir === 1 ? "↑" : "↓"}</span>;
+}
+
+function FilterIcon({ active }: { active: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      fill="none"
+      className={`w-3 h-3 ${active ? "text-violet-400" : "text-gray-600"}`}
+      aria-hidden="true"
+    >
+      <path d="M2 3h12l-4.5 5.5V13l-3 1.5V8.5L2 3z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+interface FilterDraft {
+  key: SortKey;
+  op: FilterOp;
+  value: string;
+  value2: string;
+}
+
+function FilterPopover({
+  draft,
+  onChange,
+  onApply,
+  onClear,
+  onClose,
+}: {
+  draft: FilterDraft;
+  onChange: (next: FilterDraft) => void;
+  onApply: () => void;
+  onClear: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div
+        className="absolute right-0 top-full mt-1 z-50 w-64 rounded-lg border border-white/10 bg-[#14151c] shadow-xl p-3 text-left normal-case font-normal"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <select
+          value={draft.op}
+          onChange={(e) => onChange({ ...draft, op: (e.target as HTMLSelectElement).value as FilterOp })}
+          className="w-full bg-white/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-gray-200 mb-2"
+        >
+          {(Object.keys(OP_LABELS) as FilterOp[]).map((op) => (
+            <option key={op} value={op}>
+              {OP_LABELS[op]}
+            </option>
+          ))}
+        </select>
+        <div className="flex items-center gap-1.5 mb-2">
+          <input
+            type="text"
+            inputMode="decimal"
+            placeholder={PERCENT_KEYS[draft.key] ? "e.g. 5 for 5%" : "Value"}
+            value={draft.value}
+            onInput={(e) => onChange({ ...draft, value: (e.target as HTMLInputElement).value })}
+            className="w-full bg-white/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-gray-200"
+          />
+          {draft.op === "between" && (
+            <>
+              <span className="text-gray-600 text-xs">–</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                placeholder="Value"
+                value={draft.value2}
+                onInput={(e) => onChange({ ...draft, value2: (e.target as HTMLInputElement).value })}
+                className="w-full bg-white/5 border border-white/10 rounded-md px-2 py-1.5 text-xs text-gray-200"
+              />
+            </>
+          )}
+        </div>
+        <div className="flex items-center justify-between">
+          <button onClick={onClear} className="text-xs text-gray-500 hover:text-gray-300">
+            Clear
+          </button>
+          <Button size="sm" onClick={onApply}>
+            Apply
+          </Button>
+        </div>
+      </div>
+    </>
+  );
 }
 
 export function MarketTable({
@@ -100,9 +245,27 @@ export function MarketTable({
 }) {
   const [sortKey, setSortKey] = useState<SortKey>("score");
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
+  const [columnFilters, setColumnFilters] = useState<Partial<Record<SortKey, ColumnFilter>>>({});
+  const [openFilterKey, setOpenFilterKey] = useState<SortKey | null>(null);
+  const [draft, setDraft] = useState<FilterDraft | null>(null);
+
+  const activeFilterCount = Object.keys(columnFilters).length;
+
+  const filtered = useMemo(() => {
+    if (activeFilterCount === 0) return items;
+    return items.filter((item) =>
+      (Object.entries(columnFilters) as [SortKey, ColumnFilter][]).every(([key, f]) =>
+        matchesFilter(columnValue(item, key), f),
+      ),
+    );
+  }, [items, columnFilters, activeFilterCount]);
 
   const sorted = useMemo(() => {
-    const copy = [...items];
+    const copy = [...filtered];
+    if (sortKey === "name") {
+      copy.sort((a, b) => a.name.localeCompare(b.name) * sortDir);
+      return copy;
+    }
     copy.sort((a, b) => {
       const av =
         sortKey === "potential_profit"
@@ -115,16 +278,65 @@ export function MarketTable({
       return (av - bv) * sortDir;
     });
     return copy;
-  }, [items, sortKey, sortDir]);
+  }, [filtered, sortKey, sortDir]);
+
+  function openFilter(key: SortKey) {
+    const existing = columnFilters[key];
+    setDraft({
+      key,
+      op: existing?.op ?? "gte",
+      value: existing?.value != null ? String(existing.value) : "",
+      value2: existing?.value2 != null ? String(existing.value2) : "",
+    });
+    setOpenFilterKey(key);
+  }
+
+  function applyFilter() {
+    if (!draft) return;
+    const value = Number(draft.value);
+    if (draft.value === "" || Number.isNaN(value)) {
+      setOpenFilterKey(null);
+      return;
+    }
+    const value2 = draft.op === "between" ? Number(draft.value2) : undefined;
+    setColumnFilters((prev) => ({
+      ...prev,
+      [draft.key]: { op: draft.op, value, value2: Number.isNaN(value2 as number) ? undefined : value2 },
+    }));
+    setOpenFilterKey(null);
+  }
+
+  function clearFilter(key: SortKey) {
+    setColumnFilters((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    setOpenFilterKey(null);
+  }
 
   function toggleSort(key: SortKey) {
     if (key === sortKey) {
       setSortDir((d) => (d === 1 ? -1 : 1));
     } else {
       setSortKey(key);
-      setSortDir(-1);
+      setSortDir(ASC_FIRST[key] ? 1 : -1);
     }
   }
+
+  const sortLabel = sortKey === "name" ? "Item" : (columns.find((c) => c.key === sortKey)?.label ?? "Updated");
+  const sortDirLabel =
+    sortKey === "name"
+      ? sortDir === 1
+        ? "A → Z"
+        : "Z → A"
+      : sortKey === "updated_at"
+        ? sortDir === 1
+          ? "oldest → newest"
+          : "newest → oldest"
+        : sortDir === 1
+          ? "low → high"
+          : "high → low";
 
   if (items.length === 0) {
     return (
@@ -145,30 +357,102 @@ export function MarketTable({
     );
   }
 
+  if (sorted.length === 0) {
+    return (
+      <div className="glass rounded-xl">
+        <EmptyState
+          icon="🔍"
+          title="No items match these column filters"
+          hint="Try loosening or clearing the column filter rules below the header."
+        />
+        <div className="flex justify-center pb-6">
+          <Button variant="secondary" size="sm" onClick={() => setColumnFilters({})}>
+            Clear column filters
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="glass rounded-xl overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2 text-xs text-gray-500 border-b border-white/5">
+        <span>
+          Sorted by <span className="text-gray-300 font-medium">{sortLabel}</span> ({sortDirLabel})
+          {activeFilterCount > 0 && (
+            <>
+              {" · "}
+              <span className="text-violet-400 font-medium">
+                {activeFilterCount} column {activeFilterCount === 1 ? "filter" : "filters"}
+              </span>
+              {" "}
+              <button
+                onClick={() => setColumnFilters({})}
+                className="text-gray-500 hover:text-gray-300 underline underline-offset-2"
+              >
+                clear
+              </button>
+            </>
+          )}
+        </span>
+        <span className="text-gray-600">Click a header to sort · use ▽ to filter</span>
+      </div>
       <div className="overflow-auto max-h-[70vh] 2xl:max-h-[78vh]">
         <table className="w-full text-sm 2xl:text-base text-left border-collapse">
           <thead className="sticky top-0 bg-[#0f1015]/95 backdrop-blur z-10">
             <tr className="border-b border-white/10 text-gray-400">
               <th className="px-3 py-2.5 font-medium w-8"></th>
               <th className="px-3 py-2.5 font-medium w-8"></th>
-              <th className="px-3 py-2.5 font-medium">Item</th>
+              <th
+                className="px-3 py-2.5 font-medium cursor-pointer select-none hover:text-white transition-colors"
+                onClick={() => toggleSort("name")}
+              >
+                <span className="inline-flex items-center gap-1">
+                  Item <SortIcon active={sortKey === "name"} dir={sortDir} />
+                </span>
+              </th>
               {columns.map((c) => (
                 <th
                   key={c.key}
                   title={c.title}
-                  className={`px-3 py-2.5 font-medium cursor-pointer select-none hover:text-white transition-colors ${
+                  className={`relative px-3 py-2.5 font-medium select-none hover:text-white transition-colors ${
                     c.align === "right" ? "text-right" : ""
                   }`}
-                  onClick={() => toggleSort(c.key)}
                 >
-                  <span className="inline-flex items-center gap-1">
-                    {c.label} <SortIcon active={sortKey === c.key} dir={sortDir} />
+                  <span className="inline-flex items-center gap-1.5">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openFilterKey === c.key ? setOpenFilterKey(null) : openFilter(c.key);
+                      }}
+                      title={`Filter ${c.label}`}
+                      className="p-0.5 hover:bg-white/10 rounded"
+                    >
+                      <FilterIcon active={!!columnFilters[c.key]} />
+                    </button>
+                    <span className="cursor-pointer" onClick={() => toggleSort(c.key)}>
+                      {c.label} <SortIcon active={sortKey === c.key} dir={sortDir} />
+                    </span>
                   </span>
+                  {openFilterKey === c.key && draft && (
+                    <FilterPopover
+                      draft={draft}
+                      onChange={setDraft}
+                      onApply={applyFilter}
+                      onClear={() => clearFilter(c.key)}
+                      onClose={() => setOpenFilterKey(null)}
+                    />
+                  )}
                 </th>
               ))}
-              <th className="px-3 py-2.5 font-medium">Updated</th>
+              <th
+                className="px-3 py-2.5 font-medium cursor-pointer select-none hover:text-white transition-colors"
+                onClick={() => toggleSort("updated_at")}
+              >
+                <span className="inline-flex items-center gap-1">
+                  Updated <SortIcon active={sortKey === "updated_at"} dir={sortDir} />
+                </span>
+              </th>
             </tr>
           </thead>
           <tbody>

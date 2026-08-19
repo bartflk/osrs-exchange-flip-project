@@ -9,7 +9,7 @@ type ButtonSize = "sm" | "md";
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary:
-    "bg-sky-500/90 text-white hover:bg-sky-400 border border-sky-400/50 shadow-sm shadow-sky-500/20",
+    "bg-gradient-to-r from-violet-500 to-sky-500 text-white hover:from-violet-400 hover:to-sky-400 border border-violet-400/50 shadow-sm shadow-violet-500/25",
   secondary: "bg-white/10 text-gray-100 hover:bg-white/15 border border-white/10",
   ghost:
     "bg-transparent text-gray-400 hover:text-gray-100 hover:bg-white/5 border border-transparent",
@@ -70,7 +70,7 @@ const TONE_CLASSES: Record<BadgeTone, string> = {
   success: "bg-emerald-500/10 text-emerald-300 border-emerald-500/30",
   danger: "bg-rose-500/10 text-rose-300 border-rose-500/30",
   warning: "bg-amber-500/10 text-amber-300 border-amber-500/30",
-  info: "bg-sky-500/10 text-sky-300 border-sky-500/30",
+  info: "bg-violet-500/10 text-violet-300 border-violet-500/30",
 };
 
 export function Badge({
@@ -97,7 +97,7 @@ export function Badge({
 export function Input({ className = "", ...rest }: InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
-      className={`glass rounded-lg px-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 outline-none focus:border-sky-400/40 focus:ring-1 focus:ring-sky-400/30 transition-colors ${className}`}
+      className={`glass rounded-lg px-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 outline-none focus:border-violet-400/40 focus:ring-1 focus:ring-violet-400/30 transition-colors ${className}`}
       {...rest}
     />
   );
@@ -112,15 +112,24 @@ export function NumberInput({
   value,
   onChange,
   className = "",
+  zeroDisplaysBlank = false,
   ...rest
 }: {
   value: number;
   onChange: (value: number) => void;
+  // When true, a value of 0 renders as an empty field instead of "0" -- for filters where 0
+  // means "no minimum," so the field reads as genuinely off rather than a typed zero. Clearing
+  // the field also commits 0 immediately (no revert-on-blur), since blank IS the value here.
+  zeroDisplaysBlank?: boolean;
 } & Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "type">) {
-  const [text, setText] = useState(String(value));
+  const initial = zeroDisplaysBlank && value === 0 ? "" : String(value);
+  const [text, setText] = useState(initial);
 
   useEffect(() => {
-    setText((prev) => (Number(prev) === value ? prev : String(value)));
+    setText((prev) => {
+      if (Number(prev) === value) return prev;
+      return zeroDisplaysBlank && value === 0 ? "" : String(value);
+    });
   }, [value]);
 
   return (
@@ -136,9 +145,13 @@ export function NumberInput({
         if (!/^-?\d*$/.test(raw)) return;
         setText(raw);
         if (raw !== "" && raw !== "-") onChange(Number(raw));
+        else if (raw === "" && zeroDisplaysBlank) onChange(0);
       }}
       onBlur={() => {
-        if (text === "" || text === "-") {
+        if (text === "-") {
+          setText(zeroDisplaysBlank ? "" : String(value));
+          if (zeroDisplaysBlank) onChange(0);
+        } else if (text === "" && !zeroDisplaysBlank) {
           setText(String(value));
         }
       }}
