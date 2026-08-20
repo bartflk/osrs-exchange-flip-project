@@ -1,6 +1,12 @@
 import { useEffect, useState } from "preact/hooks";
 import { fetchItemOfTheHour, type ItemOfTheHourResponse, type MarketItem } from "../api";
 import { formatGp, formatGpFull } from "../format";
+import {
+  slotToDualLabel,
+  slotToLocalLabel,
+  utcLabelToSlot,
+  localZoneLabel,
+} from "../timeSlots";
 import { EmptyState } from "./ui";
 
 // DESIGN.md §14.44: "Item of the hour" -- what's worth buying at this half-hour of the UTC day,
@@ -15,12 +21,7 @@ function iconUrl(icon: string | null): string {
   return `https://oldschool.runescape.wiki/images/${encodeURIComponent(icon.replace(/ /g, "_"))}`;
 }
 
-function localOf(slotLabel: string): string {
-  const [h, m] = slotLabel.split(":").map(Number);
-  const d = new Date();
-  d.setUTCHours(h, m, 0, 0);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
+
 
 export function ItemOfTheHour({
   items,
@@ -61,7 +62,7 @@ export function ItemOfTheHour({
           Item of the hour
           {data && (
             <span className="ml-2 text-xs text-gray-500 font-normal">
-              {data.slotLabel} UTC ({localOf(data.slotLabel)} local)
+              {slotToLocalLabel(utcLabelToSlot(data.slotLabel))} ({data.slotLabel} UTC)
               {isNow ? " · now" : ""} · {data.itemsProfiled} profiled · sized for{" "}
               {formatGp(bankroll)}
             </span>
@@ -75,15 +76,11 @@ export function ItemOfTheHour({
             onChange={(e) => setSlot(Number((e.target as HTMLSelectElement).value))}
             className="bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs text-gray-200"
           >
-            {Array.from({ length: 48 }, (_, i) => {
-              const h = String(Math.floor(i / 2)).padStart(2, "0");
-              const m = i % 2 === 0 ? "00" : "30";
-              return (
-                <option key={i} value={i}>
-                  {h}:{m} UTC
-                </option>
-              );
-            })}
+            {Array.from({ length: 48 }, (_, i) => (
+              <option key={i} value={i}>
+                {slotToDualLabel(i)}
+              </option>
+            ))}
           </select>
           {slot != null && (
             <button
@@ -127,7 +124,7 @@ export function ItemOfTheHour({
                     <th className="pb-2 pr-3 font-medium">Item</th>
                     <th className="pb-2 pr-3 font-medium text-right">Buy @</th>
                     <th className="pb-2 pr-3 font-medium text-right">Sell @</th>
-                    <th className="pb-2 pr-3 font-medium text-right">Sell at</th>
+                    <th className="pb-2 pr-3 font-medium text-right">Sell at ({localZoneLabel()})</th>
                     <th className="pb-2 pr-3 font-medium text-right">Hold</th>
                     <th className="pb-2 pr-3 font-medium text-right">Profit/u</th>
                     <th className="pb-2 pr-3 font-medium text-right">Edge</th>
@@ -161,7 +158,7 @@ export function ItemOfTheHour({
                         {p.sellPrice != null ? formatGpFull(p.sellPrice) : "—"}
                       </td>
                       <td className="py-2 pr-3 text-right font-mono text-orange-300">
-                        {p.bestSellSlotLabel ?? "—"}
+                        {p.bestSellSlotLabel ? slotToLocalLabel(utcLabelToSlot(p.bestSellSlotLabel)) : "—"}
                       </td>
                       <td className="py-2 pr-3 text-right font-mono text-gray-400">
                         {p.holdHours != null ? `${p.holdHours}h` : "—"}

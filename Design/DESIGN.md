@@ -1256,6 +1256,17 @@ The mistake was treating a user-supplied screenshot as a synchronous snapshot of
 
 Inventory and equipment value are exactly what a companion RuneLite plugin could read directly (`Design/RUNELITE_PLUGIN_GUIDE.md`) — it has access to both containers, and it would remove the last manual input in the app.
 
+## 14.49 Status note — Slot times shown in the viewer's own timezone — 2026-08-19
+
+Direct request: *"can the time in the overnight be synced to my time (amsterdam time)"*, with a screenshot of the "Buy time (bedtime) — 20:30 UTC" picker.
+
+- **Local first, UTC alongside — not instead.** Every slot now renders as `22:30 · 20:30 UTC`. Dropping UTC would have been the obvious move and the wrong one: the slot data, the API query parameters, `item_slot_profile`, and every §14.43–14.46 note are keyed on UTC, so a UI that only spoke local time would silently disagree with its own documentation and with anything typed into the API by hand.
+- **Browser timezone, not a hardcoded offset.** A fixed +2 for Amsterdam would be an hour wrong from late October, and wrong entirely if the user travels. `Intl` handles DST for free.
+- **Day rollover is marked.** 22:00 UTC is `00:00 (+1d)` locally. For a *bedtime* picker this is the difference between planning tonight and planning tomorrow night, and a bare "00:00" would have hidden it.
+- **Forced 24-hour.** The browser reported an en-US locale and rendered "10:30 PM · 20:30 UTC" — pairing a 12-hour local with a 24-hour UTC makes the reader convert one to check they agree. `hourCycle: "h23"` also matches how both OSRS and the Netherlands write time.
+- Shared `timeSlots.ts` rather than a helper per component: the bedtime picker, the summary line, and the "Sell at" columns in both Overnight Trading and Item of the Hour all render slots, and two of them already had slightly different local-time helpers copy-pasted between files.
+- Verified live: picker reads `22:30 · 20:30 UTC` for the screenshot's slot, `00:00 (+1d) · 22:00 UTC` at the rollover; headers carry the zone (`GMT+2`); "Sell at" columns localised in both tabs.
+
 ## 15. Key references
 
 - [RuneScape:Real-time Prices — OSRS Wiki](https://oldschool.runescape.wiki/w/RuneScape:Real-time_Prices)

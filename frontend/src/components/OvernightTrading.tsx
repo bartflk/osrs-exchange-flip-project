@@ -9,6 +9,12 @@ import {
   type PortfolioResponse,
 } from "../api";
 import { formatGp, formatGpFull } from "../format";
+import {
+  slotToDualLabel,
+  slotToLocalLabel,
+  utcLabelToSlot,
+  localZoneLabel,
+} from "../timeSlots";
 import { allocateCapital } from "../capitalAllocator";
 import { NumberInput, GpInput, EmptyState, Chip } from "./ui";
 import { GeSlotBoard } from "./GeSlotBoard";
@@ -28,11 +34,10 @@ function iconUrl(icon: string | null): string {
   return `https://oldschool.runescape.wiki/images/${encodeURIComponent(icon.replace(/ /g, "_"))}`;
 }
 
+// §14.49: slot rendering moved to the shared timeSlots helper so the bedtime picker, the summary
+// line and the sell-at column can't drift apart on what "20:30" means.
 function localOf(slotLabel: string): string {
-  const [h, m] = slotLabel.split(":").map(Number);
-  const d = new Date();
-  d.setUTCHours(h, m, 0, 0);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return slotToLocalLabel(utcLabelToSlot(slotLabel));
 }
 
 function loadNumber(key: string, fallback: number): number {
@@ -269,22 +274,20 @@ export function OvernightTrading({
           <NumberInput value={numSlots} onChange={updateNumSlots} className="w-20" />
         </label>
         <label className="text-xs text-gray-400 flex flex-col gap-1">
-          Buy time (bedtime)
+          Buy time (bedtime) <span className="text-gray-600">({localZoneLabel()})</span>
           <div className="flex items-center gap-1.5">
             <select
               value={bedtimeSlot ?? (picksData?.currentSlot ?? 0)}
               onChange={(e) => setBedtimeSlot(Number((e.target as HTMLSelectElement).value))}
               className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-gray-200"
             >
-              {Array.from({ length: 48 }, (_, i) => {
-                const h = String(Math.floor(i / 2)).padStart(2, "0");
-                const m = i % 2 === 0 ? "00" : "30";
-                return (
-                  <option key={i} value={i}>
-                    {h}:{m} UTC
-                  </option>
-                );
-              })}
+              {/* §14.49: your clock first -- nobody picks a bedtime in UTC. The UTC value stays
+                  visible because the API, the slot data and every design note are keyed on it. */}
+              {Array.from({ length: 48 }, (_, i) => (
+                <option key={i} value={i}>
+                  {slotToDualLabel(i)}
+                </option>
+              ))}
             </select>
             {bedtimeSlot != null && (
               <button
@@ -327,7 +330,7 @@ export function OvernightTrading({
               : "all slots in use"}
             {picksData && (
               <span className="ml-2 text-xs text-gray-500 font-normal">
-                buying at {picksData.bedtimeSlotLabel} UTC ({localOf(picksData.bedtimeSlotLabel)}{" "}
+                buying at {localOf(picksData.bedtimeSlotLabel)} ({picksData.bedtimeSlotLabel} UTC{" "}
                 local){isNow ? " · now" : ""} · up to {picksData.maxHoldHours}h hold ·{" "}
                 {picksData.itemsProfiled} items profiled · sized for {formatGp(picksData.bankroll)}
               </span>
@@ -403,7 +406,7 @@ export function OvernightTrading({
                   <th className="pb-2 pr-3 font-medium">Item</th>
                   <th className="pb-2 pr-3 font-medium text-right">Buy @</th>
                   <th className="pb-2 pr-3 font-medium text-right">Sell @</th>
-                  <th className="pb-2 pr-3 font-medium text-right">Sell at</th>
+                  <th className="pb-2 pr-3 font-medium text-right">Sell at ({localZoneLabel()})</th>
                   <th className="pb-2 pr-3 font-medium text-right">Hold</th>
                   <th className="pb-2 pr-3 font-medium text-right">Profit/u</th>
                   <th className="pb-2 pr-3 font-medium text-right">Edge</th>
@@ -437,7 +440,7 @@ export function OvernightTrading({
                       {p.sellPrice != null ? formatGpFull(p.sellPrice) : "—"}
                     </td>
                     <td className="py-2 pr-3 text-right font-mono text-violet-300">
-                      {p.bestSellSlotLabel ?? "—"}
+                      {p.bestSellSlotLabel ? slotToLocalLabel(utcLabelToSlot(p.bestSellSlotLabel)) : "—"}
                     </td>
                     <td className="py-2 pr-3 text-right font-mono text-gray-400">
                       {p.holdHours != null ? `${p.holdHours}h` : "—"}
