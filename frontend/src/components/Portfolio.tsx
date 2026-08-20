@@ -11,7 +11,7 @@ import {
 import { formatGp, formatGpFull, formatPct } from "../format";
 import { NetWorthChart } from "./NetWorthChart";
 import { SessionPanel } from "./SessionPanel";
-import { StatCard, EmptyState } from "./ui";
+import { StatCard, EmptyState, NumberInput } from "./ui";
 
 function iconUrl(icon: string | null): string {
   if (!icon) return "";
@@ -50,6 +50,27 @@ export function Portfolio({
     };
   }, []);
   const [error, setError] = useState<string | null>(null);
+
+  // §14.48: coins in your inventory and the gear you're wearing are worth real gp and no RuneLite
+  // plugin on this install writes either to disk. Copilot records an `average_cash` per session,
+  // but that's a mean over hours (219m across a 9h session while the player actually had 112m on
+  // them), so using it as a current balance would be wrong by more than the figure itself.
+  //
+  // Hand-entered, therefore -- the one thing in this app that has to be. Timestamped so a stale
+  // number is visible as stale rather than quietly inflating net worth forever.
+  const [otherHoldings, setOtherHoldingsRaw] = useState(
+    () => Number(localStorage.getItem("otherHoldings")) || 0,
+  );
+  const [otherHoldingsAt, setOtherHoldingsAt] = useState(
+    () => Number(localStorage.getItem("otherHoldingsAt")) || 0,
+  );
+  function setOtherHoldings(v: number) {
+    setOtherHoldingsRaw(v);
+    localStorage.setItem("otherHoldings", String(v));
+    const now = Math.floor(Date.now() / 1000);
+    localStorage.setItem("otherHoldingsAt", String(now));
+    setOtherHoldingsAt(now);
+  }
 
   useEffect(() => {
     listBankImports()
@@ -91,7 +112,10 @@ export function Portfolio({
 
   const latestNetWorth = history[0]?.total_value ?? null;
   const latestBank = bankHistory?.points.at(-1)?.bankValue ?? null;
-  const trueNetWorth = bankHistory?.points.at(-1)?.netWorth ?? null;
+  const trueNetWorth =
+    bankHistory?.points.at(-1)?.netWorth != null
+      ? bankHistory!.points.at(-1)!.netWorth! + otherHoldings
+      : null;
   const totals = portfolio?.totals;
   const noSources = portfolio && !portfolio.sources.copilot && !portfolio.sources.flippingUtilities;
 
@@ -127,7 +151,9 @@ export function Portfolio({
           }
           hint={
             trueNetWorth != null && latestBank != null
-              ? `${formatGp(latestBank)} bank + ${formatGp(bankHistory!.geValueNow)} on GE`
+              ? `${formatGp(latestBank)} bank + ${formatGp(bankHistory!.geValueNow)} GE${
+                  otherHoldings > 0 ? ` + ${formatGp(otherHoldings)} on hand` : ""
+                }`
               : history.length
                 ? `${history.length} saved import${history.length === 1 ? "" : "s"}`
                 : "No imports"
@@ -142,6 +168,39 @@ export function Portfolio({
           }
           hint="live capture start"
         />
+      </div>
+
+      {/* §14.48: the only manual input left in the app, because nothing writes it to disk. */}
+      <div className="glass rounded-xl p-3 mb-5 flex items-center gap-3 flex-wrap">
+        <span className="text-xs text-gray-400">Cash + gear on hand</span>
+        <NumberInput
+          value={otherHoldings}
+          onChange={setOtherHoldings}
+          zeroDisplaysBlank
+          className="w-40"
+        />
+        <span className="text-[11px] text-gray-500 leading-relaxed flex-1 min-w-[16rem]">
+          {otherHoldings > 0 ? (
+            <>
+              Included in net worth
+              {otherHoldingsAt > 0 && (
+                <>
+                  {" "}
+                  · last set {new Date(otherHoldingsAt * 1000).toLocaleDateString()}
+                  {Math.floor(Date.now() / 1000) - otherHoldingsAt > 3 * 24 * 60 * 60 && (
+                    <span className="text-amber-400"> · stale, re-check it</span>
+                  )}
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              Net worth currently <span className="text-amber-400">excludes</span> inventory coins
+              and worn gear — no RuneLite plugin writes either to disk. Enter it here to complete
+              the figure.
+            </>
+          )}
+        </span>
       </div>
 
       {noSources && (

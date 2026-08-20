@@ -1236,6 +1236,26 @@ Direct request: *"the flip view can be improved with data from the plugins in ru
 
 **Not available, checked rather than assumed:** Loot Tracker (all directories empty — it syncs to the user's account, not disk, on this setup), and the config values themselves (thresholds and colours, nothing a market view can use). `wom-utils` holds only a name-change log; `odablock-*` is a sound pack.
 
+## 14.48 Status note — Net worth completed: cash and gear on hand — 2026-08-19
+
+Direct observation: *"yea im also wearing my gear and have 112 mil on me while trading"*, with a Grand Exchange screenshot.
+
+- **The point was right.** §14.47 had net worth as bank + GE. Coins in the inventory and worn equipment are neither, so the figure was understating by 112m plus whatever the gear is worth.
+- **Nothing writes it to disk.** Checked rather than assumed: no plugin on this install records inventory or equipment value. Flipping Copilot's session file carries `average_cash`, but that is a **mean over the session** — 219m across a 9-hour session while the player actually had 112m on them. Using it as a current balance would be wrong by more than the number itself.
+- So this is the **one hand-entered field left in the app**, and it is timestamped: a value more than three days old is flagged stale, because a forgotten manual figure that quietly inflates net worth forever is worse than no figure. Net worth now reads `57.73m bank + 328.24m GE + 112.00m on hand = 497.97m`.
+
+### A wrong call I made along the way, recorded because the reasoning error is the useful part
+
+While investigating I compared the live slot files against the supplied screenshot, found three slots disagreeing (two `EMPTY` where the screenshot showed big-ticket buys, one stale), and concluded that **Flipping Copilot only records offers it suggested** — that manually-placed offers were invisible, that `cashInBuyOffers` was understated by ~161m, and that the Capital Allocator would plan into occupied slots. That was stated with more confidence than the evidence supported.
+
+It was wrong. Re-reading the files a minute later showed all 8 slots populated with `wasCopilotSuggestion: true`, including the two that had read `EMPTY`. The real explanation is mundane: **the screenshot was several minutes older than the file reads, and the offers had simply moved on** (slots 5 and 7 now hold Babydragon bones and Super combat potion). There is no slot-reading bug.
+
+The mistake was treating a user-supplied screenshot as a synchronous snapshot of live state. For a market that changes every few minutes it is a *historical* document, and diffing live data against it produces differences that look like bugs. Worth remembering: when live data disagrees with a screenshot, re-read the live data before theorising about the source.
+
+### Still open
+
+Inventory and equipment value are exactly what a companion RuneLite plugin could read directly (`Design/RUNELITE_PLUGIN_GUIDE.md`) — it has access to both containers, and it would remove the last manual input in the app.
+
 ## 15. Key references
 
 - [RuneScape:Real-time Prices — OSRS Wiki](https://oldschool.runescape.wiki/w/RuneScape:Real-time_Prices)
