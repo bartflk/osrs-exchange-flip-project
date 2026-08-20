@@ -15,6 +15,7 @@ import {
   utcLabelToSlot,
   localZoneLabel,
 } from "../timeSlots";
+import { useCurrentSlot } from "../useCurrentSlot";
 import { allocateCapital } from "../capitalAllocator";
 import { NumberInput, GpInput, EmptyState, Chip } from "./ui";
 import { GeSlotBoard } from "./GeSlotBoard";
@@ -103,6 +104,9 @@ export function OvernightTrading({
   const [numSlots, setNumSlots] = useState(() => loadNumber("overnightNumSlots", 8));
   const [maxHoldHours, setMaxHoldHours] = useState(() => loadNumber("overnightHoldHours", 8));
   const [bedtimeSlot, setBedtimeSlot] = useState<number | null>(null);
+  // §14.50: live, so "now" rolls over on its own instead of freezing at page load.
+  const liveSlot = useCurrentSlot();
+  const effectiveSlot = bedtimeSlot ?? liveSlot;
   const [riskPreset, setRiskPreset] = useState<RiskPreset>(
     () => (localStorage.getItem("overnightRiskPreset") as RiskPreset | null) ?? "balanced",
   );
@@ -141,13 +145,13 @@ export function OvernightTrading({
     // (deployableUnits x profitPerUnit), so a stale/default bankroll silently returns the wrong
     // candidate SET, not just the wrong quantities -- this was missed when Overnight was first
     // built and Item of the Hour was later made bankroll-aware without it (§14.46/§14.48).
-    fetchOvernightPicks(bedtimeSlot ?? undefined, maxHoldHours, 20, bankroll)
+    fetchOvernightPicks(effectiveSlot, maxHoldHours, 20, bankroll)
       .then((d) => !cancelled && setPicksData(d))
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "failed"));
     return () => {
       cancelled = true;
     };
-  }, [bedtimeSlot, maxHoldHours, bankroll]);
+  }, [effectiveSlot, maxHoldHours, bankroll]);
 
   // The `items` prop is whatever the Market tab's own filter/limit currently returns (a few
   // hundred items, not the full ~4,650 catalogue) -- most overnight picks won't be in it. Same
@@ -256,7 +260,7 @@ export function OvernightTrading({
     [portfolio, catalogue],
   );
 
-  const isNow = picksData != null && picksData.bedtimeSlot === picksData.currentSlot;
+  const isNow = effectiveSlot === liveSlot;
 
   return (
     <div>
@@ -277,7 +281,7 @@ export function OvernightTrading({
           Buy time (bedtime) <span className="text-gray-600">({localZoneLabel()})</span>
           <div className="flex items-center gap-1.5">
             <select
-              value={bedtimeSlot ?? (picksData?.currentSlot ?? 0)}
+              value={effectiveSlot}
               onChange={(e) => setBedtimeSlot(Number((e.target as HTMLSelectElement).value))}
               className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-gray-200"
             >

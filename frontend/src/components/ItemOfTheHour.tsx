@@ -7,6 +7,7 @@ import {
   utcLabelToSlot,
   localZoneLabel,
 } from "../timeSlots";
+import { useCurrentSlot } from "../useCurrentSlot";
 import { EmptyState } from "./ui";
 
 // DESIGN.md §14.44: "Item of the hour" -- what's worth buying at this half-hour of the UTC day,
@@ -32,6 +33,9 @@ export function ItemOfTheHour({
 }) {
   const [data, setData] = useState<ItemOfTheHourResponse | null>(null);
   const [slot, setSlot] = useState<number | null>(null);
+  // §14.50: same staleness fix as Overnight Trading -- the API's currentSlot was read once.
+  const liveSlot = useCurrentSlot();
+  const effectiveSlot = slot ?? liveSlot;
   const [error, setError] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   // Same localStorage key the Capital Allocator uses, so one bankroll drives both.
@@ -40,20 +44,20 @@ export function ItemOfTheHour({
   useEffect(() => {
     let cancelled = false;
     setError(null);
-    fetchItemOfTheHour(slot ?? undefined, bankroll)
+    fetchItemOfTheHour(effectiveSlot, bankroll)
       .then((d) => !cancelled && setData(d))
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "failed"));
     return () => {
       cancelled = true;
     };
-  }, [slot, bankroll]);
+  }, [effectiveSlot, bankroll]);
 
   function open(itemId: number) {
     const match = items.find((i) => i.id === itemId);
     if (match) onSelectItem(match);
   }
 
-  const isNow = data != null && data.slot === data.currentSlot;
+  const isNow = effectiveSlot === liveSlot;
 
   return (
     <div className="glass rounded-xl p-4 mb-4">
@@ -72,7 +76,7 @@ export function ItemOfTheHour({
           {/* Browsing other slots is the planning half of this: "what should I be buying at 03:00
               tomorrow" is as useful as "right now". */}
           <select
-            value={slot ?? (data?.currentSlot ?? 0)}
+            value={effectiveSlot}
             onChange={(e) => setSlot(Number((e.target as HTMLSelectElement).value))}
             className="bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs text-gray-200"
           >

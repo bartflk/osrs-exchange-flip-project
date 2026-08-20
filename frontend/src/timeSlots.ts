@@ -71,3 +71,25 @@ export function utcLabelToSlot(label: string): number {
   const [h, m] = label.split(":").map(Number);
   return h * 2 + (m >= 30 ? 1 : 0);
 }
+
+// §14.50: the current slot, computed from the browser clock.
+//
+// This used to come from the API response and was read once when the component mounted, so the
+// "now" default froze at whatever half-hour the page happened to load in and drifted further the
+// longer the tab stayed open. Observed live: at 23:01 local the bedtime picker still read
+// 22:30, because the page had been loaded at ~22:40.
+//
+// "What half-hour is it" needs no server round trip -- the browser knows, and computing it
+// locally means it can also tick.
+export function currentSlotNow(): number {
+  const d = new Date();
+  return d.getUTCHours() * 2 + (d.getUTCMinutes() >= 30 ? 1 : 0);
+}
+
+/** Milliseconds until the next half-hour boundary, so the tick lands on the rollover. */
+export function msUntilNextSlot(): number {
+  const d = new Date();
+  const mins = d.getUTCMinutes();
+  const next = mins < 30 ? 30 : 60;
+  return ((next - mins) * 60 - d.getUTCSeconds()) * 1000 - d.getMilliseconds() + 250;
+}

@@ -1267,6 +1267,26 @@ Direct request: *"can the time in the overnight be synced to my time (amsterdam 
 - Shared `timeSlots.ts` rather than a helper per component: the bedtime picker, the summary line, and the "Sell at" columns in both Overnight Trading and Item of the Hour all render slots, and two of them already had slightly different local-time helpers copy-pasted between files.
 - Verified live: picker reads `22:30 · 20:30 UTC` for the screenshot's slot, `00:00 (+1d) · 22:00 UTC` at the rollover; headers carry the zone (`GMT+2`); "Sell at" columns localised in both tabs.
 
+## 14.50 Status note — The "now" slot was frozen at page load — 2026-08-19
+
+Direct report: *"its 23:00, why the hell is it 22:30 - 20:30 UTC"*.
+
+**The timezone conversion from §14.49 was correct; the slot it was converting was stale.** Measured at the moment of the report:
+
+    browser local  23:01      browser UTC  21:01
+    expected slot  42   (21:00 UTC -> 23:00 local)
+    selected slot  41   (20:30 UTC -> 22:30 local)
+
+Both components took `currentSlot` from the API response and read it **once, on mount**. The page had been open since roughly 22:40, so "now" was pinned to that half-hour and would have drifted further the longer the tab stayed open. Adding local-time rendering in §14.49 made the staleness legible rather than causing it — the picker had been showing a stale UTC slot the whole time, and converting it to local is simply where it became obvious.
+
+- **"Now" is computed from the browser clock**, not fetched. There is no reason to ask a server what half-hour it is, and doing it locally is what makes it tickable.
+- **The tick is scheduled to the boundary**, not polled. A 30-second interval would leave a stale slot on screen for up to 30 seconds after every rollover, and there is nothing to check in between — the value only changes at :00 and :30.
+- **Re-syncs on `visibilitychange`** as well: a laptop asleep across a boundary skips the timer entirely, which is exactly the case a long overnight-planning session hits.
+- Both Overnight Trading and Item of the Hour now derive one `effectiveSlot = userChoice ?? liveSlot`, used for the fetch, the dropdown value and the "now" badge, so those three can no longer disagree with each other.
+- Verified live: at 23:03 local / 21:03 UTC the picker reads `23:00 · 21:00 UTC`, and the selected index matches the slot computed from the clock.
+
+**Worth keeping:** a value read once from a response and rendered indefinitely is a stale-by-design bug. It survived review because at page load it is always correct — it only becomes wrong with time on screen, which is precisely what a screenshot cannot show and what testing immediately after a reload will never catch.
+
 ## 15. Key references
 
 - [RuneScape:Real-time Prices — OSRS Wiki](https://oldschool.runescape.wiki/w/RuneScape:Real-time_Prices)
