@@ -3,6 +3,7 @@ import {
   upsertSlotProfiles,
   getProfiledItems,
   getMostLiquidItemIds,
+  getHighValueItemIds,
   getItemsAtSlot,
   getSlotProfile,
   pruneStaleSlotProfiles,
@@ -33,10 +34,21 @@ const LAST_RUN_KEY = "slotProfiles:lastRun";
 // the market -- an item that trades a handful of times a day has no time-of-day signal worth
 // having, only noise dressed up as a pattern.
 const MAX_ITEMS = 250;
+// A second, smaller track for expensive PvM gear (Noxious halberd, Scythe, etc.) that the
+// liquidity ranking above structurally excludes -- their unit volume never competes with cheap
+// staples even though real gp moves through them. Still requires >=2 units/hr on both sides so a
+// dead collectible doesn't get profiled on noise. Kept separate and small (60, not merged into
+// the 250 budget) so the liquid track's coverage isn't diluted by adding this.
+// 120, not 60: at a 300m+ bankroll the 20-30m band is squarely in range (eight Bandos
+// chestplates is ~185m), and a top-60-by-price cohort bottoms out around 28m, excluding it.
+const HIGH_VALUE_ITEMS = 120;
+const HIGH_VALUE_MIN_VOLUME = 2;
 // Deliberately unhurried. The Wiki API is free, community-run and asks for reasonable use; there
 // is no deadline on a background job that refreshes twice a day.
 const REQUEST_SPACING_MS = 400;
 const MIN_DAYS_PER_SLOT = 4;
+// Matches the frontend's own default so an un-set bankroll behaves the same on both sides.
+export const DEFAULT_BANKROLL = 10_000_000;
 // §14.45: items that fall out of the top-MAX_ITEMS liquidity list never get refreshed again, so
 // without an age limit their profiles are ranked forever against current prices. Measured: 109
 // items were being recommended on 9-day-old patterns.
@@ -162,7 +174,9 @@ export async function refreshSlotProfiles(force = false): Promise<ProfileRunResu
   }
   kvSet(LAST_RUN_KEY, String(Date.now()));
 
-  const candidates = getMostLiquidItemIds(MAX_ITEMS);
+  const liquid = getMostLiquidItemIds(MAX_ITEMS);
+  const highValue = getHighValueItemIds(HIGH_VALUE_ITEMS, HIGH_VALUE_MIN_VOLUME);
+  const candidates = [...new Set([...liquid, ...highValue])];
   const lastSeen = new Map(getProfiledItems().map((r) => [r.item_id, r.updated_at]));
   candidates.sort((a, b) => (lastSeen.get(a) ?? 0) - (lastSeen.get(b) ?? 0));
 
@@ -214,7 +228,121 @@ export interface HourlyPick {
   buyLimit: number | null;
   /** gp per hour of hold, at full buy limit -- what makes a small % edge on a cheap item real. */
   projectedProfitPerLimit: number | null;
+  // §14.46: what the ranking is actually for. A 13% edge on a 232gp dart earns 330k against a
+  // 308m bankroll because the buy limit caps you at 11,000 units; a 1.65% edge on a 48m weapon
+  // earns 4.7m because you can hold six of them. Percentage return is the wrong objective when
+  // capital, not opportunity, is the binding constraint.
+  /** Units you can actually buy: min(buy limit, bankroll / price). */
+  deployableUnits: number;
+  /** gp those units tie up. */
+  capitalUsed: number;
+  /** deployableUnits x profitPerUnit -- gp this pick earns YOUR bankroll per limit cycle. */
+  cycleProfit: number;
+  /** Share of the slot's typical traded volume you'd have to absorb. >1 means you are the market. */
+  fillShare: number | null;
   score: number;
+}
+
+/**
+ * Best pick for one item, buying at `slot` and selling at the best REALISED-PROFIT slot found
+ * within `maxLookaheadSlots` slots forward (wrapping past midnight). Shared by
+ * `computeItemOfTheHour` (lookahead = the whole day) and `computeOvernightPicks` (lookahead
+ * capped to an actual overnight hold) -- same gating, same scoring, only the search window
+ * differs. See §14.45 for why this ranks by realised after-tax profit rather than a raw
+ * sell-side deviation (a previous version conflated two different daily-mean baselines).
+ */
+function bestPickForItem(
+  r: ReturnType<typeof getItemsAtSlot>[number],
+  slot: number,
+  maxLookaheadSlots: number,
+  bankroll: number,
+): HourlyPick | null {
+  if (r.days < MIN_DAYS_PER_SLOT) return null;
+  if (r.volume <= 0) return null;
+  if (r.buy_price == null || r.buy_price <= 0) return null;
+
+  // Index the profile by its own slot column rather than array position: relying on the array
+  // being exactly 48 ordered rows is true today only because the writer always emits 48.
+  const profile = getSlotProfile(r.item_id);
+  const bySlot = new Map(profile.map((p) => [p.slot, p]));
+
+  // Where does this item peak *after* now, within reach? Buying cheap only pays if a richer sell
+  // slot is still ahead AND reachable inside the caller's hold window.
+  let bestSellSlot: number | null = null;
+  let bestProfit = 0;
+  for (let offset = 1; offset <= maxLookaheadSlots; offset++) {
+    const s = (slot + offset) % SLOTS_PER_DAY;
+    const row = bySlot.get(s);
+    if (!row || row.sell_price == null || row.sell_price <= 0) continue;
+    const profit = row.sell_price - geTax(Math.round(row.sell_price)) - r.buy_price;
+    if (profit > bestProfit) {
+      bestProfit = profit;
+      bestSellSlot = s;
+    }
+  }
+
+  if (bestSellSlot == null || bestProfit <= 0) return null; // no timing profit available from here
+
+  const bestSellRow = bySlot.get(bestSellSlot)!;
+  const bestSellDev = bestSellRow.sell_deviation;
+  // Real after-tax return on what you actually tie up.
+  const timingEdge = bestProfit / r.buy_price;
+  const holdSlots = (bestSellSlot - slot + SLOTS_PER_DAY) % SLOTS_PER_DAY;
+  const holdHours = holdSlots / 2;
+
+  const price = r.buy_price;
+  const projectedProfitPerLimit = r.buy_limit ? Math.round(bestProfit * r.buy_limit) : null;
+
+  // §14.46: rank by the gp this actually earns the caller's bankroll, not by percentage.
+  //
+  // Two constraints bind at once and neither alone is enough: the GE buy limit caps units per 4h
+  // cycle, and the bankroll caps how many you can pay for. Whichever bites first is the real
+  // position size.
+  const affordable = Math.floor(bankroll / r.buy_price);
+  const deployableUnits = Math.max(0, Math.min(r.buy_limit ?? Infinity, affordable));
+  if (deployableUnits <= 0) return null; // can't buy even one at this bankroll
+  const capitalUsed = Math.round(deployableUnits * r.buy_price);
+  const cycleProfit = Math.round(deployableUnits * bestProfit);
+
+  // Can the market absorb that position? `volume` is units traded per 30-minute slot, so this is
+  // the fraction of a typical slot you would have to be. Above ~50% you are no longer taking the
+  // observed price, you are setting it -- which is exactly the case where a historical median
+  // stops predicting your fill.
+  const fillShare = r.volume > 0 ? deployableUnits / r.volume : null;
+  const fillPenalty = fillShare == null ? 0.5 : fillShare <= 0.5 ? 1 : Math.max(0.15, 0.5 / fillShare);
+
+  // Log-scaled so the ranking spans darts (~3e5) to big weapons (~5e6) without the top end
+  // flattening: 1m -> 0.60, 5m -> 0.78, 50m -> 1.0.
+  const gpTerm = Math.min(1, Math.log10(Math.max(1, cycleProfit)) / 7.7);
+  const score = Math.round(gpTerm * fillPenalty * 100);
+
+  return {
+    itemId: r.item_id,
+    name: r.name,
+    icon: r.icon,
+    slot,
+    slotLabel: slotLabel(slot),
+    buyDeviation: r.buy_deviation,
+    bestSellSlot,
+    bestSellSlotLabel: slotLabel(bestSellSlot),
+    sellDeviation: bestSellDev,
+    timingEdgePct: timingEdge,
+    buyPrice: Math.round(r.buy_price),
+    sellPrice: Math.round(bestSellRow.sell_price!),
+    profitPerUnit: Math.round(bestProfit),
+    holdSlots,
+    holdHours,
+    volume: r.volume,
+    days: r.days,
+    price,
+    buyLimit: r.buy_limit,
+    projectedProfitPerLimit,
+    deployableUnits,
+    capitalUsed,
+    cycleProfit,
+    fillShare,
+    score,
+  };
 }
 
 /**
@@ -224,88 +352,30 @@ export interface HourlyPick {
  * with the discount now. Deliberately a transparent product of normalised terms rather than a
  * tuned formula: every input is visible in the returned row, so a pick can always be argued with.
  */
-export function computeItemOfTheHour(slot: number, limit = 12): HourlyPick[] {
+export function computeItemOfTheHour(slot: number, limit = 12, bankroll = DEFAULT_BANKROLL): HourlyPick[] {
   const freshSince = Math.floor(Date.now() / 1000) - MAX_PROFILE_AGE_SECONDS;
   const rows = getItemsAtSlot(slot, freshSince);
-  const picks: HourlyPick[] = [];
+  const picks = rows
+    .map((r) => bestPickForItem(r, slot, SLOTS_PER_DAY - 1, bankroll)) // whole day
+    .filter((p): p is HourlyPick => p != null);
+  return picks.sort((a, b) => b.score - a.score).slice(0, limit);
+}
 
-  for (const r of rows) {
-    if (r.days < MIN_DAYS_PER_SLOT) continue;
-    if (r.volume <= 0) continue;
-
-    if (r.buy_price == null || r.buy_price <= 0) continue;
-
-    // Index the profile by its own slot column rather than array position: relying on the array
-    // being exactly 48 ordered rows is true today only because the writer always emits 48.
-    const profile = getSlotProfile(r.item_id);
-    const bySlot = new Map(profile.map((p) => [p.slot, p]));
-
-    // Where does this item peak *after* now? Buying cheap only pays if a richer sell slot is
-    // still ahead; a peak that already passed means waiting ~24h for the next one.
-    //
-    // §14.45: pick the best sell slot by REALISED PROFIT, not by the largest sell deviation.
-    // The old version maximised a deviation measured against the sell-side daily mean, then
-    // subtracted a deviation measured against the *buy-side* daily mean and called the difference
-    // profit -- two different baselines, and the 2% GE tax applied to the difference rather than
-    // to the sale. Measured live: 12/12 picks misstated, 3 of them actually loss-making.
-    let bestSellSlot: number | null = null;
-    let bestProfit = 0;
-    for (let offset = 1; offset < SLOTS_PER_DAY; offset++) {
-      const s = (slot + offset) % SLOTS_PER_DAY;
-      const row = bySlot.get(s);
-      if (!row || row.sell_price == null || row.sell_price <= 0) continue;
-      const profit = row.sell_price - geTax(Math.round(row.sell_price)) - r.buy_price;
-      if (profit > bestProfit) {
-        bestProfit = profit;
-        bestSellSlot = s;
-      }
-    }
-
-    if (bestSellSlot == null || bestProfit <= 0) continue; // no timing profit available from here
-
-    const bestSellRow = bySlot.get(bestSellSlot)!;
-    const bestSellDev = bestSellRow.sell_deviation;
-    // Real after-tax return on what you actually tie up.
-    const timingEdge = bestProfit / r.buy_price;
-    const holdSlots = (bestSellSlot - slot + SLOTS_PER_DAY) % SLOTS_PER_DAY;
-    const holdHours = holdSlots / 2;
-
-    const price = r.buy_price;
-    const projectedProfitPerLimit = r.buy_limit ? Math.round(bestProfit * r.buy_limit) : null;
-
-    // Normalised so no single term can dominate: a 0.1% edge on a huge-volume item and a 5% edge
-    // on a thin one should both be able to surface, and the caller can see which is which.
-    const edgeTerm = Math.min(1, timingEdge / 0.03); // 3% is a very strong daily swing
-    const volumeTerm = Math.min(1, Math.log10(r.volume + 1) / 4); // ~10k units/slot saturates
-    const gpTerm =
-      projectedProfitPerLimit != null ? Math.min(1, Math.log10(Math.max(1, projectedProfitPerLimit)) / 7) : 0;
-    const score = Math.round((edgeTerm * 0.45 + volumeTerm * 0.25 + gpTerm * 0.3) * 100);
-
-    picks.push({
-      itemId: r.item_id,
-      name: r.name,
-      icon: r.icon,
-      slot,
-      slotLabel: slotLabel(slot),
-      buyDeviation: r.buy_deviation,
-      bestSellSlot,
-      bestSellSlotLabel: slotLabel(bestSellSlot),
-      sellDeviation: bestSellDev,
-      timingEdgePct: timingEdge,
-      buyPrice: Math.round(r.buy_price),
-      sellPrice: Math.round(bestSellRow.sell_price!),
-      profitPerUnit: Math.round(bestProfit),
-      holdSlots,
-      holdHours,
-      volume: r.volume,
-      days: r.days,
-      price,
-      buyLimit: r.buy_limit,
-      projectedProfitPerLimit,
-      score,
-    });
-  }
-
+// DESIGN.md: Overnight Trading, Phase 1. Same method as computeItemOfTheHour, but the sell-slot
+// search is capped to an actual overnight hold window instead of the whole day -- a pick whose
+// best pair is 20 hours away isn't an overnight trade, it's a coincidence that would leave the
+// position open long past "sell it after work."
+export function computeOvernightPicks(
+  bedtimeSlot: number,
+  maxHoldSlots: number,
+  limit = 8,
+  bankroll = DEFAULT_BANKROLL,
+): HourlyPick[] {
+  const freshSince = Math.floor(Date.now() / 1000) - MAX_PROFILE_AGE_SECONDS;
+  const rows = getItemsAtSlot(bedtimeSlot, freshSince);
+  const picks = rows
+    .map((r) => bestPickForItem(r, bedtimeSlot, maxHoldSlots, bankroll))
+    .filter((p): p is HourlyPick => p != null);
   return picks.sort((a, b) => b.score - a.score).slice(0, limit);
 }
 

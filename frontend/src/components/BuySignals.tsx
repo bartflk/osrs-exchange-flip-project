@@ -8,7 +8,7 @@ import {
 } from "../api";
 import { formatGp, formatGpFull, formatPct } from "../format";
 import { allocateCapital } from "../capitalAllocator";
-import { NumberInput, Chip, Button } from "./ui";
+import { NumberInput, GpInput, Chip, Button } from "./ui";
 import { type Offer, loadOffers, saveOffers } from "../offers";
 import { type Fill, loadFills, saveFills } from "../fills";
 import { GeOffersPanel } from "./GeOffersPanel";
@@ -432,7 +432,7 @@ export function BuySignals({
       <div className="glass rounded-xl p-4 mb-4 flex flex-wrap items-end gap-6">
         <label className="text-xs text-gray-400 flex flex-col gap-1">
           Bankroll (gp)
-          <NumberInput value={bankroll} onChange={updateBankroll} className="w-40" />
+          <GpInput value={bankroll} onChange={updateBankroll} className="w-40" />
         </label>
         <label className="text-xs text-gray-400 flex flex-col gap-1">
           Max allocation per item (%)

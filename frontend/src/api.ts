@@ -899,6 +899,11 @@ export interface HourlyPick {
   price: number | null;
   buyLimit: number | null;
   projectedProfitPerLimit: number | null;
+  // §14.46: what your bankroll actually buys and earns, not a percentage.
+  deployableUnits: number;
+  capitalUsed: number;
+  cycleProfit: number;
+  fillShare: number | null;
   score: number;
 }
 
@@ -911,8 +916,40 @@ export interface ItemOfTheHourResponse {
   lastRun: number | null;
 }
 
-export async function fetchItemOfTheHour(slot?: number): Promise<ItemOfTheHourResponse> {
-  const res = await fetch(`/api/item-of-the-hour${slot != null ? `?slot=${slot}` : ""}`);
+export async function fetchItemOfTheHour(
+  slot?: number,
+  bankroll?: number,
+): Promise<ItemOfTheHourResponse> {
+  const qs = new URLSearchParams();
+  if (slot != null) qs.set("slot", String(slot));
+  if (bankroll != null) qs.set("bankroll", String(bankroll));
+  const res = await fetch(`/api/item-of-the-hour?${qs.toString()}`);
   if (!res.ok) throw new Error(`Failed to load item of the hour: ${res.status}`);
+  return res.json();
+}
+
+// Overnight Trading, Phase 1: same slot-profile method as Item of the Hour, but the sell-slot
+// search is capped to an actual overnight hold window instead of the whole day.
+export interface OvernightPicksResponse {
+  bedtimeSlot: number;
+  bedtimeSlotLabel: string;
+  currentSlot: number;
+  maxHoldHours: number;
+  picks: HourlyPick[];
+  itemsProfiled: number;
+  lastRun: number | null;
+}
+
+export async function fetchOvernightPicks(
+  bedtimeSlot?: number,
+  maxHoldHours?: number,
+  limit?: number,
+): Promise<OvernightPicksResponse> {
+  const qs = new URLSearchParams();
+  if (bedtimeSlot != null) qs.set("bedtimeSlot", String(bedtimeSlot));
+  if (maxHoldHours != null) qs.set("maxHoldHours", String(maxHoldHours));
+  if (limit != null) qs.set("limit", String(limit));
+  const res = await fetch(`/api/overnight-picks?${qs.toString()}`);
+  if (!res.ok) throw new Error(`Failed to load overnight picks: ${res.status}`);
   return res.json();
 }

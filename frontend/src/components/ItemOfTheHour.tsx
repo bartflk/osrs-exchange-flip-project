@@ -33,17 +33,19 @@ export function ItemOfTheHour({
   const [slot, setSlot] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
+  // Same localStorage key the Capital Allocator uses, so one bankroll drives both.
+  const bankroll = Number(localStorage.getItem("bankroll")) || 10_000_000;
 
   useEffect(() => {
     let cancelled = false;
     setError(null);
-    fetchItemOfTheHour(slot ?? undefined)
+    fetchItemOfTheHour(slot ?? undefined, bankroll)
       .then((d) => !cancelled && setData(d))
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "failed"));
     return () => {
       cancelled = true;
     };
-  }, [slot]);
+  }, [slot, bankroll]);
 
   function open(itemId: number) {
     const match = items.find((i) => i.id === itemId);
@@ -60,7 +62,8 @@ export function ItemOfTheHour({
           {data && (
             <span className="ml-2 text-xs text-gray-500 font-normal">
               {data.slotLabel} UTC ({localOf(data.slotLabel)} local)
-              {isNow ? " · now" : ""} · {data.itemsProfiled} items profiled
+              {isNow ? " · now" : ""} · {data.itemsProfiled} profiled · sized for{" "}
+              {formatGp(bankroll)}
             </span>
           )}
         </h3>
@@ -128,8 +131,9 @@ export function ItemOfTheHour({
                     <th className="pb-2 pr-3 font-medium text-right">Hold</th>
                     <th className="pb-2 pr-3 font-medium text-right">Profit/u</th>
                     <th className="pb-2 pr-3 font-medium text-right">Edge</th>
-                    <th className="pb-2 pr-3 font-medium text-right">Volume</th>
-                    <th className="pb-2 pr-3 font-medium text-right">At buy limit</th>
+                    <th className="pb-2 pr-3 font-medium text-right">Buy qty</th>
+                    <th className="pb-2 pr-3 font-medium text-right">Capital</th>
+                    <th className="pb-2 pr-3 font-medium text-right">Profit</th>
                     <th className="pb-2 font-medium text-right">Score</th>
                   </tr>
                 </thead>
@@ -168,13 +172,28 @@ export function ItemOfTheHour({
                       <td className="py-2 pr-3 text-right font-mono text-emerald-400">
                         {p.timingEdgePct != null ? `${(p.timingEdgePct * 100).toFixed(2)}%` : "—"}
                       </td>
-                      <td className="py-2 pr-3 text-right font-mono text-gray-400">
-                        {p.volume.toLocaleString()}
+                      {/* §14.46: units your bankroll can actually take (buy limit or affordability,
+                          whichever binds), the gp it ties up, and what that earns. Amber when the
+                          position would be a large share of the slot's normal volume -- at that
+                          point you're moving the price rather than taking it, and the historical
+                          median stops predicting your fill. */}
+                      <td
+                        className={`py-2 pr-3 text-right font-mono ${
+                          p.fillShare != null && p.fillShare > 0.5 ? "text-amber-400" : "text-gray-300"
+                        }`}
+                        title={
+                          p.fillShare != null
+                            ? `${(p.fillShare * 100).toFixed(0)}% of this slot's typical volume (${p.volume.toLocaleString()}/30m)`
+                            : undefined
+                        }
+                      >
+                        {p.deployableUnits.toLocaleString()}
                       </td>
-                      <td className="py-2 pr-3 text-right font-mono text-gray-200">
-                        {p.projectedProfitPerLimit != null
-                          ? formatGp(p.projectedProfitPerLimit)
-                          : "—"}
+                      <td className="py-2 pr-3 text-right font-mono text-gray-400">
+                        {formatGp(p.capitalUsed)}
+                      </td>
+                      <td className="py-2 pr-3 text-right font-mono text-emerald-300">
+                        {formatGp(p.cycleProfit)}
                       </td>
                       <td className="py-2 text-right font-mono text-gray-500">{p.score}</td>
                     </tr>

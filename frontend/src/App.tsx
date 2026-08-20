@@ -9,6 +9,7 @@ import {
 } from "./api";
 import { MarketTable } from "./components/MarketTable";
 import { BuySignals } from "./components/BuySignals";
+import { OvernightTrading } from "./components/OvernightTrading";
 import { Portfolio } from "./components/Portfolio";
 import { Flips } from "./components/Flips";
 import { ItemDetailModal } from "./components/ItemDetailModal";
@@ -36,16 +37,26 @@ import { type Settings, loadSettings, saveSettings } from "./settings";
 import type { BankValueItem } from "./api";
 import { Button, Chip, IconButton, Input, NumberInput, StatCard } from "./components/ui";
 
-type Tab = "market" | "signals" | "portfolio" | "flips" | "bank" | "actions" | "sets" | "news";
+type Tab =
+  | "market"
+  | "signals"
+  | "overnight"
+  | "portfolio"
+  | "flips"
+  | "bank"
+  | "actions"
+  | "sets"
+  | "news";
 
 // Ordered to follow the actual workflow: browse (Market) -> decide what to buy (Signals) ->
-// track what you're holding/have open (Portfolio) -> value your bank (Bank) -> act on it
-// (Actions) -> specialized arbitrage tool (Sets) -> background context (News). Labels
-// standardized to single words to match Market/Bank/Actions/Sets rather than mixing verbose
-// phrases in with them.
+// plan overnight holds (Overnight) -> track what you're holding/have open (Portfolio) -> value
+// your bank (Bank) -> act on it (Actions) -> specialized arbitrage tool (Sets) -> background
+// context (News). Labels standardized to single words to match Market/Bank/Actions/Sets rather
+// than mixing verbose phrases in with them.
 const TABS: { key: Tab; label: string }[] = [
   { key: "market", label: "Market" },
   { key: "signals", label: "Signals" },
+  { key: "overnight", label: "Overnight" },
   { key: "portfolio", label: "Portfolio" },
   { key: "flips", label: "Flips" },
   { key: "bank", label: "Bank" },
@@ -548,6 +559,12 @@ function App() {
               onSelectItem={setSelectedItem}
             />
           </>
+        )}
+        {tab === "overnight" && (
+          <OvernightTrading
+            items={items.filter((i) => !blocked[i.id])}
+            onSelectItem={setSelectedItem}
+          />
         )}
         {tab === "portfolio" && <Portfolio items={items} onSelectItem={setSelectedItem} />}
         {tab === "flips" && <Flips items={items} onSelectItem={setSelectedItem} />}

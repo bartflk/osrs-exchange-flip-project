@@ -729,3 +729,23 @@ export function getMostLiquidItemIds(limit: number): number[] {
   const rows = liquidItemsStmt.all(limit) as unknown as { item_id: number }[];
   return rows.map((r) => r.item_id);
 }
+
+// A second candidate track, ranked by price instead of unit volume. `getMostLiquidItemIds` alone
+// systematically excludes expensive PvM gear (Noxious halberd, Scythe, etc.) -- their unit
+// volume (tens/hr) never competes with cheap staples (runes, food, potions -- thousands/hr), even
+// though a handful of trades on a 30m+ item moves far more real gp than a thousand rune trades.
+// Still requires *some* real trading (both sides >= minVolume/hr) so a genuinely dead collectible
+// doesn't get profiled on noise.
+const highValueItemsStmt = db.prepare(`
+  SELECT s.item_id
+  FROM latest_snapshot s JOIN items i ON i.id = s.item_id
+  WHERE s.high IS NOT NULL AND s.low IS NOT NULL
+    AND MIN(COALESCE(s.vol_high_1h, 0), COALESCE(s.vol_low_1h, 0)) >= ?
+  ORDER BY s.high DESC
+  LIMIT ?
+`);
+
+export function getHighValueItemIds(limit: number, minVolume: number): number[] {
+  const rows = highValueItemsStmt.all(minVolume, limit) as unknown as { item_id: number }[];
+  return rows.map((r) => r.item_id);
+}

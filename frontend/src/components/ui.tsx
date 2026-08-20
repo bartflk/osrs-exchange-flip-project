@@ -1,5 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "preact/compat";
+import { formatGpCompact, parseGpShorthand } from "../format";
 
 // Shared visual language for the app: consistent buttons, badges, inputs, and chips so every
 // tab reads as one product instead of each screen inventing its own control style.
@@ -155,6 +156,51 @@ export function NumberInput({
           setText(String(value));
         }
       }}
+      className={className}
+      {...rest}
+    />
+  );
+}
+
+// gp fields (bankroll and friends) typed with OSRS shorthand -- "10m", "500k", "1.5b" -- rather
+// than counting zeros. Shows the compact form when not focused so it reads at a glance; while
+// typing it leaves the draft alone and only commits once the text parses to a real number, same
+// "don't fight the user's in-progress keystrokes" rule NumberInput already follows.
+export function GpInput({
+  value,
+  onChange,
+  className = "",
+  ...rest
+}: {
+  value: number;
+  onChange: (value: number) => void;
+} & Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "type">) {
+  const [text, setText] = useState(formatGpCompact(value));
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) setText(formatGpCompact(value));
+  }, [value, focused]);
+
+  return (
+    <Input
+      type="text"
+      inputMode="text"
+      value={text}
+      onFocus={() => setFocused(true)}
+      onInput={(e) => {
+        const raw = (e.target as HTMLInputElement).value;
+        if (!/^-?[\d,.]*[kKmMbB]?$/.test(raw)) return;
+        setText(raw);
+        const parsed = parseGpShorthand(raw);
+        if (parsed != null) onChange(parsed);
+      }}
+      onBlur={() => {
+        setFocused(false);
+        const parsed = parseGpShorthand(text);
+        setText(formatGpCompact(parsed ?? value));
+      }}
+      placeholder="e.g. 10m"
       className={className}
       {...rest}
     />
