@@ -293,6 +293,37 @@ export async function fetchNews(): Promise<{ events: NewsEvent[] }> {
   return res.json();
 }
 
+// DESIGN.md §10 item 45: rank items by how much a patch moved their price, before/after.
+export interface UpdateSensitivityEntry {
+  itemId: number;
+  name: string;
+  icon: string;
+  beforePrice: number;
+  afterPrice: number;
+  changePct: number;
+}
+
+export interface UpdateSensitivityResult {
+  eventDate: string;
+  beforeDate: string;
+  afterDate: string;
+  windowDays: number;
+  gainers: UpdateSensitivityEntry[];
+  losers: UpdateSensitivityEntry[];
+  itemsCompared: number;
+}
+
+export async function fetchUpdateSensitivity(
+  eventDate: string,
+  windowDays?: number,
+): Promise<UpdateSensitivityResult> {
+  const qs = new URLSearchParams({ eventDate });
+  if (windowDays != null) qs.set("windowDays", String(windowDays));
+  const res = await fetch(`/api/update-sensitivity?${qs.toString()}`);
+  if (!res.ok) throw new Error(`Failed to fetch update sensitivity: ${res.status}`);
+  return res.json();
+}
+
 // DESIGN.md §10 items 15-16: Set Conversion Arbitrage and Barrows Repair Flip -- fully
 // deterministic against data already local, no new external source.
 export interface PieceBreakdown {
@@ -936,6 +967,7 @@ export interface OvernightPicksResponse {
   currentSlot: number;
   maxHoldHours: number;
   picks: HourlyPick[];
+  bankroll: number;
   itemsProfiled: number;
   lastRun: number | null;
 }
@@ -944,12 +976,38 @@ export async function fetchOvernightPicks(
   bedtimeSlot?: number,
   maxHoldHours?: number,
   limit?: number,
+  bankroll?: number,
 ): Promise<OvernightPicksResponse> {
   const qs = new URLSearchParams();
   if (bedtimeSlot != null) qs.set("bedtimeSlot", String(bedtimeSlot));
   if (maxHoldHours != null) qs.set("maxHoldHours", String(maxHoldHours));
   if (limit != null) qs.set("limit", String(limit));
+  if (bankroll != null) qs.set("bankroll", String(bankroll));
   const res = await fetch(`/api/overnight-picks?${qs.toString()}`);
   if (!res.ok) throw new Error(`Failed to load overnight picks: ${res.status}`);
+  return res.json();
+}
+
+// DESIGN.md §14.47: bank value history from RuneLite's Bank Value Tracker plugin, plus the GE
+// side added back on the newest point. Bank value alone badly understates an active flipper's
+// worth -- coins and stock committed to the Exchange aren't in the bank.
+export interface NetWorthPoint {
+  timestamp: number;
+  bankValue: number;
+  account: string;
+  netWorth: number | null;
+}
+
+export interface BankHistoryResponse {
+  points: NetWorthPoint[];
+  geValueNow: number;
+  assetsValue: number;
+  cashInBuyOffers: number;
+  available: boolean;
+}
+
+export async function fetchBankHistory(): Promise<BankHistoryResponse> {
+  const res = await fetch("/api/bank-history");
+  if (!res.ok) throw new Error(`Failed to load bank history: ${res.status}`);
   return res.json();
 }

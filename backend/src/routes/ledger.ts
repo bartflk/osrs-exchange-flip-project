@@ -3,6 +3,11 @@ import { computeFlips, computePositions, computeSession, computeBuyLimitUsage } 
 import { getGeTransactions } from "../db.js";
 import { getCaptureStartedAt } from "../geLedger.js";
 import { readCopilotSlots, runeliteSourcesAvailable } from "../runeliteImport.js";
+import {
+  readBankValueHistory,
+  combineNetWorth,
+  bankValueTrackerAvailable,
+} from "../runeliteBank.js";
 import { db } from "../db.js";
 
 // DESIGN.md §14.40: the GE trade ledger API -- Portfolio, Session, Flips, Transactions,
@@ -59,8 +64,30 @@ export async function ledgerRoutes(app: FastifyInstance) {
         // GE gives 8 boxes; anything the plugin reports as occupied is one we can't plan into.
         freeSlots: Math.max(0, 8 - slots.length),
       },
-      sources: runeliteSourcesAvailable(),
+      sources: { ...runeliteSourcesAvailable(), bankValueTracker: bankValueTrackerAvailable() },
       captureStartedAt: getCaptureStartedAt(),
+    };
+  });
+
+  // §14.47: bank value history straight from RuneLite's Bank Value Tracker, so the net-worth
+  // chart works without any manual imports. The GE side is added to the newest point only --
+  // see combineNetWorth() for why history is not back-filled.
+  app.get("/api/bank-history", async () => {
+    const history = readBankValueHistory();
+    const positions = computePositions();
+    const slots = readCopilotSlots();
+    const assetsValue = positions.reduce((sum, p) => sum + (p.marketValue ?? 0), 0);
+    const cashInBuyOffers = slots.reduce(
+      (sum, s) => sum + (s.type === "buy" ? (s.total_quantity - s.quantity_sold) * s.price : 0),
+      0,
+    );
+    const geValueNow = assetsValue + cashInBuyOffers;
+    const combined = combineNetWorth(history, geValueNow);
+    return {
+      ...combined,
+      assetsValue,
+      cashInBuyOffers,
+      available: bankValueTrackerAvailable(),
     };
   });
 

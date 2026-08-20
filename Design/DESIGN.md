@@ -412,7 +412,7 @@ The following items (36-45) came from a user-supplied brainstorm doc (`Design/Mo
 42. **Merchant Activity Index** (source item 12, "price rises, volume low, spread huge — often manipulation") — already substantially covered by the built manipulation/volume-anomaly detector (§11.3 item 6); not duplicated as a separate per-item score this pass.
 43. **Opportunity Score / AI Confidence** (source items 15 and 20, both ⭐⭐⭐⭐⭐/highlighted as "the killer feature"). **Built — see §14.34.** `opportunityScore` (0-100, deterministic composite of items 36's signals) plus `generateMarketIntelligence()` in `llm.ts` — the local Ollama model synthesizes the whole indicator bundle into a 2-3 sentence conclusion + confidence level, required to reference at least two specific indicators by name so it can't hand-wave. This is the "use Qwen to look at the data and come to conclusions" piece directly.
 44. **Event Predictor** (source item 16) — predict demand from player count, Twitch, YouTube, poll blogs. **Not built.** Needs data sources this app has none of (Twitch/YouTube APIs) and the still-missing player count history (item 37); not attempted this pass.
-45. **Update Sensitivity** (source item 11) — rank items by how much a given patch moved their price, before/after. **Not built this pass**, though the pieces now exist to build it cheaply: the `events` table (official news + Reddit as of §14.35) has real dated events, and `price_history`/`price_daily` have the price series to diff around each event date. Scoped as a near-term next step, not attempted here to keep this already-large batch reviewable.
+45. **Update Sensitivity** (source item 11) — rank items by how much a given patch moved their price, before/after. **Built — see §14.50.**
 
 The following items (46-53) came from a user-supplied brainstorm doc (`Design/new suggestions.txt`, an AI-authored "Flashwave Trading Preferences" proposal, deleted after this reconciliation — content now fully represented here), pitching a much richer preference/allocation layer than the app currently has: named slot strategy (low-volume vs. high-volume), a GP allocation slider, execution-aware pricing, crash-conviction sizing, and a full Active/Position dual-engine split. Same consolidation discipline as §14.26/§14.35's prior brainstorm reconciliations — most of this is genuinely good and none of it contradicts the existing design, but it's a large proposal and only the cheapest, most self-contained piece was built this pass; the rest is scoped honestly as backlog, not implied-done.
 
@@ -1194,6 +1194,47 @@ Direct question: *"I want to overnight big ticket items like venator bows. I hav
 **Verified live.** Same slot, two bankrolls: at 10m the top pick is Teleport to house tablets (12,642 units, 10.0m capital, 1.05m profit); at 308m it is **Ancestral robe bottom — 4 units, 248.9m deployed, 11.26m profit, 4.5h hold**. An independent recomputation from the raw API matched the app to **0.000m per unit on all three top picks**, and every pick's fill share sits at 15–36%, well under the penalty threshold. Both packages typecheck, lint and build clean.
 
 **Caveats worth keeping visible:** these are 7-day medians on items trading 7–15 units per 30-minute slot, so they are noisier than the volume items, and a 4-unit position is a real share of that slot. Also `Venator bow` is not a tradeable item name — it is `Venator bow (uncharged)` (id 27612).
+
+(Note: this note and §14.47/§14.48 above were written by concurrent sessions and both landed on "14.46" — left as-is rather than renumbering someone else's already-published note; read by content, not number, until this doc gets a cleanup pass.)
+
+## 14.49 Status note — Overnight Trading wasn't picking up the §14.46 bankroll-aware rework — 2026-08-20
+
+Direct follow-up on "continue with the list": before picking a fresh backlog item, checked whether the Overnight Trading feature (built earlier this session) was still consistent with everything that had happened to `slotProfiles.ts` since — and it wasn't. A concurrent session's bankroll-aware rework (§14.46 above: `computeItemOfTheHour`/`computeOvernightPicks` now take a `bankroll` param and rank by real `cycleProfit = deployableUnits × profitPerUnit` instead of a raw score) had fully reached `ItemOfTheHour.tsx` and the backend route, but **`OvernightTrading.tsx` and `fetchOvernightPicks()` were never updated to send it** — so Overnight was silently still ranking every request against the backend's `DEFAULT_BANKROLL` (10m), regardless of what the user actually had set. This is worse than a display bug: since the backend re-ranks the whole candidate *set* by bankroll (not just quantities), Overnight was returning the wrong items entirely for any bankroll meaningfully above 10m.
+
+**Fixed**: `fetchOvernightPicks()` and `OvernightPicksResponse` (`api.ts`) gained the `bankroll` param/field to match `fetchItemOfTheHour`'s existing shape; `OvernightTrading.tsx` now passes its own `bankroll` state through and shows "sized for Xm" in the board header (same as Item of the Hour). The ranked-candidates table's "At buy limit" column was replaced with Item of the Hour's own Buy qty / Capital / Profit columns (amber fill-share warning included) for the same reason — that abstract number was superseded by the real bankroll-aware figures the moment §14.46 landed.
+
+**Verified live**: refetching `/api/overnight-picks` at a 181m bankroll now surfaces Blade of Saeldor, Ancestral robe bottom, Inquisitor's plateskirt, Elder maul, Oathplate legs, Virtus armour set — the same big-ticket-gear behavior §14.46 verified for Item of the Hour — where before this fix it was silently still returning 10m-bankroll picks (cheap staples) no matter what the bankroll field said.
+
+## 14.50 Status note — Update Sensitivity built (§10 item 45, closed) — 2026-08-20
+
+Direct follow-up on "continue with the list": picked the next fully-unblocked, self-contained backlog item rather than something dependent on data still accumulating (weekly/month+, §10 items 55-56) or requiring a judgment call the app has no data to back.
+
+- **New `backend/src/updateSensitivity.ts`**, reusing `warehouse.ts`'s existing `getPriceDailyAsOf(day)` (already built for §10 item 9's 7d/30d trend leaderboards, `trends.ts`) rather than writing a new date-range query — called twice (event date ± `windowDays`, default 3) and joined on `item_id`. Same guard rails as `trends.ts` (≥1,000gp, ≥20 liquidity/hr, ±300% sanity cap) so one stale tick can't fabricate a "gainer."
+- **Deliberately no attempt to classify which official events are real gameplay updates** versus podcasts/charity streams/community spotlights (both come through the RSS feed tagged `source: "official"`) — that would need judgment this app has no data to back, violating the "never invent data" rule. Every official event is selectable in the UI; a non-gameplay event just returns near-zero movement across the board, an honest if unexciting result rather than a filtered-away one.
+- New `GET /api/update-sensitivity?eventDate=&windowDays=` (`routes/news.ts`), new `UpdateSensitivity.tsx` panel on the News tab (event picker + ±1-7 day window selector + gainers/losers tables), collapsed by default like Item of the Hour.
+- **Verified live against a real gameplay patch**: "Summer Sweep Up - Agility & Chambers of Xeric Changes" (2026-08-12) — 53-516 items compared depending on window, with genuinely plausible, checkable results: Crystal key and Tooth half of key (both directly CoX-related) appeared among the movers, a real sanity check that the method surfaces relevant items rather than noise. Confirmed the dropdown correctly re-fetches on event change, and that an event too recent to have a full window after it (today's) still returns real "as of now" data via the same as-of semantics `getPriceDailyAsOf` already uses elsewhere, rather than erroring.
+
+## 14.47 Status note — Bank Value Tracker integration, and what the other plugins can't give — 2026-08-19
+
+Direct request: *"the flip view can be improved with data from the plugins in runelite, look at the plugins i have installed... If you can make any integrations, go for it."* A RuneLite `default.properties` was supplied.
+
+**The config file itself turned out not to be the useful artefact.** It lists settings for ~100 built-in plugins, but a setting is not data — what matters for a flip view is which plugins *write files to disk*. Auditing `~/.runelite/` for directories with actual content narrowed ~100 plugins to four sources, of which two were already integrated (§14.40) and one was empty:
+
+| Source | Verdict |
+|---|---|
+| `flipping-copilot/` | already integrated — live GE slots |
+| `flipping/` | already integrated — trade history backfill |
+| `loots/` | **empty** — all five subdirectories, no PvM loot recorded, so no integration possible |
+| `bank-value-tracker/` | **integrated here** — 17 whole-bank snapshots over 16.8 days |
+
+- **`runeliteBank.ts`** reads `bank-value-tracker/<Account>.json`, keeping only `tab: 0` entries (higher tab numbers are individual bank tabs and would double-count). One parsing detail worth recording: the plugin writes local-time ISO timestamps with **nine** fractional-second digits (`2026-08-20T20:37:13.600715900`), which `Date.parse` rejects — they're trimmed to three.
+- **This replaces a feature that had never once worked.** The net-worth chart required two manual Bank Memory pastes; this install had exactly one, so it had always rendered "Save at least 2 bank snapshots". The plugin had been silently recording them since Aug 3.
+- **Bank value is not net worth, and getting that wrong would have been worse than not shipping it.** Measured live: bank **57.7m** while **409.5m** sat on the Exchange (249.2m in positions + 160.6m committed to buy offers). True net worth **467.2m**. Charting bank value alone reads as an 89% wipeout for someone whose capital had simply moved.
+  - The **stat card** now shows real net worth with its breakdown (`57.73m bank + 409.51m on GE`).
+  - Only the **newest** point gets the GE side added. There's no historical record of what was on the Exchange at each past bank visit, so back-filling today's position across 17 days would invent a smooth line that never existed.
+  - **The chart caught me out**: after fixing the stat card, the chart underneath still read *"Net worth over time — −89.0% since first import"*, contradicting the correct figure directly above it. `NetWorthChart` now requires the caller to state what it's plotting (`title`/`unitLabel`/`note`), and the Portfolio passes "Bank value over time" with an explicit note naming the excluded GE capital. Fixing a number in one place and leaving the same wrong number rendered two inches below it is its own class of bug.
+
+**Not available, checked rather than assumed:** Loot Tracker (all directories empty — it syncs to the user's account, not disk, on this setup), and the config values themselves (thresholds and colours, nothing a market view can use). `wom-utils` holds only a name-change log; `odablock-*` is a sound pack.
 
 ## 15. Key references
 

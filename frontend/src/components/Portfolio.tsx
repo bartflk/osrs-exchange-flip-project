@@ -5,6 +5,8 @@ import {
   type BankImportSummary,
   type MarketItem,
   type PortfolioResponse,
+  fetchBankHistory,
+  type BankHistoryResponse,
 } from "../api";
 import { formatGp, formatGpFull, formatPct } from "../format";
 import { NetWorthChart } from "./NetWorthChart";
@@ -34,6 +36,19 @@ export function Portfolio({
   const [history, setHistory] = useState<BankImportSummary[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [portfolio, setPortfolio] = useState<PortfolioResponse | null>(null);
+  // §14.47: automatic bank-value history from the RuneLite plugin. Replaces the manual-import
+  // path as the chart's source when available -- on this install it's 17 snapshots over 17 days
+  // versus a single hand-saved import.
+  const [bankHistory, setBankHistory] = useState<BankHistoryResponse | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchBankHistory()
+      .then((b) => !cancelled && setBankHistory(b))
+      .catch(() => {}); // additive: manual imports still work without it
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -63,7 +78,20 @@ export function Portfolio({
     if (match) onSelectItem(match);
   }
 
+  // Mapped into the shape NetWorthChart already takes (newest-first), rather than teaching the
+  // chart a second point type for the same quantity.
+  const autoHistory = (bankHistory?.points ?? [])
+    .map((pt) => ({
+      id: pt.timestamp,
+      imported_at: pt.timestamp,
+      total_value: pt.bankValue,
+      item_count: 0,
+    }))
+    .reverse();
+
   const latestNetWorth = history[0]?.total_value ?? null;
+  const latestBank = bankHistory?.points.at(-1)?.bankValue ?? null;
+  const trueNetWorth = bankHistory?.points.at(-1)?.netWorth ?? null;
   const totals = portfolio?.totals;
   const noSources = portfolio && !portfolio.sources.copilot && !portfolio.sources.flippingUtilities;
 
@@ -85,10 +113,25 @@ export function Portfolio({
           value={totals ? formatGp(totals.unrealizedProfit) : "—"}
           hint="net of GE tax"
         />
+        {/* §14.47: bank value alone is not net worth for anyone actively flipping -- measured on
+            this install, the bank read 57.7m while 409.8m sat on the Exchange. Showing the bank
+            figure by itself made a working bankroll look like a wipeout. */}
         <StatCard
-          label="Bank net worth"
-          value={latestNetWorth != null ? formatGp(latestNetWorth) : "—"}
-          hint={history.length ? `${history.length} saved import${history.length === 1 ? "" : "s"}` : "No imports"}
+          label="Net worth"
+          value={
+            trueNetWorth != null
+              ? formatGp(trueNetWorth)
+              : latestNetWorth != null
+                ? formatGp(latestNetWorth)
+                : "—"
+          }
+          hint={
+            trueNetWorth != null && latestBank != null
+              ? `${formatGp(latestBank)} bank + ${formatGp(bankHistory!.geValueNow)} on GE`
+              : history.length
+                ? `${history.length} saved import${history.length === 1 ? "" : "s"}`
+                : "No imports"
+          }
         />
         <StatCard
           label="Tracking since"
@@ -121,6 +164,18 @@ export function Portfolio({
             <div className="glass rounded-xl px-4 py-6 text-center text-xs text-gray-500">
               Loading net worth history…
             </div>
+          ) : autoHistory.length >= 2 ? (
+            <NetWorthChart
+              history={autoHistory}
+              title="Bank value over time"
+              unitLabel="auto snapshots"
+              note={
+                "Bank value only — coins and stock committed to the Grand Exchange are not in your bank, " +
+                "so this falls as you deploy capital. Right now " +
+                formatGp(bankHistory?.geValueNow ?? 0) +
+                " is on the GE and excluded from this line. Net worth is the stat above."
+              }
+            />
           ) : history.length >= 2 ? (
             <NetWorthChart history={history} />
           ) : (

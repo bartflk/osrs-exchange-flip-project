@@ -131,14 +131,18 @@ export function OvernightTrading({
     let cancelled = false;
     setError(null);
     // Fetch the full pool (backend cap 20) regardless of risk preset -- the preset filters
-    // client-side, so switching it doesn't need a round trip.
-    fetchOvernightPicks(bedtimeSlot ?? undefined, maxHoldHours, 20)
+    // client-side, so switching it doesn't need a round trip. Bankroll matters here beyond
+    // sizing: the backend re-ranks candidates by what THIS bankroll actually earns
+    // (deployableUnits x profitPerUnit), so a stale/default bankroll silently returns the wrong
+    // candidate SET, not just the wrong quantities -- this was missed when Overnight was first
+    // built and Item of the Hour was later made bankroll-aware without it (§14.46/§14.48).
+    fetchOvernightPicks(bedtimeSlot ?? undefined, maxHoldHours, 20, bankroll)
       .then((d) => !cancelled && setPicksData(d))
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "failed"));
     return () => {
       cancelled = true;
     };
-  }, [bedtimeSlot, maxHoldHours]);
+  }, [bedtimeSlot, maxHoldHours, bankroll]);
 
   // The `items` prop is whatever the Market tab's own filter/limit currently returns (a few
   // hundred items, not the full ~4,650 catalogue) -- most overnight picks won't be in it. Same
@@ -325,7 +329,7 @@ export function OvernightTrading({
               <span className="ml-2 text-xs text-gray-500 font-normal">
                 buying at {picksData.bedtimeSlotLabel} UTC ({localOf(picksData.bedtimeSlotLabel)}{" "}
                 local){isNow ? " · now" : ""} · up to {picksData.maxHoldHours}h hold ·{" "}
-                {picksData.itemsProfiled} items profiled
+                {picksData.itemsProfiled} items profiled · sized for {formatGp(picksData.bankroll)}
               </span>
             )}
             {needsAction > 0 && (
@@ -403,7 +407,9 @@ export function OvernightTrading({
                   <th className="pb-2 pr-3 font-medium text-right">Hold</th>
                   <th className="pb-2 pr-3 font-medium text-right">Profit/u</th>
                   <th className="pb-2 pr-3 font-medium text-right">Edge</th>
-                  <th className="pb-2 pr-3 font-medium text-right">At buy limit</th>
+                  <th className="pb-2 pr-3 font-medium text-right">Buy qty</th>
+                  <th className="pb-2 pr-3 font-medium text-right">Capital</th>
+                  <th className="pb-2 font-medium text-right">Profit</th>
                 </tr>
               </thead>
               <tbody>
@@ -442,8 +448,28 @@ export function OvernightTrading({
                     <td className="py-2 pr-3 text-right font-mono text-emerald-400">
                       {p.timingEdgePct != null ? `${(p.timingEdgePct * 100).toFixed(2)}%` : "—"}
                     </td>
-                    <td className="py-2 pr-3 text-right font-mono text-gray-200">
-                      {p.projectedProfitPerLimit != null ? formatGp(p.projectedProfitPerLimit) : "—"}
+                    {/* Units this bankroll can actually take (buy limit or affordability,
+                        whichever binds), what that ties up, and what it earns -- same bankroll-
+                        aware sizing Item of the Hour uses (§14.46), not a percentage. Amber when
+                        the position is a large share of the slot's typical volume: past that
+                        point you're setting the price, not taking it. */}
+                    <td
+                      className={`py-2 pr-3 text-right font-mono ${
+                        p.fillShare != null && p.fillShare > 0.5 ? "text-amber-400" : "text-gray-300"
+                      }`}
+                      title={
+                        p.fillShare != null
+                          ? `${(p.fillShare * 100).toFixed(0)}% of this slot's typical volume (${p.volume.toLocaleString()}/30m)`
+                          : undefined
+                      }
+                    >
+                      {p.deployableUnits.toLocaleString()}
+                    </td>
+                    <td className="py-2 pr-3 text-right font-mono text-gray-400">
+                      {formatGp(p.capitalUsed)}
+                    </td>
+                    <td className="py-2 text-right font-mono text-emerald-300">
+                      {formatGp(p.cycleProfit)}
                     </td>
                   </tr>
                 ))}

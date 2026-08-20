@@ -19,6 +19,7 @@ import { Actions } from "./components/Actions";
 import { MarketAlerts } from "./components/MarketAlerts";
 import { TrackRecord } from "./components/TrackRecord";
 import { NewsFeed } from "./components/NewsFeed";
+import { UpdateSensitivity } from "./components/UpdateSensitivity";
 import { ResearchReport } from "./components/ResearchReport";
 import { Sets } from "./components/Sets";
 import { TrendLeaderboard } from "./components/TrendLeaderboard";
@@ -587,6 +588,7 @@ function App() {
         {tab === "news" && (
           <>
             <ResearchReport />
+            <UpdateSensitivity />
             <NewsFeed />
           </>
         )}

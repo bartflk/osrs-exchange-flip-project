@@ -13,7 +13,21 @@ const PAD_RIGHT = 12;
 const PAD_TOP = 12;
 const PAD_BOTTOM = 20;
 
-export function NetWorthChart({ history }: { history: BankImportSummary[] }) {
+export function NetWorthChart({
+  history,
+  title = "Net worth over time",
+  unitLabel = "imports",
+  note,
+}: {
+  history: BankImportSummary[];
+  // §14.47: the series is whatever the caller supplies, and the automatic Bank Value Tracker
+  // feed is BANK VALUE, not net worth. Left mislabelled it read "-89% since first import" for a
+  // user whose capital had simply moved onto the Exchange -- the chart contradicted the net-worth
+  // figure sitting directly above it. The caller now has to say what it's actually plotting.
+  title?: string;
+  unitLabel?: string;
+  note?: string;
+}) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
   // history arrives newest-first (matches the import-history table's sort); charting wants
@@ -54,13 +68,13 @@ export function NetWorthChart({ history }: { history: BankImportSummary[] }) {
     <div className="glass rounded-xl p-4">
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs uppercase tracking-wide text-gray-500">
-          Net worth over time ({points.length} imports)
+          {title} ({points.length} {unitLabel})
         </span>
         <span
           className={`text-xs font-mono ${changePct >= 0 ? "text-emerald-400" : "text-rose-400"}`}
         >
           {changePct >= 0 ? "+" : ""}
-          {(changePct * 100).toFixed(1)}% since first import
+          {(changePct * 100).toFixed(1)}% since first reading
         </span>
       </div>
       <svg
@@ -95,6 +109,7 @@ export function NetWorthChart({ history }: { history: BankImportSummary[] }) {
           />
         )}
       </svg>
+      {note && <p className="text-[10px] text-gray-500 mt-2 leading-relaxed px-1">{note}</p>}
       <div className="text-xs font-mono text-gray-400 text-right h-4">
         {hovered ? `${formatAgo(hovered.imported_at)} · ${formatGp(hovered.total_value)}gp` : ""}
       </div>
