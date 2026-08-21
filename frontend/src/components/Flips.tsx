@@ -13,6 +13,7 @@ import {
 import { formatGp, formatGpFull, formatPct } from "../format";
 import { PriceChart, type ChartTrade } from "./PriceChart";
 import { Chip, EmptyState } from "./ui";
+import { LabelWithInfo } from "./InfoTip";
 
 function iconUrl(icon: string | null | undefined): string {
   if (!icon) return "";
@@ -166,11 +167,19 @@ function FlipsTable({
             <th className="pb-2 pr-3 font-medium">Status</th>
             <th className="pb-2 pr-3 font-medium text-right">Bought</th>
             <th className="pb-2 pr-3 font-medium text-right">Sold</th>
-            <th className="pb-2 pr-3 font-medium text-right">Avg buy</th>
+            <th className="pb-2 pr-3 font-medium text-right">
+              <LabelWithInfo id="realisedProfit">Avg buy</LabelWithInfo>
+            </th>
             <th className="pb-2 pr-3 font-medium text-right">Avg sell</th>
-            <th className="pb-2 pr-3 font-medium text-right">Tax</th>
-            <th className="pb-2 pr-3 font-medium text-right">Profit</th>
-            <th className="pb-2 font-medium text-right">ROI</th>
+            <th className="pb-2 pr-3 font-medium text-right">
+              <LabelWithInfo id="geTax">Tax</LabelWithInfo>
+            </th>
+            <th className="pb-2 pr-3 font-medium text-right">
+              <LabelWithInfo id="realisedProfit">Profit</LabelWithInfo>
+            </th>
+            <th className="pb-2 font-medium text-right">
+              <LabelWithInfo id="roi">ROI</LabelWithInfo>
+            </th>
           </tr>
         </thead>
         <tbody>

@@ -4,6 +4,8 @@ import { formatGp, formatPct, formatAgo } from "../format";
 import { type WatchEntry, toggleWatch } from "../watchlist";
 import { type BlockEntry, toggleBlock } from "../blocklist";
 import { Badge, Button, EmptyState } from "./ui";
+import { InfoTip } from "./InfoTip";
+import type { ExplanationId } from "../explanations";
 import { showToast } from "../toast";
 
 // No-entry sign (circle + diagonal bar) -- reads as "blocked" at a glance, unlike a bare
@@ -95,27 +97,22 @@ function matchesFilter(value: number | null, filter: ColumnFilter): boolean {
   }
 }
 
-const columns: { key: SortKey; label: string; align?: "right"; title?: string }[] = [
-  { key: "low", label: "Buy", align: "right" },
-  { key: "high", label: "Sell", align: "right" },
-  { key: "net_margin", label: "Margin", align: "right" },
-  { key: "tax", label: "Tax", align: "right" },
-  { key: "roi_pct", label: "ROI", align: "right" },
-  { key: "liquidity", label: "Liquidity/hr", align: "right" },
-  { key: "buy_limit", label: "Limit", align: "right" },
-  {
-    key: "potential_profit",
-    label: "Pot. profit",
-    align: "right",
-    title:
-      "Net margin × GE buy limit — the max you could pocket flipping this item to its limit right now",
-  },
-  {
-    key: "score",
-    label: "Score",
-    align: "right",
-    title: "This app's overall ranking (blends margin, ROI and liquidity)",
-  },
+const columns: {
+  key: SortKey;
+  label: string;
+  align?: "right";
+  title?: string;
+  explain?: ExplanationId;
+}[] = [
+  { key: "low", label: "Buy", align: "right", title: "Most recent price someone bought at" },
+  { key: "high", label: "Sell", align: "right", title: "Most recent price someone sold at" },
+  { key: "net_margin", label: "Margin", align: "right", explain: "netMargin" },
+  { key: "tax", label: "Tax", align: "right", explain: "geTax" },
+  { key: "roi_pct", label: "ROI", align: "right", explain: "roi" },
+  { key: "liquidity", label: "Liquidity/hr", align: "right", explain: "liquidity" },
+  { key: "buy_limit", label: "Limit", align: "right", title: "GE buy limit per 4-hour window" },
+  { key: "potential_profit", label: "Pot. profit", align: "right", explain: "potentialProfit" },
+  { key: "score", label: "Score", align: "right", explain: "score" },
 ];
 
 // DESIGN.md §14.12: tiered volatility badge, coefficient of variation of the high price over a
@@ -433,6 +430,7 @@ export function MarketTable({
                     <span className="cursor-pointer" onClick={() => toggleSort(c.key)}>
                       {c.label} <SortIcon active={sortKey === c.key} dir={sortDir} />
                     </span>
+                    {c.explain && <InfoTip id={c.explain} />}
                   </span>
                   {openFilterKey === c.key && draft && (
                     <FilterPopover
@@ -498,29 +496,32 @@ export function MarketTable({
                       <BlockIcon className="w-4 h-4" />
                     </button>
                   </td>
+                  {/* The volatility marker sits OUTSIDE the name button: an interactive
+                      tooltip trigger nested inside a <button> is invalid markup, and clicking
+                      it would open the item modal instead of explaining the badge. */}
                   <td className="px-3 py-2">
-                    <button
-                      onClick={() => onSelectItem(item)}
-                      className="flex items-center gap-2 whitespace-nowrap text-gray-100 hover:text-white group text-left"
-                    >
-                      {item.icon && (
-                        <img
-                          src={iconUrl(item.icon)}
-                          alt=""
-                          className="w-5 h-5 object-contain shrink-0"
-                        />
-                      )}
-                      <span className="group-hover:underline">{item.name}</span>
-                      {item.members === 1 && <Badge tone="info">P2P</Badge>}
-                      {item.volatility_pct != null && (
-                        <Badge
-                          tone={volatilityTone(item.volatility_pct)}
-                          title="Coefficient of variation of price over the trailing 24h"
-                        >
-                          {(item.volatility_pct * 100).toFixed(0)}% vol
-                        </Badge>
-                      )}
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => onSelectItem(item)}
+                        className="flex items-center gap-2 whitespace-nowrap text-gray-100 hover:text-white group text-left"
+                      >
+                        {item.icon && (
+                          <img
+                            src={iconUrl(item.icon)}
+                            alt=""
+                            className="w-5 h-5 object-contain shrink-0"
+                          />
+                        )}
+                        <span className="group-hover:underline">{item.name}</span>
+                        {item.members === 1 && <Badge tone="info">P2P</Badge>}
+                        {item.volatility_pct != null && (
+                          <Badge tone={volatilityTone(item.volatility_pct)}>
+                            {(item.volatility_pct * 100).toFixed(0)}% vol
+                          </Badge>
+                        )}
+                      </button>
+                      {item.volatility_pct != null && <InfoTip id="volatility" />}
+                    </div>
                   </td>
                   <td className="px-3 py-2 font-mono text-rose-300 text-right">
                     {formatGp(item.low)}

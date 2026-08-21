@@ -16,6 +16,7 @@ import { GeSlotBoard } from "./GeSlotBoard";
 import { ItemOfTheHour } from "./ItemOfTheHour";
 import { buildSlotViews, countNeedsAction } from "../geSlots";
 import { diffAndSnapshotSignals, type SignalsDiff } from "../signalsDiff";
+import { InfoTip } from "./InfoTip";
 
 function iconUrl(icon: string): string {
   if (!icon) return "";
@@ -431,11 +432,17 @@ export function BuySignals({
     <div>
       <div className="glass rounded-xl p-4 mb-4 flex flex-wrap items-end gap-6">
         <label className="text-xs text-gray-400 flex flex-col gap-1">
-          Bankroll (gp)
+          <span className="inline-flex items-center gap-1">
+            Bankroll (gp)
+            <InfoTip id="capitalAllocator" />
+          </span>
           <GpInput value={bankroll} onChange={updateBankroll} className="w-40" />
         </label>
         <label className="text-xs text-gray-400 flex flex-col gap-1">
-          Max allocation per item (%)
+          <span className="inline-flex items-center gap-1">
+            Max allocation per item (%)
+            <InfoTip id="capitalAllocator" />
+          </span>
           <NumberInput value={allocationPct} onChange={updateAllocation} className="w-24" />
         </label>
         <label className="text-xs text-gray-400 flex flex-col gap-1">
@@ -496,8 +503,9 @@ export function BuySignals({
                   {formatGp(allocation.remainingBankroll)}
                 </span>
               </span>
-              <span className="text-gray-500">
-                Projected profit{" "}
+              <span className="text-gray-500 inline-flex items-center gap-1">
+                Projected profit
+                <InfoTip id="capitalAllocator" />{" "}
                 <span className="text-emerald-400 font-mono">
                   {formatGp(allocation.totalProfit)}
                 </span>
@@ -657,7 +665,10 @@ export function BuySignals({
               <span className="font-mono text-emerald-400 text-right">
                 {formatGpFull(item.net_margin)}
               </span>
-              <span className="text-gray-500">ROI</span>
+              <span className="text-gray-500 inline-flex items-center gap-1">
+                ROI
+                <InfoTip id="roi" />
+              </span>
               <span className="font-mono text-emerald-400 text-right">
                 {formatPct(item.roi_pct)}
               </span>
@@ -665,11 +676,17 @@ export function BuySignals({
 
             <div className="mt-1 pt-2 border-t border-white/10 flex items-center justify-between">
               <div className="text-xs text-gray-500">
-                Suggested qty
+                <span className="inline-flex items-center gap-1">
+                  Suggested qty
+                  <InfoTip id="capitalAllocator" />
+                </span>
                 <div className="text-lg font-mono text-white">{qty.toLocaleString()}</div>
               </div>
               <div className="text-xs text-gray-500 text-right">
-                {realizationRatio != null ? "Calibrated profit" : "Projected profit"}
+                <span className="inline-flex items-center gap-1">
+                  {realizationRatio != null ? "Calibrated profit" : "Projected profit"}
+                  <InfoTip id={realizationRatio != null ? "realization" : "netMargin"} />
+                </span>
                 <div className="text-lg font-mono text-emerald-400">
                   {formatGp(realizationRatio != null ? projectedProfit * realizationRatio : projectedProfit)}
                 </div>

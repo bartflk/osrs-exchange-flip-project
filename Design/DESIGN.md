@@ -1335,6 +1335,38 @@ Audited across all eight live picks, comparing the claim against the median **pa
 
 §14.45 verified the previous formula by recomputing it independently and matching to 0.00pp — and that proved only that I had reproduced *my own formula*, not that the formula answered the question. Both times the number was plausible, well-formatted, internally consistent and wrong. **Arithmetic verification is not methodological verification**, and the thing that caught it was printing the raw sample rather than the summary.
 
+## 14.52 Status note — Formula tooltips: one registry, every derived number — 2026-08-21
+
+Direct request: *"When there is a calculation or some sort of formula, i would love to have a tooltip explaining the context behind the data when i look at it."*
+
+### Shape
+
+Two new files rather than tooltips scattered per component:
+
+- `frontend/src/explanations.ts` — the registry. One entry per derived number: `title`, `formula`, `body[]`, optional `caveat`, and `source` (the file the formula lives in). 21 entries covering GE tax, net margin, ROI, liquidity, score, potential profit, volatility, execution margin, sizing tiers, trade health, capital allocator, maximise-utilisation, timing edge, days won, trading hours, item of the hour, buy quantity, slot score, realised profit, gp/hr, realisation ratio, net worth, remaining buy limit.
+- `frontend/src/components/InfoTip.tsx` — the renderer. `<InfoTip id="score" />` plus a `LabelWithInfo` wrapper for the "header text + marker" pairing that table headers all need.
+
+### Why a registry rather than per-component strings
+
+The app already had ~30 ad-hoc `title=` attributes, and one of them had gone stale without anyone noticing: the Market table's Score header read *"blends margin, ROI and liquidity"* while `scoreItem()` had long since become `(net margin × log₁₀(liquidity+1)) ÷ (1 + volatility)` — **ROI is not in the formula at all**. That is exactly the failure mode a per-component string invites. One entry per formula, referenced from every screen that shows the number, means a formula change has one place to land.
+
+`caveat` is a first-class field, not an afterthought, and it renders in amber against a left border. Every unbacktested constant now says so on screen: the 0.5% execution nudge, the ×10 volatility scaling in sizing, the trade-health weights, the slot-score weights, the score formula's shape, and the 7-day sample behind the timing work. §14.51 is the argument for this — a number that looks plausible and well-formatted is not thereby correct, and the caveat is where the reader learns which is which.
+
+### Why not the native `title` attribute
+
+Three reasons it wasn't sufficient: it can't render a monospace formula block, it takes ~1s to appear and then times out mid-sentence, and it is invisible to keyboard and touch users. `InfoTip` opens on hover, focus and tap, closes on Escape, and is reachable by Tab.
+
+### Positioning, and two things found live
+
+Rendered through a portal to `<body>` with `position: fixed`, because every table in this app sits inside `overflow-x-auto` and an absolutely-positioned popover inside one is clipped at the scroll container's edge — which is precisely where the right-hand numeric columns that most need explaining live.
+
+Measured in the browser rather than assumed:
+
+1. **Horizontal clamp needed.** The Score header's marker sits at x≈1121 in a 1280px viewport; centred, the 320px panel would have run to x=1281. Clamped to the viewport edge instead.
+2. **Neither-side fit is a real case.** The Score explanation renders ~430px tall. With the trigger mid-page in a 720px window there is room neither below (358px) nor above (348px), so the original prefer-below/flip-above logic left it overflowing the bottom by 79px. Position is now clamped into the viewport after the side is chosen; overlapping the trigger slightly beats being unreadable. A `maxHeight` backstop covers very short windows.
+
+Verified live across Market, Signals, Overnight, Portfolio and Flips: markers present on every derived column, no console errors, panel inside the viewport in both the clipping and the too-tall cases.
+
 ## 15. Key references
 
 - [RuneScape:Real-time Prices — OSRS Wiki](https://oldschool.runescape.wiki/w/RuneScape:Real-time_Prices)

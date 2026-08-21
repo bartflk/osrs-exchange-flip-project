@@ -7,6 +7,7 @@ import {
   type HorizonResult,
 } from "../api";
 import { formatAgo, formatGp, formatPct } from "../format";
+import { InfoTip } from "./InfoTip";
 
 function iconUrl(icon: string): string {
   if (!icon) return "";
@@ -104,7 +105,10 @@ export function TrackRecord() {
             >
               {formatGp(summary.avgNetMargin)}
             </div>
-            <div className="text-[10px] uppercase tracking-wide text-gray-500">Avg net margin</div>
+            <div className="text-[10px] uppercase tracking-wide text-gray-500 inline-flex items-center gap-1">
+              Avg net margin
+              <InfoTip id="netMargin" />
+            </div>
           </div>
           <div className="text-center">
             <div className="text-gray-200 font-mono">{formatPct(summary.avgRoiPct)}</div>
@@ -114,7 +118,7 @@ export function TrackRecord() {
             <div className="text-gray-200 font-mono">{summary.pendingCount}</div>
             <div className="text-[10px] uppercase tracking-wide text-gray-500">Pending</div>
           </div>
-          <div className="text-center" title="Realized ÷ projected avg net margin across resolved picks -- Buy Signals' 'calibrated profit' figure is your raw projection times this.">
+          <div className="text-center">
             <div
               className={`font-mono ${
                 summary.realizationRatio == null
@@ -128,7 +132,10 @@ export function TrackRecord() {
                 ? `${(summary.realizationRatio * 100).toFixed(0)}%`
                 : `${summary.resolvedCount}/20`}
             </div>
-            <div className="text-[10px] uppercase tracking-wide text-gray-500">Realization</div>
+            <div className="text-[10px] uppercase tracking-wide text-gray-500 inline-flex items-center gap-1">
+              Realization
+              <InfoTip id="realization" />
+            </div>
           </div>
         </div>
       </div>

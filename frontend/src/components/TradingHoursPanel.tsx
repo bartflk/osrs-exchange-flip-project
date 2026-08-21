@@ -1,6 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { fetchTradingHours, fetchTradingHoursSummary, type TradingHours } from "../api";
 import { Button } from "./ui";
+import { InfoTip } from "./InfoTip";
 
 // DESIGN.md §14.43: when is this item cheapest to buy and dearest to sell, by hour of day.
 //
@@ -80,7 +81,10 @@ export function TradingHoursPanel({ itemId }: { itemId: number }) {
   return (
     <div className="glass rounded-xl p-4">
       <div className="flex items-baseline justify-between gap-2 mb-3 flex-wrap">
-        <h4 className="text-sm font-medium text-gray-200">Best times to trade</h4>
+        <h4 className="text-sm font-medium text-gray-200 inline-flex items-center gap-1.5">
+          Best times to trade
+          <InfoTip id="tradingHours" />
+        </h4>
         <span className="text-[11px] text-gray-500">
           {data.daysCovered}d of hourly data · {data.hoursCovered}/24 hours · all times UTC
         </span>

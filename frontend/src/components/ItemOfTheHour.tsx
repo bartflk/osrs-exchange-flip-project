@@ -9,6 +9,7 @@ import {
 } from "../timeSlots";
 import { useCurrentSlot } from "../useCurrentSlot";
 import { EmptyState } from "./ui";
+import { LabelWithInfo } from "./InfoTip";
 
 // DESIGN.md §14.44: "Item of the hour" -- what's worth buying at this half-hour of the UTC day,
 // ranked by the timing edge available at its best later sell slot, the volume actually traded in
@@ -130,13 +131,23 @@ export function ItemOfTheHour({
                     <th className="pb-2 pr-3 font-medium text-right">Sell @</th>
                     <th className="pb-2 pr-3 font-medium text-right">Sell at ({localZoneLabel()})</th>
                     <th className="pb-2 pr-3 font-medium text-right">Hold</th>
-                    <th className="pb-2 pr-3 font-medium text-right">Profit/u</th>
-                    <th className="pb-2 pr-3 font-medium text-right">Edge</th>
-                    <th className="pb-2 pr-3 font-medium text-right">Days won</th>
-                    <th className="pb-2 pr-3 font-medium text-right">Buy qty</th>
+                    <th className="pb-2 pr-3 font-medium text-right">
+                      <LabelWithInfo id="timingEdge">Profit/u</LabelWithInfo>
+                    </th>
+                    <th className="pb-2 pr-3 font-medium text-right">
+                      <LabelWithInfo id="timingEdge">Edge</LabelWithInfo>
+                    </th>
+                    <th className="pb-2 pr-3 font-medium text-right">
+                      <LabelWithInfo id="daysWon">Days won</LabelWithInfo>
+                    </th>
+                    <th className="pb-2 pr-3 font-medium text-right">
+                      <LabelWithInfo id="deployableUnits">Buy qty</LabelWithInfo>
+                    </th>
                     <th className="pb-2 pr-3 font-medium text-right">Capital</th>
                     <th className="pb-2 pr-3 font-medium text-right">Profit</th>
-                    <th className="pb-2 font-medium text-right">Score</th>
+                    <th className="pb-2 font-medium text-right">
+                      <LabelWithInfo id="slotScore">Score</LabelWithInfo>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>

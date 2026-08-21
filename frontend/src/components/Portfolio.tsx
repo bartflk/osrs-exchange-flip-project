@@ -136,11 +136,13 @@ export function Portfolio({
           label="Unrealized profit"
           value={totals ? formatGp(totals.unrealizedProfit) : "—"}
           hint="net of GE tax"
+          explain="netMargin"
         />
         {/* §14.47: bank value alone is not net worth for anyone actively flipping -- measured on
             this install, the bank read 57.7m while 409.8m sat on the Exchange. Showing the bank
             figure by itself made a working bankroll look like a wipeout. */}
         <StatCard
+          explain="netWorth"
           label="Net worth"
           value={
             trueNetWorth != null

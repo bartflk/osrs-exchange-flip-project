@@ -1,6 +1,8 @@
 import { useEffect, useState } from "preact/hooks";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "preact/compat";
 import { formatGpCompact, parseGpShorthand } from "../format";
+import { InfoTip } from "./InfoTip";
+import type { ExplanationId } from "../explanations";
 
 // Shared visual language for the app: consistent buttons, badges, inputs, and chips so every
 // tab reads as one product instead of each screen inventing its own control style.
@@ -255,17 +257,24 @@ export function StatCard({
   value,
   tone = "neutral",
   hint,
+  explain,
 }: {
   label: string;
   value: string;
   tone?: "neutral" | "success" | "danger";
   hint?: string;
+  // Any stat card showing a derived number should name the formula behind it -- the label alone
+  // ("Realisation", "GP/hr") tells you what it's called, not what was computed.
+  explain?: ExplanationId;
 }) {
   const valueClass =
     tone === "success" ? "text-emerald-400" : tone === "danger" ? "text-rose-400" : "text-white";
   return (
     <div className="glass rounded-xl px-4 py-3">
-      <div className="text-[10px] uppercase tracking-wider text-gray-500 font-medium">{label}</div>
+      <div className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-gray-500 font-medium">
+        {label}
+        {explain && <InfoTip id={explain} />}
+      </div>
       <div className={`font-mono text-lg font-semibold mt-0.5 ${valueClass}`}>{value}</div>
       {hint && <div className="text-[11px] text-gray-500 mt-0.5">{hint}</div>}
     </div>

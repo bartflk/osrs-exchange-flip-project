@@ -20,6 +20,7 @@ import { allocateCapital } from "../capitalAllocator";
 import { NumberInput, GpInput, EmptyState, Chip } from "./ui";
 import { GeSlotBoard } from "./GeSlotBoard";
 import { buildSlotViews, countNeedsAction } from "../geSlots";
+import { LabelWithInfo } from "./InfoTip";
 
 // Overnight Trading, Phase 1 -- direct request: "I want the GE screen copied and have Overnight
 // positions to buy bottom of the band so i can wake up, set them up to sell them at the top of
@@ -412,10 +413,18 @@ export function OvernightTrading({
                   <th className="pb-2 pr-3 font-medium text-right">Sell @</th>
                   <th className="pb-2 pr-3 font-medium text-right">Sell at ({localZoneLabel()})</th>
                   <th className="pb-2 pr-3 font-medium text-right">Hold</th>
-                  <th className="pb-2 pr-3 font-medium text-right">Profit/u</th>
-                  <th className="pb-2 pr-3 font-medium text-right">Edge</th>
-                    <th className="pb-2 pr-3 font-medium text-right">Days won</th>
-                  <th className="pb-2 pr-3 font-medium text-right">Buy qty</th>
+                  <th className="pb-2 pr-3 font-medium text-right">
+                    <LabelWithInfo id="timingEdge">Profit/u</LabelWithInfo>
+                  </th>
+                  <th className="pb-2 pr-3 font-medium text-right">
+                    <LabelWithInfo id="timingEdge">Edge</LabelWithInfo>
+                  </th>
+                    <th className="pb-2 pr-3 font-medium text-right">
+                    <LabelWithInfo id="daysWon">Days won</LabelWithInfo>
+                  </th>
+                  <th className="pb-2 pr-3 font-medium text-right">
+                    <LabelWithInfo id="deployableUnits">Buy qty</LabelWithInfo>
+                  </th>
                   <th className="pb-2 pr-3 font-medium text-right">Capital</th>
                   <th className="pb-2 font-medium text-right">Profit</th>
                 </tr>

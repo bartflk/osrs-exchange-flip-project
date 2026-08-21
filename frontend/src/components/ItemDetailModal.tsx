@@ -20,6 +20,8 @@ import { computeSizingTiers, type SizingTierName } from "../positionSizing";
 import { MarketIntelligencePanel } from "./MarketIntelligencePanel";
 import { TechnicalIndicatorsPanel } from "./TechnicalIndicatorsPanel";
 import { ItemMentions } from "./ItemMentions";
+import { InfoTip } from "./InfoTip";
+import type { ExplanationId } from "../explanations";
 
 function iconUrl(icon: string): string {
   if (!icon) return "";
@@ -308,18 +310,30 @@ export function ItemDetailModal({
             label="Net margin"
             value={formatGp(item.net_margin)}
             positive={(item.net_margin ?? 0) >= 0}
+            explain="netMargin"
           />
-          <Stat label="ROI" value={formatPct(item.roi_pct)} positive={(item.roi_pct ?? 0) >= 0} />
+          <Stat
+            label="ROI"
+            value={formatPct(item.roi_pct)}
+            positive={(item.roi_pct ?? 0) >= 0}
+            explain="roi"
+          />
           <Stat
             label="GE tax (2%)"
             value={item.tax ? `-${formatGp(item.tax)}` : "—"}
             positive={item.tax ? false : undefined}
+            explain="geTax"
           />
           <Stat
             label="Buy limit (4h)"
             value={item.buy_limit != null ? item.buy_limit.toLocaleString() : "—"}
+            explain="buyLimitWindow"
           />
-          <Stat label="Liquidity/hr" value={Math.round(item.liquidity).toLocaleString()} />
+          <Stat
+            label="Liquidity/hr"
+            value={Math.round(item.liquidity).toLocaleString()}
+            explain="liquidity"
+          />
           <Stat
             label="Buy/sell ratio (1h)"
             value={
@@ -339,6 +353,7 @@ export function ItemDetailModal({
             label="Volatility (24h)"
             value={item.volatility_pct != null ? `${(item.volatility_pct * 100).toFixed(1)}%` : "—"}
             positive={item.volatility_pct != null ? item.volatility_pct < 0.05 : undefined}
+            explain="volatility"
           />
         </div>
 
@@ -349,7 +364,10 @@ export function ItemDetailModal({
         {item.execution_buy_price != null && item.execution_sell_price != null && (
           <div className="glass rounded-xl p-4 mb-4">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs uppercase tracking-wide text-gray-500">Execution edge</span>
+              <span className="text-xs uppercase tracking-wide text-gray-500 inline-flex items-center gap-1">
+                Execution edge
+                <InfoTip id="executionMargin" />
+              </span>
               <span
                 className="text-[10px] text-gray-600"
                 title="Nudge size is a %-of-price heuristic, not the real GE tick table -- treat as a starting offer, not a guarantee"
@@ -364,6 +382,7 @@ export function ItemDetailModal({
                 label="Expected margin"
                 value={formatGp(item.execution_margin)}
                 positive={(item.execution_margin ?? 0) >= 0}
+                explain="executionMargin"
               />
             </div>
           </div>
@@ -498,8 +517,11 @@ function SizingTierCard({
 }) {
   return (
     <div className="glass rounded-lg px-3 py-2">
-      <div className={`text-[10px] uppercase tracking-wide ${TIER_TONE[tier.name]}`}>
+      <div
+        className={`text-[10px] uppercase tracking-wide flex items-center gap-1 ${TIER_TONE[tier.name]}`}
+      >
         {TIER_LABEL[tier.name]}
+        <InfoTip id="sizingTiers" />
       </div>
       <div className="font-mono text-sm text-gray-200">{tier.qty.toLocaleString()} units</div>
       <div className="text-[11px] text-gray-500 font-mono">
@@ -509,10 +531,23 @@ function SizingTierCard({
   );
 }
 
-function Stat({ label, value, positive }: { label: string; value: string; positive?: boolean }) {
+function Stat({
+  label,
+  value,
+  positive,
+  explain,
+}: {
+  label: string;
+  value: string;
+  positive?: boolean;
+  explain?: ExplanationId;
+}) {
   return (
     <div className="glass rounded-lg px-3 py-2">
-      <div className="text-[10px] uppercase tracking-wide text-gray-500">{label}</div>
+      <div className="text-[10px] uppercase tracking-wide text-gray-500 flex items-center gap-1">
+        {label}
+        {explain && <InfoTip id={explain} />}
+      </div>
       <div
         className={`font-mono text-sm ${
           positive === undefined ? "text-gray-200" : positive ? "text-emerald-400" : "text-rose-400"

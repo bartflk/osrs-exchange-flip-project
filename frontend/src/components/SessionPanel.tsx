@@ -2,6 +2,8 @@ import { useEffect, useState } from "preact/hooks";
 import { fetchSession, type SessionStats } from "../api";
 import { formatGp, formatPct } from "../format";
 import { Button } from "./ui";
+import { InfoTip } from "./InfoTip";
+import type { ExplanationId } from "../explanations";
 
 const SESSION_KEY = "sessionStartedAt";
 
@@ -21,10 +23,23 @@ function formatDuration(seconds: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-function Row({ label, value, tone }: { label: string; value: string; tone?: "good" | "bad" }) {
+function Row({
+  label,
+  value,
+  tone,
+  explain,
+}: {
+  label: string;
+  value: string;
+  tone?: "good" | "bad";
+  explain?: ExplanationId;
+}) {
   return (
     <div className="flex items-baseline justify-between gap-3 text-sm">
-      <span className="text-gray-500">{label}</span>
+      <span className="text-gray-500 inline-flex items-center gap-1">
+        {label}
+        {explain && <InfoTip id={explain} />}
+      </span>
       <span
         className={`font-mono ${
           tone === "good" ? "text-emerald-400" : tone === "bad" ? "text-rose-400" : "text-gray-200"
@@ -97,7 +112,10 @@ export function SessionPanel() {
       ) : (
         <>
           <div className="mb-3">
-            <div className="text-[11px] uppercase tracking-wide text-gray-500">Profit</div>
+            <div className="text-[11px] uppercase tracking-wide text-gray-500 inline-flex items-center gap-1">
+              Profit
+              <InfoTip id="realisedProfit" />
+            </div>
             <div
               className={`text-2xl font-semibold font-mono ${
                 stats.realizedProfit > 0
@@ -120,9 +138,9 @@ export function SessionPanel() {
             <Row label="Flips made" value={String(stats.flipsFinished)} />
             <Row label="ROI" value={stats.roiPct != null ? formatPct(stats.roiPct) : "—"} />
             <Row label="Session time" value={formatDuration(elapsed)} />
-            <Row label="Hourly profit" value={`${formatGp(stats.gpPerHour ?? 0)}/hr`} />
+            <Row label="Hourly profit" value={`${formatGp(stats.gpPerHour ?? 0)}/hr`} explain="gpPerHour" />
             <Row label="Portfolio value" value={formatGp(stats.positionsValue)} />
-            <Row label="Tax paid" value={formatGp(stats.taxPaid)} />
+            <Row label="Tax paid" value={formatGp(stats.taxPaid)} explain="geTax" />
           </div>
 
           {/* Surfaced rather than silently dropped: these are sells whose buys happened before
