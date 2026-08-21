@@ -20,7 +20,7 @@ import { allocateCapital } from "../capitalAllocator";
 import { NumberInput, GpInput, EmptyState, Chip } from "./ui";
 import { GeSlotBoard } from "./GeSlotBoard";
 import { buildSlotViews, countNeedsAction } from "../geSlots";
-import { LabelWithInfo } from "./InfoTip";
+import { InfoTip, LabelWithInfo } from "./InfoTip";
 
 // Overnight Trading, Phase 1 -- direct request: "I want the GE screen copied and have Overnight
 // positions to buy bottom of the band so i can wake up, set them up to sell them at the top of
@@ -377,7 +377,10 @@ export function OvernightTrading({
             <div className="font-mono text-emerald-400">{formatGp(allocation.totalProfit)}</div>
           </div>
           <div>
-            <div className="text-gray-500">Idle bankroll</div>
+            <div className="text-gray-500 inline-flex items-center gap-1">
+              Idle bankroll
+              <InfoTip id="maximizeUtilization" />
+            </div>
             <div className="font-mono text-gray-400">{formatGp(allocation.remainingBankroll)}</div>
           </div>
         </div>

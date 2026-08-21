@@ -132,19 +132,6 @@ export const EXPLANATIONS = {
     source: "frontend/src/positionSizing.ts",
   },
 
-  tradeHealth: {
-    title: "Trade health",
-    formula: "starts at 100, deductions subtract from it",
-    body: [
-      "A live 0–100 read on an open offer, recomputed every poll from the offer plus the current market row. Nothing is stored, so it can never go stale.",
-      "Deductions: −40 if the underlying margin has gone flat or negative (the thesis broke, and no reprice fixes that). Up to −30 for the market drifting past your price. Up to −20 for volatility above 3%. −15 for liquidity under 10/hr. Up to −15 for an offer sitting over 4 hours unfilled.",
-      "70 and up is Healthy, 40–69 is Watch, below 40 is At risk. Every deduction is listed in plain English next to the score — there is no silent component.",
-    ],
-    caveat:
-      "The weights are reasoned, not fitted. Read the reasons rather than the number: the reasons are facts, the number is a summary of them.",
-    source: "frontend/src/tradeHealth.ts",
-  },
-
   capitalAllocator: {
     title: "Capital allocator",
     formula:

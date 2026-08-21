@@ -9,7 +9,7 @@ import {
 } from "../timeSlots";
 import { useCurrentSlot } from "../useCurrentSlot";
 import { EmptyState } from "./ui";
-import { LabelWithInfo } from "./InfoTip";
+import { InfoTip, LabelWithInfo } from "./InfoTip";
 
 // DESIGN.md §14.44: "Item of the hour" -- what's worth buying at this half-hour of the UTC day,
 // ranked by the timing edge available at its best later sell slot, the volume actually traded in
@@ -64,6 +64,7 @@ export function ItemOfTheHour({
     <div className="glass rounded-xl p-4 mb-4">
       <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
         <h3 className="text-sm font-medium text-gray-200">
+          <InfoTip id="itemOfTheHour" />{" "}
           Item of the hour
           {data && (
             <span className="ml-2 text-xs text-gray-500 font-normal">

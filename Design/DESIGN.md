@@ -1343,7 +1343,7 @@ Direct request: *"When there is a calculation or some sort of formula, i would l
 
 Two new files rather than tooltips scattered per component:
 
-- `frontend/src/explanations.ts` — the registry. One entry per derived number: `title`, `formula`, `body[]`, optional `caveat`, and `source` (the file the formula lives in). 21 entries covering GE tax, net margin, ROI, liquidity, score, potential profit, volatility, execution margin, sizing tiers, trade health, capital allocator, maximise-utilisation, timing edge, days won, trading hours, item of the hour, buy quantity, slot score, realised profit, gp/hr, realisation ratio, net worth, remaining buy limit.
+- `frontend/src/explanations.ts` — the registry. One entry per derived number: `title`, `formula`, `body[]`, optional `caveat`, and `source` (the file the formula lives in). 22 entries covering GE tax, net margin, ROI, liquidity, score, potential profit, volatility, execution margin, sizing tiers, capital allocator, maximise-utilisation, timing edge, days won, trading hours, item of the hour, buy quantity, slot score, realised profit, gp/hr, realisation ratio, net worth, remaining buy limit. Every entry is wired to something visible — an entry with no on-screen home is an entry that will go stale unobserved.
 - `frontend/src/components/InfoTip.tsx` — the renderer. `<InfoTip id="score" />` plus a `LabelWithInfo` wrapper for the "header text + marker" pairing that table headers all need.
 
 ### Why a registry rather than per-component strings
@@ -1351,6 +1351,10 @@ Two new files rather than tooltips scattered per component:
 The app already had ~30 ad-hoc `title=` attributes, and one of them had gone stale without anyone noticing: the Market table's Score header read *"blends margin, ROI and liquidity"* while `scoreItem()` had long since become `(net margin × log₁₀(liquidity+1)) ÷ (1 + volatility)` — **ROI is not in the formula at all**. That is exactly the failure mode a per-component string invites. One entry per formula, referenced from every screen that shows the number, means a formula change has one place to land.
 
 `caveat` is a first-class field, not an afterthought, and it renders in amber against a left border. Every unbacktested constant now says so on screen: the 0.5% execution nudge, the ×10 volatility scaling in sizing, the trade-health weights, the slot-score weights, the score formula's shape, and the 7-day sample behind the timing work. §14.51 is the argument for this — a number that looks plausible and well-formatted is not thereby correct, and the caveat is where the reader learns which is which.
+
+### Dead code found while wiring it up
+
+`frontend/src/tradeHealth.ts` (`computeTradeHealth`, §10 item 23) is **not imported by any component** — the 0-100 open-offer health score it computes is never rendered. It was written, documented and then never mounted. A `tradeHealth` registry entry was drafted and then removed: the registry should describe what is actually on screen, and writing an explanation for an invisible metric would have quietly implied the metric exists. Left in place rather than deleted, but flagged here — either mount it on the GE slot board or drop the file.
 
 ### Why not the native `title` attribute
 
