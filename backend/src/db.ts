@@ -170,6 +170,24 @@ CREATE TABLE IF NOT EXISTS item_slot_profile (
 );
 CREATE INDEX IF NOT EXISTS idx_slot_profile_slot ON item_slot_profile(slot);
 
+-- DESIGN.md §14.51: the per-DAY readings behind each slot, kept because the aggregate above
+-- cannot answer the question the ranking actually asks.
+--
+-- "Buy at slot S, sell at slot T" is a PAIRED trade: it lives or dies on (sell_d - buy_d) within
+-- the same day. median(sell) - median(buy) is not that, and on a trending item the two medians
+-- land on different days, so the week's drift gets counted as time-of-day edge. Measured live:
+-- Dexterous prayer scroll fell 19% across the sample week and the aggregate reported a 1.62m/unit
+-- edge where the median day actually delivered 109k -- and three of eight picks were loss-making.
+CREATE TABLE IF NOT EXISTS item_slot_daily (
+  item_id INTEGER NOT NULL,
+  slot INTEGER NOT NULL,      -- 0-47, half-hour index into the UTC day
+  day TEXT NOT NULL,          -- YYYY-MM-DD (UTC)
+  low INTEGER,                -- insta-buy price observed in that slot on that day
+  high INTEGER,               -- insta-sell price
+  PRIMARY KEY (item_id, slot, day)
+);
+CREATE INDEX IF NOT EXISTS idx_slot_daily_item ON item_slot_daily(item_id, slot);
+
 -- Last-seen state per GE slot. Only exists so the next poll can diff against it: a rising
 -- quantitySold on the same offer IS a fill, deterministically, no inference. Genuinely
 -- disposable -- losing it costs at most one poll cycle of granularity.
@@ -194,6 +212,10 @@ CREATE TABLE IF NOT EXISTS ge_slot_state (
 for (const [table, column, type] of [
   ["item_slot_profile", "buy_price", "REAL"],
   ["item_slot_profile", "sell_price", "REAL"],
+  // DESIGN.md §10 item 57: which item(s) an event mentions, JSON array of item ids (e.g.
+  // "[4151,11840]"), NULL until the linking pass has looked at it -- distinct from `tags`, which
+  // is reserved for §11.3 item 1's separate (still unbuilt) exposure-category classification.
+  ["events", "linked_item_ids", "TEXT"],
 ] as const) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all() as unknown as { name: string }[];
   if (!cols.some((c) => c.name === column)) {
@@ -473,6 +495,57 @@ export function getRecentEvents(limit: number): EventRecord[] {
   return recentEventsStmt.all(limit) as unknown as EventRecord[];
 }
 
+// DESIGN.md §10 item 57: item-linking for already-collected events (Reddit posts have been live
+// since §14.35, but nothing tags which item(s) a post is actually about). Most-recent-first so a
+// slow/interrupted linking pass covers what's currently relevant before it works backward through
+// the archive.
+const eventsNeedingLinkingStmt = db.prepare(`
+  SELECT id, event_date, title, summary, source, link, tags
+  FROM events WHERE linked_item_ids IS NULL
+  ORDER BY event_date DESC, id DESC LIMIT ?
+`);
+
+export function getEventsNeedingLinking(limit: number): EventRecord[] {
+  return eventsNeedingLinkingStmt.all(limit) as unknown as EventRecord[];
+}
+
+const setEventLinkedItemsStmt = db.prepare(
+  `UPDATE events SET linked_item_ids = ? WHERE id = ?`,
+);
+
+// itemIds=[] (not null) is a real, valid result -- "this event mentions no specific item" -- and
+// is stored as "[]" so the event doesn't get re-queued by getEventsNeedingLinking() forever.
+export function setEventLinkedItems(eventId: number, itemIds: number[]): void {
+  setEventLinkedItemsStmt.run(JSON.stringify(itemIds), eventId);
+}
+
+// Plain LIKE rather than SQLite's json1 functions (json_each) -- avoids depending on node:sqlite's
+// bundled build having JSON1 compiled in, unconfirmed and untested elsewhere in this codebase.
+// event volume is small (low hundreds of rows), so filtering the LIKE-matched candidates in JS
+// with a real JSON.parse (rather than trusting the substring match alone, which could
+// false-positive on id 15 matching stored id 115) is cheap and exact.
+const eventsWithLinksStmt = db.prepare(`
+  SELECT id, event_date, title, summary, source, link, tags, linked_item_ids
+  FROM events
+  WHERE linked_item_ids IS NOT NULL AND linked_item_ids LIKE '%' || ? || '%'
+  ORDER BY event_date DESC, id DESC
+`);
+
+export function getEventsForItem(itemId: number, limit: number): EventRecord[] {
+  const candidates = eventsWithLinksStmt.all(String(itemId)) as unknown as (EventRecord & {
+    linked_item_ids: string;
+  })[];
+  const matches = candidates.filter((r) => {
+    try {
+      const ids = JSON.parse(r.linked_item_ids) as number[];
+      return Array.isArray(ids) && ids.includes(itemId);
+    } catch {
+      return false;
+    }
+  });
+  return matches.slice(0, limit);
+}
+
 // Durable key/value cache -- survives `tsx watch` restarts, unlike the in-memory Maps these
 // replace. Used for external-poll throttling and cached LLM output.
 const kvGetStmt = db.prepare(`SELECT value, updated_at FROM kv_cache WHERE key = ?`);
@@ -651,6 +724,57 @@ export function upsertSlotProfiles(rows: SlotProfileRow[]): void {
     db.exec("ROLLBACK");
     throw err;
   }
+}
+
+const insertSlotDailyStmt = db.prepare(`
+  INSERT INTO item_slot_daily (item_id, slot, day, low, high)
+  VALUES (@item_id, @slot, @day, @low, @high)
+  ON CONFLICT(item_id, slot, day) DO UPDATE SET low=excluded.low, high=excluded.high
+`);
+const deleteSlotDailyStmt = db.prepare(`DELETE FROM item_slot_daily WHERE item_id = ?`);
+
+export interface SlotDailyRow {
+  item_id: number;
+  slot: number;
+  day: string;
+  low: number | null;
+  high: number | null;
+}
+
+export function replaceSlotDaily(itemId: number, rows: SlotDailyRow[]): void {
+  db.exec("BEGIN");
+  try {
+    // Replaced wholesale rather than merged: each refresh re-fetches the same rolling 7.6-day
+    // window, so days that have aged out should disappear rather than linger.
+    deleteSlotDailyStmt.run(itemId);
+    for (const r of rows) insertSlotDailyStmt.run(r as unknown as Record<string, never>);
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+}
+
+// Every day where BOTH the buy slot and the sell slot have a reading. The inner join is the whole
+// point -- a day present at only one of the two slots cannot price a round trip.
+const pairedDaysStmt = db.prepare(`
+  SELECT b.day, b.low AS buy, s.high AS sell
+  FROM item_slot_daily b
+  JOIN item_slot_daily s ON s.item_id = b.item_id AND s.day = b.day
+  WHERE b.item_id = ? AND b.slot = ? AND s.slot = ?
+    AND b.low IS NOT NULL AND s.high IS NOT NULL
+`);
+
+export function getPairedDays(
+  itemId: number,
+  buySlot: number,
+  sellSlot: number,
+): { day: string; buy: number; sell: number }[] {
+  return pairedDaysStmt.all(itemId, buySlot, sellSlot) as unknown as {
+    day: string;
+    buy: number;
+    sell: number;
+  }[];
 }
 
 const profiledItemsStmt = db.prepare(

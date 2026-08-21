@@ -6,6 +6,7 @@ import { getWarehouseStatus } from "../warehouse.js";
 import { getSidecarStatus } from "../sidecar.js";
 import { computeForecast } from "../forecast.js";
 import { getPricePollTiming } from "../poller.js";
+import { getLinkedEventsForItem } from "../eventItemLinking.js";
 
 export async function itemsRoutes(app: FastifyInstance) {
   app.get("/api/items", async (req) => {
@@ -114,6 +115,22 @@ export async function itemsRoutes(app: FastifyInstance) {
       return reply.code(200).send({ itemId, points: [], historicalSamples: 0 });
     }
     return { itemId, ...forecast };
+  });
+
+  // DESIGN.md §10 item 57: news/Reddit events already linked to this item, via eventItemLinking.ts.
+  app.get("/api/items/:id/mentions", async (req) => {
+    const { id } = req.params as { id: string };
+    const events = getLinkedEventsForItem(Number(id), 10);
+    return {
+      events: events.map((e) => ({
+        id: e.id,
+        eventDate: e.event_date,
+        title: e.title,
+        summary: e.summary,
+        source: e.source,
+        link: e.link,
+      })),
+    };
   });
 
   // Item lookup independent of the Market tab's tradeability/liquidity filters --

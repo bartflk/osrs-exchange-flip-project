@@ -313,6 +313,22 @@ export interface UpdateSensitivityResult {
   itemsCompared: number;
 }
 
+// DESIGN.md §10 item 57: events already linked to this item (eventItemLinking.ts).
+export interface ItemMention {
+  id: number;
+  eventDate: string;
+  title: string;
+  summary: string;
+  source: string;
+  link: string | null;
+}
+
+export async function fetchItemMentions(itemId: number): Promise<{ events: ItemMention[] }> {
+  const res = await fetch(`/api/items/${itemId}/mentions`);
+  if (!res.ok) throw new Error(`Failed to fetch item mentions: ${res.status}`);
+  return res.json();
+}
+
 export async function fetchUpdateSensitivity(
   eventDate: string,
   windowDays?: number,
@@ -923,6 +939,11 @@ export interface HourlyPick {
   buyPrice: number | null;
   sellPrice: number | null;
   profitPerUnit: number | null;
+  // §14.51: the sample behind profitPerUnit -- days where BOTH slots had a reading, and how many
+  // of them the trade actually profited. The same number from 4 days and from 7 are different
+  // claims, and only one column separates them.
+  pairedDays: number;
+  winDays: number;
   holdSlots: number | null;
   holdHours: number | null;
   volume: number;

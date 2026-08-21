@@ -430,7 +430,7 @@ The following items (54-57) came from a direct request, 2026-08-20: "scope out a
 54. **Overnight Trading.** **Built — see §14.46.** A standalone page (own top-level tab, not nested inside Buy Signals per direct follow-up), mirroring the 8-slot GE board built in §14.42, filled by `allocateCapital()` fed candidates whose `low`/`net_margin`/`score` are shadow-copied to their overnight buy/sell band (not the item's live market numbers) so the allocator ranks by overnight edge rather than general score. `backend/src/slotProfiles.ts` gained `computeOvernightPicks(bedtimeSlot, maxHoldSlots, limit)`, sharing its per-item profile-loading/gating logic with the existing `computeItemOfTheHour` via an extracted `bestPickForItem()` helper — the only difference is the sell-slot search window is capped to an actual overnight hold (2-14h, default 8h) instead of the whole day. New route `GET /api/overnight-picks`.
 55. **Weekly trades screen.** **Not started.** Natural engine is `technicalIndicators.ts`'s Bollinger Bands (§14.45, item 25) batched across the liquid catalogue into a ranked "near lower band" watchlist — literally the "bottom/top of band" framing already built, just for a week-scale window sourced from `price_daily` (DuckDB) instead of the half-hour slot profiles. Honest caveat carried over from §14.45: with only ~2 weeks of `price_daily` history right now, the 20-day-minimum indicators (SMA20, Bollinger, EMA26/MACD) will read thin for a while — a data-depth wait, not an engineering gap. Ties to item 40 (weekly seasonality), which the §14.45 audit note above already flagged as "now nearly free" since the 30m slot-profile series already carries day-of-week.
 56. **Month+ outlook hold strategy.** **Not started.** Same building blocks as item 55, longer windows (30-90d trend slope, long-window mean reversion) from `price_daily`. Flagged loudly in advance: this will show essentially no real signal for weeks/months until enough daily history accumulates, worse than item 55's wait. Ties to item 53 (Dual Active-Flip/Position-Forecast engine split) — this is effectively the "Position-Forecast" side item 53 already called for.
-57. **Reddit/blog correlation on the Overnight/Weekly/Month+ panels.** **Not started.** The §14.45 audit note above already flagged the real gap precisely: "70 ingested Reddit posts still have no item linkage" — Reddit collection itself is live (`redditFeed.ts`, hourly, `r/2007scape` only), the missing piece is tagging which item(s) a post references. Buildable now via the local Ollama model (same prompt pattern as `generateMarketIntelligence`), not blocked on the old "Anthropic API billing" note from when the app considered a hosted model. "Blogs" explicitly out of scope — no data source exists and none is proposed; scoping this down to "Reddit" only, honestly, rather than implying blog coverage that isn't there.
+57. **Reddit/blog correlation on the Overnight/Weekly/Month+ panels.** **Item-linking built — see §14.51** (the correlation-on-Overnight/Weekly/Month+ half is not yet built; this closes the underlying gap it depends on). The §14.45 audit note above already flagged the real gap precisely: "70 ingested Reddit posts still have no item linkage" — Reddit collection itself is live (`redditFeed.ts`, hourly, `r/2007scape` only), the missing piece is tagging which item(s) a post references. Buildable now via the local Ollama model (same prompt pattern as `generateMarketIntelligence`), not blocked on the old "Anthropic API billing" note from when the app considered a hosted model. "Blogs" explicitly out of scope — no data source exists and none is proposed; scoping this down to "Reddit" only, honestly, rather than implying blog coverage that isn't there.
 
 None of these are required for v1 — treat them as the backlog once the core Market/Buy Signals/News loop (roadmap below) is working and you have a feel for what you actually check daily.
 
@@ -1286,6 +1286,54 @@ Both components took `currentSlot` from the API response and read it **once, on 
 - Verified live: at 23:03 local / 21:03 UTC the picker reads `23:00 · 21:00 UTC`, and the selected index matches the slot computed from the clock.
 
 **Worth keeping:** a value read once from a response and rendered indefinitely is a stale-by-design bug. It survived review because at page load it is always correct — it only becomes wrong with time on screen, which is precisely what a screenshot cannot show and what testing immediately after a reload will never catch.
+
+## 14.51 Status note — Event item-linking (§10 item 57, item-linking half) — 2026-08-20
+
+Direct follow-up on "continue building": next item off the list — the real gap §14.45's audit note flagged ("70 ingested Reddit posts still have no item linkage") and item 57 names directly.
+
+- **New `backend/src/eventItemLinking.ts`** + `llm.ts`'s `extractItemMentions()`: for each event without a link yet, the local Ollama model suggests candidate item names from the title/summary; every suggestion is validated against the real item catalogue by exact case-insensitive name match before being stored — a hallucinated or informal name ("tbow" instead of "Twisted bow") is silently dropped, never fuzzy-matched or guessed. Same "model suggests, deterministic code decides" split this app already uses everywhere else it touches an LLM. Known, accepted limitation: informal/slang names won't link without a separate curated alias list, which doesn't exist — under-linking beats mis-linking.
+- **New `events.linked_item_ids` column** (migration, `db.ts`) — a JSON array of item ids, `NULL` until the linking pass has looked at an event, `"[]"` (not re-queued) once looked at and nothing matched. Kept separate from the existing `tags` column, which §11.3 item 1 still reserves for a different, unbuilt exposure-category classification.
+- **New `GET /api/items/:id/mentions` route** and `ItemMentions.tsx` panel in the item detail modal — renders nothing when there are no linked mentions (most items won't have any; an empty card on every single item would be noise, unlike this app's other always-something-to-say panels).
+- Scheduled in `poller.ts`: 10s after boot, then every 15 minutes, budgeted at 20 events/pass (same "budget not a target" framing as the slot-profiling job) — cheap enough (a local model call, not an external API) to run far more often than the collectors that feed it.
+- **Verified partially, then blocked by something outside this change**: `GET /api/items/29796/mentions` round-tripped correctly (`{"events":[]}`, no error) before the fix landed fully — confirming the route/DB wiring works — but both the frontend AND backend dev servers went unreachable (connection refused on both :5173 and :3001) partway through verifying the actual LLM-linking output, which a backend-only TypeScript change cannot itself cause. Not resolved as of this note; the servers need to be checked/restarted outside this session to finish confirming the model actually links real events end-to-end.
+
+## 14.51 Status note — Paired daily outcomes: the edge was measuring the week's trend — 2026-08-20
+
+Direct question: *"the best times to trade are based off of 1 day example or a month or a year of data? whats the data behind it"*.
+
+**The answer is ~7 days** — avg 7.3 observations per 30-minute slot, min 4, max 9, capped by the Wiki API's 365-point limit (30m → 7.6 days; see the granularity table in `wiki.ts`). But printing the sample to answer the question exposed that the statistic computed from it was wrong.
+
+### What the question surfaced
+
+Every observation behind the then-top pick, Dexterous prayer scroll at its buy slot:
+
+    24.1m  23.5m  20.6m  20.5m  20.2m  19.8m  19.6m
+
+That is not a daily rhythm. It is a **19% downtrend across the sample week**. And because §14.45 computed the edge as `median(sell prices) − median(buy prices)` with the two medians taken **independently**, they landed on different days of that decline — so the trend was being counted as time-of-day edge.
+
+Audited across all eight live picks, comparing the claim against the median **paired** daily outcome (same day's buy and sell):
+
+| | claimed | median paired day | |
+|---|---|---|---|
+| Dexterous prayer scroll | 1,623k | 109k | 15× overstated |
+| Ancestral robes set | 3,210k | 62k | 52× overstated |
+| Inquisitor's hauberk | 2,871k | **−689k** | loss |
+| Inquisitor's plateskirt | 1,465k | **−65k** | loss |
+| Masori body (f) | 577k | **−173k** | loss |
+
+**Three of eight were loss-making on a median day.**
+
+### Fix
+
+`median(sell) − median(buy)` is not `median(sell − buy)`, and only the latter describes a round trip, because a round trip happens *inside one day's prices*. New `item_slot_daily` table keeps the per-day readings; `getPairedDays()` inner-joins the buy slot against the sell slot **on the same day**, and the ranking takes the median of those daily profits. A day present at only one of the two slots can't price a round trip and is excluded rather than half-counted.
+
+- `MIN_PAIRED_DAYS = 4` — below that the median is one or two days.
+- `pairedDays` and `winDays` are returned and shown as a **"Days won"** column (green ≥70%, amber ≤50%). The sample belongs next to the claim: the same profit figure from 4 days and from 7 are different claims, and it costs one column to say which.
+- Re-verified against an independent from-scratch recomputation: **1.0× on every row**, versus 1.7×–52× before.
+
+### The methodological lesson
+
+§14.45 verified the previous formula by recomputing it independently and matching to 0.00pp — and that proved only that I had reproduced *my own formula*, not that the formula answered the question. Both times the number was plausible, well-formatted, internally consistent and wrong. **Arithmetic verification is not methodological verification**, and the thing that caught it was printing the raw sample rather than the summary.
 
 ## 15. Key references
 

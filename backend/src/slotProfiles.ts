@@ -7,6 +7,9 @@ import {
   getItemsAtSlot,
   getSlotProfile,
   pruneStaleSlotProfiles,
+  replaceSlotDaily,
+  getPairedDays,
+  type SlotDailyRow,
   kvGet,
   kvSet,
   type SlotProfileRow,
@@ -47,6 +50,8 @@ const HIGH_VALUE_MIN_VOLUME = 2;
 // is no deadline on a background job that refreshes twice a day.
 const REQUEST_SPACING_MS = 400;
 const MIN_DAYS_PER_SLOT = 4;
+// §14.51: a paired buy/sell median needs enough days on BOTH slots to mean anything.
+const MIN_PAIRED_DAYS = 4;
 // Matches the frontend's own default so an un-set bankroll behaves the same on both sides.
 export const DEFAULT_BANKROLL = 10_000_000;
 // §14.45: items that fall out of the top-MAX_ITEMS liquidity list never get refreshed again, so
@@ -76,9 +81,15 @@ export function currentSlot(): number {
  * (removing trend), then slots are aggregated across days with a MEDIAN (removing outliers).
  * Skipping either step gets this badly wrong -- see stats.ts for the worked example.
  */
-export async function profileItem(itemId: number): Promise<SlotProfileRow[]> {
+export async function profileItem(
+  itemId: number,
+): Promise<{ profile: SlotProfileRow[]; daily: SlotDailyRow[] }> {
   const points = await fetchTimeseriesByStep(itemId, "30m");
-  if (!points.length) return [];
+  if (!points.length) return { profile: [], daily: [] };
+
+  // §14.51: the raw per-day readings, kept so the ranking can pair a buy slot against a sell slot
+  // within the same day instead of differencing two independently-taken medians.
+  const daily: SlotDailyRow[] = [];
 
   const byDay = new Map<string, { slot: number; low: number | null; high: number | null }[]>();
   const volume = new Map<number, { total: number; n: number }>();
@@ -91,6 +102,13 @@ export async function profileItem(itemId: number): Promise<SlotProfileRow[]> {
     const list = byDay.get(dayKey) ?? [];
     list.push({ slot, low: p.avgLowPrice, high: p.avgHighPrice });
     byDay.set(dayKey, list);
+    daily.push({
+      item_id: itemId,
+      slot,
+      day: dayKey,
+      low: p.avgLowPrice ?? null,
+      high: p.avgHighPrice ?? null,
+    });
 
     const v = volume.get(slot) ?? { total: 0, n: 0 };
     v.total += (p.highPriceVolume ?? 0) + (p.lowPriceVolume ?? 0);
@@ -153,7 +171,7 @@ export async function profileItem(itemId: number): Promise<SlotProfileRow[]> {
       updated_at: now,
     });
   }
-  return rows;
+  return { profile: rows, daily };
 }
 
 export interface ProfileRunResult {
@@ -184,9 +202,10 @@ export async function refreshSlotProfiles(force = false): Promise<ProfileRunResu
   let failed = 0;
   for (const itemId of candidates) {
     try {
-      const rows = await profileItem(itemId);
-      if (rows.length) {
-        upsertSlotProfiles(rows);
+      const { profile, daily } = await profileItem(itemId);
+      if (profile.length) {
+        upsertSlotProfiles(profile);
+        replaceSlotDaily(itemId, daily);
         profiled++;
       }
     } catch {
@@ -220,6 +239,10 @@ export interface HourlyPick {
   buyPrice: number | null;
   sellPrice: number | null;
   profitPerUnit: number | null;
+  /** Days where both slots had a reading -- the actual sample behind profitPerUnit. */
+  pairedDays: number;
+  /** How many of those days the trade would have profited. */
+  winDays: number;
   holdSlots: number | null;
   holdHours: number | null;
   volume: number;
@@ -266,18 +289,35 @@ function bestPickForItem(
   const profile = getSlotProfile(r.item_id);
   const bySlot = new Map(profile.map((p) => [p.slot, p]));
 
-  // Where does this item peak *after* now, within reach? Buying cheap only pays if a richer sell
-  // slot is still ahead AND reachable inside the caller's hold window.
+  // §14.51: score each candidate sell slot by the MEDIAN OF THE PAIRED DAILY OUTCOMES, not by
+  // the difference between two independently-taken medians.
+  //
+  // "Buy at 15:30, sell at 09:00" only ever happens inside one day's prices. Taking
+  // median(sell across days) - median(buy across days) lets the two medians land on different
+  // days, so on a trending item the week's drift gets counted as time-of-day edge. Measured on
+  // Dexterous prayer scroll (down 19% across the sample week): the old formula claimed 1.62m/unit
+  // where the median paired day actually returned 109k, and three of eight live picks were
+  // loss-making on a median day.
   let bestSellSlot: number | null = null;
   let bestProfit = 0;
+  let bestPairedDays = 0;
+  let bestWinDays = 0;
   for (let offset = 1; offset <= maxLookaheadSlots; offset++) {
     const s = (slot + offset) % SLOTS_PER_DAY;
     const row = bySlot.get(s);
     if (!row || row.sell_price == null || row.sell_price <= 0) continue;
-    const profit = row.sell_price - geTax(Math.round(row.sell_price)) - r.buy_price;
+
+    const paired = getPairedDays(r.item_id, slot, s);
+    if (paired.length < MIN_PAIRED_DAYS) continue;
+    const profits = paired.map((d) => d.sell - geTax(Math.round(d.sell)) - d.buy);
+    const m = median(profits);
+    if (m == null) continue;
+    const profit = m;
     if (profit > bestProfit) {
       bestProfit = profit;
       bestSellSlot = s;
+      bestPairedDays = paired.length;
+      bestWinDays = profits.filter((x) => x > 0).length;
     }
   }
 
@@ -330,6 +370,8 @@ function bestPickForItem(
     buyPrice: Math.round(r.buy_price),
     sellPrice: Math.round(bestSellRow.sell_price!),
     profitPerUnit: Math.round(bestProfit),
+    pairedDays: bestPairedDays,
+    winDays: bestWinDays,
     holdSlots,
     holdHours,
     volume: r.volume,

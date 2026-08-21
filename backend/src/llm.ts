@@ -262,3 +262,41 @@ export async function generateTradingHoursSummary(
   // worth fixing there too rather than assuming it never will.
   return text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
 }
+
+// DESIGN.md §10 item 57: item-linking for collected events (Reddit posts have been live since
+// §14.35 with no item tagging). The model's job is narrow and low-stakes by design: it only
+// SUGGESTS candidate item names from a title/summary. It never decides what gets stored -- the
+// caller (eventItemLinking.ts) validates every name against the real catalogue and silently drops
+// anything that isn't an exact match, so a hallucinated or garbled name can't corrupt the link
+// table. Same "the model narrates/suggests, deterministic code decides" split used everywhere
+// else this app touches an LLM.
+const ITEM_MENTION_SYSTEM_PROMPT = `You read Old School RuneScape news/forum post titles and summaries and identify which specific tradeable Grand Exchange items (if any) are mentioned by name.
+
+Rules:
+- Only list items you are confident are explicitly named or unambiguously referenced (e.g. "twisted bow" -> "Twisted bow"). Do not guess at items merely implied by a general topic (e.g. a post about "raids drops" without naming a specific item).
+- Use the item's real in-game name as best you know it.
+- If no specific tradeable item is named, return an empty list. Empty is a normal, expected answer for most posts (patch notes about a boss mechanic, community posts, memes, etc.).
+
+Respond with ONLY a JSON object, no markdown fences, no other text:
+{"items": ["Item name", ...]}`;
+
+export async function extractItemMentions(title: string, summary: string): Promise<string[]> {
+  const response = await client.chat.completions.create({
+    model,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: ITEM_MENTION_SYSTEM_PROMPT },
+      { role: "user", content: JSON.stringify({ title, summary: summary.slice(0, 800) }) },
+    ],
+  });
+  const text = response.choices[0]?.message?.content;
+  if (!text) return [];
+  try {
+    const stripped = text.replace(/```(?:json)?\s*/g, "").replace(/```\s*$/g, "");
+    const match = stripped.match(/\{[\s\S]*\}/);
+    const parsed = JSON.parse(match ? match[0] : stripped) as { items?: unknown };
+    return Array.isArray(parsed.items) ? parsed.items.filter((i): i is string => typeof i === "string") : [];
+  } catch {
+    return []; // malformed output -- treat as "no mentions found" rather than throwing and aborting the whole linking pass
+  }
+}

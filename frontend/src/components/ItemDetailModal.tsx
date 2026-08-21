@@ -19,6 +19,7 @@ import type { WatchEntry } from "../watchlist";
 import { computeSizingTiers, type SizingTierName } from "../positionSizing";
 import { MarketIntelligencePanel } from "./MarketIntelligencePanel";
 import { TechnicalIndicatorsPanel } from "./TechnicalIndicatorsPanel";
+import { ItemMentions } from "./ItemMentions";
 
 function iconUrl(icon: string): string {
   if (!icon) return "";
@@ -382,6 +383,8 @@ export function ItemDetailModal({
           <MarketIntelligencePanel key={`intel-${item.id}`} itemId={item.id} />
           <TechnicalIndicatorsPanel key={`technicals-${item.id}`} itemId={item.id} />
         </div>
+
+        <ItemMentions key={`mentions-${item.id}`} itemId={item.id} />
 
         {/* DESIGN.md §14.43: the same hourly data that drives the B/S markers on the chart above,
             broken out per hour with an optional LLM reading of it. */}

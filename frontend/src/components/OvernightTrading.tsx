@@ -414,6 +414,7 @@ export function OvernightTrading({
                   <th className="pb-2 pr-3 font-medium text-right">Hold</th>
                   <th className="pb-2 pr-3 font-medium text-right">Profit/u</th>
                   <th className="pb-2 pr-3 font-medium text-right">Edge</th>
+                    <th className="pb-2 pr-3 font-medium text-right">Days won</th>
                   <th className="pb-2 pr-3 font-medium text-right">Buy qty</th>
                   <th className="pb-2 pr-3 font-medium text-right">Capital</th>
                   <th className="pb-2 font-medium text-right">Profit</th>
@@ -455,6 +456,20 @@ export function OvernightTrading({
                     <td className="py-2 pr-3 text-right font-mono text-emerald-400">
                       {p.timingEdgePct != null ? `${(p.timingEdgePct * 100).toFixed(2)}%` : "—"}
                     </td>
+                      {/* §14.51: the sample, next to the claim. "4/7 days" is the difference
+                          between a pattern and a coincidence, and it costs one column. */}
+                      <td
+                        className={`py-2 pr-3 text-right font-mono ${
+                          p.pairedDays > 0 && p.winDays / p.pairedDays >= 0.7
+                            ? "text-emerald-400"
+                            : p.pairedDays > 0 && p.winDays / p.pairedDays <= 0.5
+                              ? "text-amber-400"
+                              : "text-gray-400"
+                        }`}
+                        title={`Median of ${p.pairedDays} days where both the buy and sell slot had a reading`}
+                      >
+                        {p.pairedDays > 0 ? `${p.winDays}/${p.pairedDays}` : "—"}
+                      </td>
                     {/* Units this bankroll can actually take (buy limit or affordability,
                         whichever binds), what that ties up, and what it earns -- same bankroll-
                         aware sizing Item of the Hour uses (§14.46), not a percentage. Amber when

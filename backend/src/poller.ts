@@ -9,6 +9,7 @@ import { fetchRedditPosts } from "./redditFeed.js";
 import { insertNewEvents, kvGet, kvSet } from "./db.js";
 import { syncGeSlots, backfillFlippingUtilities } from "./geLedger.js";
 import { refreshSlotProfiles } from "./slotProfiles.js";
+import { linkPendingEvents } from "./eventItemLinking.js";
 
 // DESIGN.md §14.22: the frontend's own "next refresh" countdown (§14.21) was a guess based on
 // its own independent fetch cycle, not the real thing -- the backend polls the Wiki API on its
@@ -212,6 +213,21 @@ async function runRedditPoll() {
   }
 }
 
+// DESIGN.md §10 item 57: which item(s) does an already-collected event mention. One local Ollama
+// call per event, deliberately spaced (eventItemLinking.ts) and budgeted (20/pass) -- this can
+// fall behind the collection rate without harm, since getEventsNeedingLinking() just picks up
+// wherever it left off (most-recent-first) on the next pass.
+async function runEventLinking() {
+  try {
+    const result = await linkPendingEvents(20);
+    if (result.attempted) {
+      console.log(`[events] linked ${result.linked}/${result.attempted} event(s) to items`);
+    }
+  } catch (err) {
+    console.error("[events] linking error", err);
+  }
+}
+
 // DESIGN.md §14.40: GE trade ledger. Reads local files written by an already-installed RuneLite
 // plugin -- no network call, no rate limit, no game interaction -- so this can run far more often
 // than any of the polls above. Frequency matters here in a way it doesn't elsewhere: the only
@@ -307,4 +323,10 @@ export function startPolling() {
   // reddit: community discussion moves faster than patch notes -- hourly.
   runRedditPoll();
   setInterval(runRedditPoll, 60 * 60 * 1000);
+
+  // event item-linking: runs after the above have had a chance to insert new events, and every
+  // 15 minutes thereafter -- cheap (a local model call, not an external API) so there's no reason
+  // to wait as long as the collectors themselves do.
+  setTimeout(runEventLinking, 10 * 1000);
+  setInterval(runEventLinking, 15 * 60 * 1000);
 }
