@@ -44,6 +44,21 @@ function netOf(unitValue: number, qty: number): { netUnitValue: number; netValue
   return { netUnitValue, netValue: netUnitValue * qty };
 }
 
+// Currency. Neither of these is in the Wiki's item mapping at all, because that mapping only
+// lists GE-TRADEABLE items and you cannot put coins on the Grand Exchange -- so both fell through
+// every lookup below and were valued at 0. Found live: a pasted bank containing 112m in coins
+// reported those coins as worth nothing, because `items` has no row 995 to join against.
+//
+// Their value isn't a market price to look up, it's a fixed game rule: a coin is 1gp and a
+// platinum token is exactly 1,000gp at any bank. So they're resolved here, before any DB lookup,
+// and carry NO GE tax -- you never sell currency on the Exchange, you just have it. That matters
+// for platinum tokens in particular: routing them through geTax() would shave 20gp off each one
+// for a sale that never happens.
+const CURRENCY: Record<number, { name: string; unitValue: number; icon: string }> = {
+  995: { name: "Coins", unitValue: 1, icon: "Coins 10000.png" },
+  13204: { name: "Platinum token", unitValue: 1000, icon: "Platinum token 5.png" },
+};
+
 // A handful of very common cases where the exact held item (a charged weapon, a combined
 // weapon, etc.) is untradeable but one or more specific OTHER items are a well-known stand-in
 // for its value -- either a direct "inactive"/"uncharged" counterpart, or (for items that
@@ -158,6 +173,28 @@ function valueEntries(entries: BankEntry[]): {
   const items = entries
     .filter((e) => e.qty > 0)
     .map((e): ValuedItem => {
+      const currency = CURRENCY[e.id];
+      if (currency) {
+        const value = currency.unitValue * e.qty;
+        totalValue += value;
+        totalNetValue += value; // untaxed: currency is held, not sold
+        return {
+          id: e.id,
+          name: currency.name,
+          icon: currency.icon,
+          qty: e.qty,
+          unitValue: currency.unitValue,
+          value,
+          netUnitValue: currency.unitValue,
+          netValue: value,
+          // Not an estimate -- this is the exact, definitional value, so it belongs in the
+          // "calculated" filter alongside live-priced items rather than under "estimated".
+          priced: true,
+          highAlch: null,
+          highAlchValue: null,
+        };
+      }
+
       const row = byId.get(e.id);
       if (row) {
         // Prefer live GE "low" (what you'd realistically get instant-selling) over the

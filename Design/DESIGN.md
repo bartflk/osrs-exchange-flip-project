@@ -1371,6 +1371,39 @@ Measured in the browser rather than assumed:
 
 Verified live across Market, Signals, Overnight, Portfolio and Flips: markers present on every derived column, no console errors, panel inside the viewport in both the clipping and the too-tall cases.
 
+## 14.53 Status note — Coins were valued at zero in bank imports — 2026-08-22
+
+Reported: *"when i paste my bank with GP in it, it doesnt count the GP i have on hand"*. Correct, and the miss was large.
+
+### Cause
+
+`routes/bank.ts` values a pasted bank by joining each id against the `items` table. That table is populated from the Wiki's item mapping, and **the mapping only lists GE-tradeable items** — you cannot put coins on the Grand Exchange, so there is no row 995 to join against. Verified directly: `SELECT ... WHERE i.id = 995` returns nothing, and the whole `items` table (4,652 rows) contains no item named "Coins" (only "Ring of coins"). Platinum tokens (13204) are absent for the same reason.
+
+With no row, no `VALUE_ALIASES` entry, and no name-suffix fallback match, coins fell all the way through to the final branch — `unitValue: 0, value: 0, priced: false` — the branch written for genuinely untradeable quest items and pets. Coins are not untradeable; they *are* the trade.
+
+### Fix
+
+A `CURRENCY` table resolved **before** any DB lookup. Their value is not a market price to look up but a fixed game rule: a coin is 1gp, a platinum token is exactly 1,000gp at any bank. Both are marked `priced: true` (definitional, not estimated) and carry **no GE tax** — you never sell currency on the Exchange. That last point matters for platinum tokens specifically: routing them through `geTax()` would shave 20gp off each one for a sale that never happens.
+
+Verified live end-to-end through the UI paste path: 112m coins → 112.00m before and after tax; 5,000 platinum tokens → 5.00m untaxed; an Abyssal whip in the same paste still taxed normally (778.1k → 762.5k).
+
+### Blast radius on existing saved imports
+
+The two saved snapshots on this install both dropped currency:
+
+| import | date | stored total | coins in the paste | unvalued |
+|---|---|---|---|---|
+| 4 | 2026-08-22 | 191.72m | 315,012,489 | **315.01m** |
+| 3 | 2026-08-04 | 481.84m | 3,042,782 | 3.04m |
+
+So the Bank tab's net-worth chart read **−60.2% since first reading** — a fabricated 290m wipeout that is entirely the missing coins on the newer snapshot. Same family as §14.47 (bank value alone making a working bankroll look like a loss), and the same lesson: a total that silently omits a category is worse than one that admits it can't price something, because the omission is invisible at the total.
+
+Historical snapshots are **not** rewritten automatically. Re-pasting and re-saving produces a correct snapshot going forward; a backfill is safe in principle (currency value is time-invariant, so no anachronism) but rewriting stored user records is not something to do unasked.
+
+### Adjacent gap, not fixed
+
+`handleViewSaved()` in `BankImport.tsx` sets the displayed result but never calls `onHoldingsChange`, so viewing a saved snapshot leaves the cached `bankHoldings` in localStorage pointing at whatever was last *pasted*. Noted, not changed.
+
 ## 15. Key references
 
 - [RuneScape:Real-time Prices — OSRS Wiki](https://oldschool.runescape.wiki/w/RuneScape:Real-time_Prices)
