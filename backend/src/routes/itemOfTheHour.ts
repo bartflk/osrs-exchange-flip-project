@@ -98,6 +98,31 @@ export async function itemOfTheHourRoutes(app: FastifyInstance) {
     };
   });
 
+  // Feed for the RuneLite sidebar plugin (flashwave-runelite-plugin).
+  //
+  // Deliberately the narrowest possible shape -- {id, name, price, amount} and nothing else. The
+  // plugin is display-only: it never reads game state, never touches a GE widget, and the user
+  // types every price in by hand. Sending it anything richer than the four fields it renders
+  // would be inviting it to grow features that the third-party client guidelines forbid.
+  //
+  // Served over plain http on loopback, which is why the plugin permits http for localhost only.
+  app.get("/api/plugin/candidates", async (req) => {
+    const { limit, bankroll } = req.query as { limit?: string; bankroll?: string };
+    const picks = computeItemOfTheHour(
+      currentSlot(),
+      Math.min(Math.max(Number(limit) || 10, 1), 25),
+      parseBankroll(bankroll),
+    );
+    return picks
+      .filter((p) => p.buyPrice != null && p.deployableUnits > 0)
+      .map((p) => ({
+        id: p.itemId,
+        name: p.name,
+        price: Math.round(p.buyPrice as number),
+        amount: p.deployableUnits,
+      }));
+  });
+
   // The shape behind a single pick: the item's whole 48-slot day, plus the day-by-day outcomes
   // of the specific buy->sell pair being proposed. Everything here is already computed and stored
   // -- no Wiki request -- it simply was never exposed, so a pick could be read but not seen.
