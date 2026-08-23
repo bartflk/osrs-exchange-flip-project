@@ -792,6 +792,16 @@ export function getPairedDays(
   }[];
 }
 
+// Every measured day's low at one slot -- the input to "would this bid actually have filled?".
+const slotDailyLowsStmt = db.prepare(
+  `SELECT low FROM item_slot_daily WHERE item_id = ? AND slot = ? AND low IS NOT NULL`,
+);
+
+export function getSlotDailyLows(itemId: number, slot: number): number[] {
+  const rows = slotDailyLowsStmt.all(itemId, slot) as unknown as { low: number }[];
+  return rows.map((r) => r.low);
+}
+
 const profiledItemsStmt = db.prepare(
   `SELECT item_id, MAX(updated_at) AS updated_at FROM item_slot_profile GROUP BY item_id`,
 );

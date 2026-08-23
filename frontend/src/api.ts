@@ -949,6 +949,8 @@ export interface HourlyPick {
   /** Range behind the median, per unit after tax -- the worst day is what a sleeping position risks. */
   worstDayProfit: number;
   bestDayProfit: number;
+  /** Share of measured days the market actually reached this buy price. Null when unknown. */
+  fillRate: number | null;
   holdSlots: number | null;
   holdHours: number | null;
   volume: number;

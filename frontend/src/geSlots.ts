@@ -99,6 +99,7 @@ export interface OvernightPlan {
   // it -- 139k reported for a board actually carrying several million. The plan is the right
   // home for this: it is what was promised when the offer was placed.
   profitPerUnit?: number;
+  fillRate?: number | null;
   worstDayProfit?: number;
   winDays?: number;
   pairedDays?: number;
@@ -108,6 +109,14 @@ export interface OvernightPlan {
 // are medians over a week of half-hour readings, so an exact match is not something a human
 // typing into the GE could hit, nor something worth demanding.
 const PLAN_PRICE_TOLERANCE = 0.03;
+
+// Beyond this the market has genuinely walked away from a placed offer and it is no longer
+// "waiting to be filled", it is stranded. §14.55 replaced the reprice warning with a calm "on
+// plan" for exactly these offers, which was right for a bid deliberately set below market and
+// wrong once the gap stops being deliberate: a live run left four buys unfilled for nine hours
+// while every card read as fine. The status stays on-plan -- cancelling is still the user's call
+// and the thesis has not changed -- but the text stops implying patience will be rewarded.
+const PLAN_STRANDED_GAP = 0.04;
 
 export interface SlotView {
   index: number;
@@ -239,7 +248,10 @@ export function buildSlotViews(
               (slot.type === "sell" && slot.price <= (ref ?? Infinity))
             ? " At market, should fill."
             : ` Priced ${(gapPct * 100).toFixed(1)}% ${side} market by design.`;
-      detail = `On plan.${fills}`;
+      const stranded = gapPct != null && gapPct > PLAN_STRANDED_GAP;
+      detail = stranded
+        ? `Market has moved ${(gapPct * 100).toFixed(1)}% ${side === "below" ? "above" : "below"} your offer, it is unlikely to fill.`
+        : `On plan.${fills}`;
       // No suggested reprice: there is nothing to correct.
       suggestedPrice = null;
     } else if (guidance.action === "cancel") {

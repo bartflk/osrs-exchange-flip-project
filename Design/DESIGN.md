@@ -1625,6 +1625,42 @@ The "Days won" column is now >=80% by construction, so it no longer discriminate
 
 §14.45 was wrong arithmetic. §14.51 fixed the arithmetic and verified it to 0.00pp. This is the third layer: **arithmetic that is correct, verified, and still overstates, because the number was selected by the same data that scored it.** The only check that catches this is holding data back. Nothing in the app does that yet, and until the scorekeeping added in §14.54 accumulates resolved overnight picks, this offline split is the only validation available.
 
+## 14.60 Status note - The buys did not fill, and nothing on screen said they might not - 2026-08-23
+
+Reported after the first real overnight run: five buy offers placed around 04:00, four still completely unfilled at 12:45. Diagnosed against `price_history` over the full 8.8h window.
+
+### What actually happened
+
+| offer | bid | market insta-sell price over the window | reachable |
+|---|---|---|---|
+| Crimson kisten | 50.38m | 53.61m - 54.70m | **0 of 7 observations** |
+| Saradomin godsword | 23.86m | 24.20m - 24.58m | **0 of 7** |
+| Venator ring | 42.59m | 42.81m - 44.08m | **0 of 6** |
+| Blue dragon leather | 2,085 | 2,085 - 2,142 | 1 of 7 -> partial fill 1,702/5,303 |
+| Amethyst broad bolts (sell) | 205 | 188 - 216 | 2 of 6 -> filled in full |
+
+The market never came down to the bid. This was not bad luck on the night; it is structural, and there are two separate causes.
+
+### Cause 1: the quoted price fills about half the time, by construction
+
+The plan quotes the **median** low at that slot. A median is, definitionally, reached on about half the days. Measured across 24,686 item/slot groups: **57.1%**. The board displayed an expected profit as though the trade would happen.
+
+Not "fixed" by bidding higher, deliberately. Filling on 80% of days costs **+1.96%** on the buy price, and §14.59 measured the strategy's real out-of-sample edge at **1.087%**. Paying to fill converts a thin winner into a reliable loser. The honest move is to publish the odds, so `fillRate` is now computed per pick and shown as a fourth cell ("Fill odds 57% of days"), coloured red below 45%.
+
+### Cause 2: the plan goes stale and the market walks away
+
+A profile built on a week of medians and refreshed every 12h says nothing about an item that has since moved. Measured: **170 of 533 profiled items (31.9%) currently sit more than 2% above their own plan's buy price**, so those bids cannot fill at all. Crimson kisten was 8.8-9.8% above its plan at every slot.
+
+`MAX_LIVE_DRIFT = 0.02` now rejects a pick whose live low has already run above the planned bid. The live price was **already joined into `getItemsAtSlot` and simply never consulted**. Verified: Crimson kisten is excluded at every slot; Saradomin godsword is excluded where drift is 2.2% and allowed at 1.15%.
+
+### A regression this exposed in 14.55
+
+Replacing the reprice warning with a calm "On plan" was right for a bid deliberately set below market, and wrong once the gap stops being deliberate. Four offers sat unfillable for nine hours while every card read as fine. `PLAN_STRANDED_GAP = 0.04`: past that, an on-plan card stops saying "fills when the price comes to you" and says the market has moved and it is unlikely to fill. The status stays on-plan, because cancelling is the user's call and the thesis has not changed, but the copy no longer implies patience will be rewarded.
+
+### The wider point
+
+§14.59 measured whether the edge is real. This measures whether the trade can be entered at all, which is prior to it: an edge on a position that never opens is not a small profit, it is no trade. Backlog item 13 (execution/fill modelling) has been on the list since the competitor pass and this is the first piece of it that exists.
+
 ## 15. Key references
 
 - [RuneScape:Real-time Prices — OSRS Wiki](https://oldschool.runescape.wiki/w/RuneScape:Real-time_Prices)

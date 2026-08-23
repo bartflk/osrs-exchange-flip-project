@@ -284,6 +284,7 @@ export function OvernightTrading({
         buySlot: p.slot,
         sellSlot: p.bestSellSlot,
         profitPerUnit: p.profitPerUnit ?? undefined,
+        fillRate: p.fillRate,
         worstDayProfit: p.worstDayProfit,
         winDays: p.winDays,
         pairedDays: p.pairedDays,
@@ -355,6 +356,7 @@ export function OvernightTrading({
           worstDayProfit: pick.worstDayProfit,
           winDays: pick.winDays,
           pairedDays: pick.pairedDays,
+          fillRate: pick.fillRate,
         };
       }
       const plan = plans.get(itemId);
@@ -365,6 +367,7 @@ export function OvernightTrading({
           worstDayProfit: plan.worstDayProfit ?? 0,
           winDays: plan.winDays ?? 0,
           pairedDays: plan.pairedDays ?? 0,
+          fillRate: plan.fillRate ?? null,
         };
       }
       return null;
@@ -552,7 +555,9 @@ export function OvernightTrading({
               const econ = economicsFor(id);
               return (
                 <>
-                  {econ && units > 0 && <SlotPlanSummary {...econ} units={units} />}
+                  {econ && units > 0 && (
+                    <SlotPlanSummary {...econ} units={units} placed={v.slot != null} />
+                  )}
                   <SlotShapeChart itemId={id} buySlot={buy} sellSlot={sell} />
                 </>
               );

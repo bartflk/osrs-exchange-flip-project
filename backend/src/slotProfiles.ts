@@ -11,6 +11,7 @@ import {
   pruneStaleSlotProfiles,
   replaceSlotDaily,
   getPairedDays,
+  getSlotDailyLows,
   type SlotDailyRow,
   kvGet,
   kvSet,
@@ -85,6 +86,32 @@ const MAX_PAIRED_SPAN_DAYS = 16;
 // every day measured, by a margin big enough to see.
 const MIN_WIN_RATE = 0.8;
 const MIN_EDGE_PCT = 0.01;
+
+// §14.60 -- an offer that cannot fill is not a plan.
+//
+// Reported after a live overnight run: five buy offers placed at 04:00, four still completely
+// unfilled at 12:45. Checked against price_history for the whole 8.8h window, the market's
+// insta-sell price never once came down to the quoted bid:
+//
+//   Crimson kisten      bid 50.38m   market low ran 53.61m - 54.70m   0 of 7 observations
+//   Saradomin godsword  bid 23.86m   market low ran 24.20m - 24.58m   0 of 7 observations
+//   Venator ring        bid 42.59m   market low ran 42.81m - 44.08m   0 of 6 observations
+//
+// Two separate causes, both measurable:
+//
+// 1. The quoted price is the MEDIAN low at that slot, so by construction it only fills on about
+//    half the days -- measured across 24,686 item/slot groups, 57.1%. The board presented it as a
+//    trade that happens. It is a trade that happens sometimes.
+// 2. A plan built on a week of medians goes stale when the item moves. 170 of 533 profiled items
+//    (31.9%) currently sit more than 2% ABOVE their own plan, so those buys cannot fill at all
+//    until the price comes back.
+//
+// Cause 2 is checked here, against the live price already joined into this query and previously
+// unused. Cause 1 is now reported rather than hidden (see fillRate below); it is not "fixed",
+// because bidding up to fill 80% of days costs +1.96% on the buy price, which is more than the
+// 1.09% edge the strategy actually realises out of sample (§14.59). Paying to fill would turn a
+// thin winner into a reliable loser. The honest move is to show the odds, not to buy worse.
+const MAX_LIVE_DRIFT = 0.02;
 // Matches the frontend's own default so an un-set bankroll behaves the same on both sides.
 export const DEFAULT_BANKROLL = 10_000_000;
 // §14.45: items that fall out of the top-MAX_ITEMS liquidity list never get refreshed again, so
@@ -324,6 +351,11 @@ export interface HourlyPick {
   // arithmetic as profitPerUnit.
   worstDayProfit: number;
   bestDayProfit: number;
+  /**
+   * Share of measured days on which the market actually came down to this buy price. The quoted
+   * price is a median, so this hovers near half; below that the offer more often just sits.
+   */
+  fillRate: number | null;
   /** Share of the slot's typical traded volume you'd have to absorb. >1 means you are the market. */
   fillShare: number | null;
   score: number;
@@ -349,6 +381,16 @@ function bestPickForItem(
   // does not have is a way to acquire one off the GE cheaply, which is what makes it not a flip.
   if (NON_FLIPPABLE_IDS.has(r.item_id)) return null;
   if (r.days < MIN_DAYS_PER_SLOT) return null;
+  // The market has already moved above what this plan would bid, so the buy leg cannot fill.
+  // Only applied when a live price exists -- absent data must not silently reject an item.
+  if (
+    r.low != null &&
+    r.buy_price != null &&
+    r.buy_price > 0 &&
+    (r.low - r.buy_price) / r.buy_price > MAX_LIVE_DRIFT
+  ) {
+    return null;
+  }
   if (r.volume <= 0) return null;
   if (r.buy_price == null || r.buy_price <= 0) return null;
 
@@ -405,6 +447,16 @@ function bestPickForItem(
   }
 
   if (bestSellSlot == null || bestProfit <= 0) return null; // no timing profit available from here
+
+  // How often the buy would actually have filled: the share of measured days whose low at this
+  // slot reached the quoted price. Not a fixed 50% -- a tight-ranged item fills far more reliably
+  // than a volatile one at the same "median" bid, and that difference is exactly what decides
+  // whether a plan becomes a trade.
+  const buyDays = getSlotDailyLows(r.item_id, slot);
+  const fillRate =
+    buyDays.length > 0
+      ? buyDays.filter((v) => v <= r.buy_price!).length / buyDays.length
+      : null;
 
   const bestSellRow = bySlot.get(bestSellSlot)!;
   const bestSellDev = bestSellRow.sell_deviation;
@@ -469,6 +521,7 @@ function bestPickForItem(
     capitalUsed,
     cycleProfit,
     fillShare,
+    fillRate,
     score,
   };
 }

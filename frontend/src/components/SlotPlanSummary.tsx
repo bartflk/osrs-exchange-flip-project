@@ -43,6 +43,8 @@ export function SlotPlanSummary({
   winDays,
   pairedDays,
   units,
+  fillRate,
+  placed = false,
 }: {
   sellSlot: number;
   profitPerUnit: number;
@@ -50,6 +52,10 @@ export function SlotPlanSummary({
   winDays: number;
   pairedDays: number;
   units: number;
+  /** Share of measured days the market reached this buy price. */
+  fillRate?: number | null;
+  /** True once the offer is actually in the GE, so the odds read as "will it fill", not "would it". */
+  placed?: boolean;
 }) {
   // Re-render every 30s so "in 14h 20m" stays true while the board is left open overnight --
   // this is the number the user is meant to plan around, so a stale one is worse than none.
@@ -64,7 +70,7 @@ export function SlotPlanSummary({
   const wait = msUntilSlot(sellSlot);
 
   return (
-    <div className="mt-2 grid grid-cols-3 gap-2 rounded-lg border border-white/8 bg-black/25 px-2 py-1.5">
+    <div className="mt-2 grid grid-cols-4 gap-2 rounded-lg border border-white/8 bg-black/25 px-2 py-1.5">
       <Cell
         label="Expected"
         value={`${expected >= 0 ? "+" : ""}${formatGp(expected)}`}
@@ -79,6 +85,24 @@ export function SlotPlanSummary({
       />
       {/* Deliberately given equal billing to the expected figure rather than tucked into prose.
           A median is not a promise, and this is the leg of the range you cannot react to. */}
+      {/* The odds the trade happens at all. Added after a live run left four of five overnight
+          buys completely unfilled after nine hours: the quoted price is a MEDIAN, so it is only
+          reached on about half the days, and nothing on screen said so. An expected profit on a
+          trade that never opens is not a forecast, it is a category error. */}
+      <Cell
+        label={placed ? "Fills" : "Fill odds"}
+        value={fillRate == null ? "—" : `${Math.round(fillRate * 100)}%`}
+        sub="of days"
+        tone={
+          fillRate == null
+            ? "text-gray-500"
+            : fillRate >= 0.7
+              ? "text-emerald-400"
+              : fillRate >= 0.45
+                ? "text-amber-400"
+                : "text-rose-400"
+        }
+      />
       <Cell
         label="Worst day"
         value={worst < 0 ? formatGp(worst) : `+${formatGp(worst)}`}
