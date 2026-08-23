@@ -20,7 +20,8 @@ import { allocateCapital } from "../capitalAllocator";
 import { NumberInput, GpInput, EmptyState, Chip } from "./ui";
 import { GeSlotBoard } from "./GeSlotBoard";
 import { SlotShapeChart } from "./SlotShapeChart";
-import { buildSlotViews, countNeedsAction } from "../geSlots";
+import { buildSlotViews, countNeedsAction, type OvernightPlan } from "../geSlots";
+import { rememberPlans } from "../overnightPlans";
 import { InfoTip, LabelWithInfo } from "./InfoTip";
 
 // Overnight Trading, Phase 1 -- direct request: "I want the GE screen copied and have Overnight
@@ -228,6 +229,29 @@ export function OvernightTrading({
     [riskFilteredPicks],
   );
 
+  // Plans are built from the UNFILTERED pick list on purpose. Once you place an overnight offer,
+  // that item leaves the allocator's candidates (it already holds a slot) and can also fall out
+  // of the risk-preset filter -- and both of those would silently strip the plan from an offer
+  // you placed *because of* the plan, putting the board straight back to demanding a reprice.
+  const plans = useMemo(() => {
+    const current: OvernightPlan[] = [];
+    for (const p of picksData?.picks ?? []) {
+      if (p.bestSellSlot == null) continue;
+      current.push({
+        itemId: p.itemId,
+        buyPrice: p.buyPrice,
+        sellPrice: p.sellPrice,
+        buySlotLabel: slotToLocalLabel(p.slot),
+        sellSlotLabel: slotToLocalLabel(p.bestSellSlot),
+        buySlot: p.slot,
+        sellSlot: p.bestSellSlot,
+      });
+    }
+    // Remembered, not just read: an offer you placed on plan must keep its plan when the bankroll,
+    // risk preset or bedtime changes and the item leaves the live pick list. See overnightPlans.ts.
+    return rememberPlans(current);
+  }, [picksData]);
+
   const candidates = useMemo(() => {
     return riskFilteredPicks
       .map((p) => toOvernightCandidate(p, catalogue))
@@ -266,8 +290,8 @@ export function OvernightTrading({
     suggestionSlots > 0 && allocation.remainingBankroll > availableBankroll * 0.1 && totalCapacity < availableBankroll;
 
   const needsAction = useMemo(
-    () => countNeedsAction(buildSlotViews(portfolio?.slots ?? [], [], catalogue)),
-    [portfolio, catalogue],
+    () => countNeedsAction(buildSlotViews(portfolio?.slots ?? [], [], catalogue, plans)),
+    [portfolio, catalogue, plans],
   );
 
   const isNow = effectiveSlot === liveSlot;
@@ -344,8 +368,9 @@ export function OvernightTrading({
               : "all slots in use"}
             {picksData && (
               <span className="ml-2 text-xs text-gray-500 font-normal">
-                buying at {localOf(picksData.bedtimeSlotLabel)} ({picksData.bedtimeSlotLabel} UTC{" "}
-                local){isNow ? " · now" : ""} · up to {picksData.maxHoldHours}h hold ·{" "}
+                buying at {localOf(picksData.bedtimeSlotLabel)} {localZoneLabel()} (
+                {picksData.bedtimeSlotLabel} UTC){isNow ? " · now" : ""} · up to{" "}
+                {picksData.maxHoldHours}h hold ·{" "}
                 {picksData.itemsProfiled} items profiled · sized for {formatGp(picksData.bankroll)}
               </span>
             )}
@@ -373,18 +398,24 @@ export function OvernightTrading({
             items={catalogue}
             onSelectItem={onSelectItem}
             showHeader={false}
+            plans={plans}
             // The whole point of this page is a position you sleep through, so each box shows the
             // daily price shape it is betting on and how that exact round trip actually went, day
             // by day. Only suggested boxes get one: a live offer already in the GE is a decision
             // you have made, and its history is no longer the question.
             renderExtra={(v) => {
-              const id = v.suggestion?.item.id;
+              // Suggested boxes show the shape they are proposing; a box already running the
+              // plan shows the same shape, because "when do I sell this" is exactly the question
+              // once the buy is placed.
+              const id = v.suggestion?.item.id ?? (v.status === "onplan" ? v.slot?.itemId : null);
               if (id == null) return null;
-              const pick = pickById.get(id);
-              if (!pick || pick.bestSellSlot == null) return null;
-              return (
-                <SlotShapeChart itemId={id} buySlot={pick.slot} sellSlot={pick.bestSellSlot} />
-              );
+              const pick = pickById.get(id) ?? picksData?.picks.find((p) => p.itemId === id);
+              // Live pick first; otherwise the remembered plan, so a position you are already
+              // holding keeps its chart even after the item drops out of the current ranking.
+              const buy = pick ? pick.slot : plans.get(id)?.buySlot;
+              const sell = pick ? pick.bestSellSlot : plans.get(id)?.sellSlot;
+              if (buy == null || sell == null) return null;
+              return <SlotShapeChart itemId={id} buySlot={buy} sellSlot={sell} />;
             }}
           />
         )}

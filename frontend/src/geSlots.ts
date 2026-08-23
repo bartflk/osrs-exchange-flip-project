@@ -1,6 +1,6 @@
 import type { GeSlot, MarketItem } from "./api";
 import type { SlotAssignment } from "./capitalAllocator";
-import { formatGp, formatGpFull } from "./format";
+import { formatGp } from "./format";
 import { computeRepriceGuidance } from "./repriceGuidance";
 
 // DESIGN.md §14.42: the logic behind the GE slot board -- what each of the 8 boxes should say.
@@ -11,6 +11,7 @@ import { computeRepriceGuidance } from "./repriceGuidance";
 export type SlotStatus =
   | "collect" // fully filled, go press Collect
   | "cancel" // still open but no longer worth filling
+  | "onplan" // priced away from market ON PURPOSE -- matches an overnight plan
   | "reprice" // priced away from market, will sit
   | "filling" // partially filled and priced sensibly
   | "waiting" // priced sensibly, nothing filled yet
@@ -35,6 +36,13 @@ export const STATUS_STYLE: Record<SlotStatus, { box: string; label: string; tone
     label: "Reprice",
     tone: "text-amber-300",
   },
+  // Deliberately calm, and deliberately NOT amber: this box is doing exactly what was asked of
+  // it. Violet matches the hold-window shading on the slot chart directly below it.
+  onplan: {
+    box: "border-violet-400/40 bg-violet-500/[0.07]",
+    label: "On plan",
+    tone: "text-violet-300",
+  },
   filling: { box: "border-white/10 bg-white/[0.03]", label: "Filling", tone: "text-gray-400" },
   waiting: { box: "border-white/10 bg-white/[0.03]", label: "Waiting", tone: "text-gray-500" },
   suggestion: {
@@ -49,6 +57,28 @@ export const STATUS_STYLE: Record<SlotStatus, { box: string; label: string; tone
   },
 };
 
+// What the Overnight page intends for an item: buy near its typical price at one slot, sell near
+// its typical price at another. Both legs are priced AWAY from the current market on purpose --
+// that is the entire strategy -- so the generic reprice rules, which only ask "will this fill at
+// today's price", give exactly the wrong answer about them.
+export interface OvernightPlan {
+  itemId: number;
+  buyPrice: number | null;
+  sellPrice: number | null;
+  buySlotLabel: string;
+  sellSlotLabel: string;
+  // Half-hour slot indices (0-47). Labels are for reading; these are what the chart needs, and
+  // carrying both means a remembered plan can still draw itself once the item has left the live
+  // pick list. Optional because plans stored before this field existed will not have it.
+  buySlot?: number;
+  sellSlot?: number;
+}
+
+// How far a real offer may sit from the planned price and still count as "that plan". Slot prices
+// are medians over a week of half-hour readings, so an exact match is not something a human
+// typing into the GE could hit, nor something worth demanding.
+const PLAN_PRICE_TOLERANCE = 0.03;
+
 export interface SlotView {
   index: number;
   status: SlotStatus;
@@ -57,6 +87,10 @@ export interface SlotView {
   headline: string;
   detail: string;
   suggestedPrice: number | null;
+  /** The price this box is about -- the live offer's, or the suggested buy price. */
+  price: number | null;
+  /** Units, as "sold/total" for a live offer or the suggested quantity. */
+  qtyText: string | null;
 }
 
 /**
@@ -70,6 +104,13 @@ export function buildSlotViews(
   slots: GeSlot[],
   suggestions: SlotAssignment[],
   items: MarketItem[],
+  // Overnight plans keyed by item id. Omitted by Buy Signals, whose offers are meant to fill at
+  // today's price and so genuinely do want the reprice rules.
+  //
+  // Keyed off the RAW pick list, not the allocator's assignments: once you place the offer the
+  // allocator excludes that item from its candidates (it is already occupying a slot), so by the
+  // time the plan matters most there is no assignment left to match against.
+  plans?: Map<number, OvernightPlan>,
 ): SlotView[] {
   const byIndex = new Map(slots.map((s) => [s.slot, s]));
   // Keyed by id, not name. Name matching failed live for Diamond while working for Emerald,
@@ -92,12 +133,20 @@ export function buildSlotViews(
               status: "suggestion",
               suggestion,
               headline: suggestion.item.name,
-              detail: `Buy ${suggestion.qty.toLocaleString()} @ ${formatGpFull(
-                suggestion.item.low ?? 0,
-              )} · +${formatGp(suggestion.projectedProfit)}`,
+              detail: `+${formatGp(suggestion.projectedProfit)} projected`,
               suggestedPrice: suggestion.item.low ?? null,
+              price: suggestion.item.low ?? null,
+              qtyText: `buy ${suggestion.qty.toLocaleString()}`,
             }
-          : { index, status: "empty", headline: "Empty", detail: "", suggestedPrice: null },
+          : {
+              index,
+              status: "empty",
+              headline: "Empty",
+              detail: "",
+              suggestedPrice: null,
+              price: null,
+              qtyText: null,
+            },
       );
       continue;
     }
@@ -126,6 +175,14 @@ export function buildSlotViews(
 
     const guidance = computeRepriceGuidance({ type: slot.type, price: slot.price }, fallback);
 
+    // Does this offer match an overnight plan for the same item, on the same leg?
+    const plan = plans?.get(slot.itemId);
+    const plannedPrice = plan ? (slot.type === "buy" ? plan.buyPrice : plan.sellPrice) : null;
+    const onPlan =
+      plannedPrice != null &&
+      plannedPrice > 0 &&
+      Math.abs(slot.price - plannedPrice) / plannedPrice <= PLAN_PRICE_TOLERANCE;
+
     let status: SlotStatus;
     let detail: string;
     let suggestedPrice: number | null = guidance.suggestedPrice;
@@ -133,6 +190,27 @@ export function buildSlotViews(
     if (done) {
       status = "collect";
       detail = `${slot.type === "buy" ? "Bought" : "Sold"} all ${slot.totalQuantity.toLocaleString()} — collect it`;
+      suggestedPrice = null;
+    } else if (onPlan && plan) {
+      // Checked BEFORE cancel as well as before reprice, and both for the same reason: those two
+      // verdicts answer "does this fill, and is it worth filling, at TODAY's spread." An overnight
+      // position is not trying to clear today's spread -- it is priced to a band measured over a
+      // week, and being away from the current market is the position, not a mistake in it.
+      status = "onplan";
+      const market = fallback;
+      const ref = slot.type === "buy" ? market?.low : market?.high;
+      const gapPct =
+        ref != null && ref > 0 ? Math.abs(slot.price - ref) / ref : null;
+      const side = slot.type === "buy" ? "below" : "above";
+      const fills =
+        gapPct == null
+          ? ""
+          : (slot.type === "buy" && slot.price >= (ref ?? 0)) ||
+              (slot.type === "sell" && slot.price <= (ref ?? Infinity))
+            ? " At market — should fill."
+            : ` ${(gapPct * 100).toFixed(1)}% ${side} market by design — fills when the price comes to you.`;
+      detail = `On plan: buy ${plan.buySlotLabel}, sell ${plan.sellSlotLabel}.${fills}`;
+      // No suggested reprice: there is nothing to correct.
       suggestedPrice = null;
     } else if (guidance.action === "cancel") {
       status = "cancel";
@@ -148,7 +226,16 @@ export function buildSlotViews(
       detail = guidance.reason;
     }
 
-    views.push({ index, status, slot, headline: slot.name, detail, suggestedPrice });
+    views.push({
+      index,
+      status,
+      slot,
+      headline: slot.name,
+      detail,
+      suggestedPrice,
+      price: slot.price,
+      qtyText: `${slot.quantitySold.toLocaleString()}/${slot.totalQuantity.toLocaleString()}`,
+    });
   }
   return views;
 }

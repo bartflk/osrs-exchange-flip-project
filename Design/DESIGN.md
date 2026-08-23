@@ -1451,6 +1451,40 @@ Recorded because it governs how these should be used: the flipping subs are an *
 
 The signals track record now reports its realization ratio as **0**, and that is not a bug in the scoping change - it is the honest output. Across 693 resolved picks the average *realized* net margin is **-803gp** against an average *projected* +63,729gp, so the clamp at `MIN_RATIO = 0` is doing its job. Win rate is 64% while the mean is negative, meaning the losses are larger than the wins. Left exactly as-is and flagged here: the app is reporting that its own Buy Signals picks have not made money on average, which is the entire reason scorekeeping exists.
 
+## 14.55 Status note - The board told you to reprice the plan it just gave you - 2026-08-23
+
+Reported with a screenshot: the user placed the exact overnight buy the board suggested, and the box immediately flipped to **REPRICE - 6.5% below market, may sit unfilled**, offering to "correct" it upward. Checked against live data: the offer matched its plan to **0.00%** - 50,381,828gp against a planned 50,381,828gp.
+
+### The bug
+
+`buildSlotViews()` only consulted `suggestions` for **empty** boxes. Once a suggestion became a real offer, the box fell through to `computeRepriceGuidance()`, which asks one question: will this fill at today's price. For an overnight position that is the wrong question. The whole strategy is to buy below the current market and sell above it later, so "6.5% below market" is not a defect being detected, it is the plan being described - and the board was offering to destroy it.
+
+Worse, it counted toward "1 needs action", so the one box that was correctly set up was the only one demanding attention.
+
+### The fix
+
+New `onplan` slot status, checked **before both `reprice` and `cancel`**. Both of those verdicts answer "does this fill, and is it worth filling, at today's spread"; an overnight position is priced to a band measured over a week and is not trying to clear today's spread. Matching is by item id plus price within `PLAN_PRICE_TOLERANCE = 3%` of the relevant leg (buy price for a buy, sell price for a sell), since slot prices are medians over ~7 days of half-hour readings and no human typing into the GE would hit one exactly.
+
+Styled violet rather than amber - it matches the hold-window shading on the chart directly below it, and nothing here needs a warning colour. Excluded from `countNeedsAction()`.
+
+### Plans have to outlive the settings that produced them
+
+The first implementation read plans from the live pick list and was wrong in a way that only showed up under test: a plan is only present there while the item still qualifies under the **current** bankroll, risk preset, bedtime slot and hold window. Drop the bankroll from 326m to 10m and a 50m item leaves the list entirely - taking its plan with it, and putting the box straight back to demanding a reprice on an offer that had not changed at all.
+
+`overnightPlans.ts` remembers plans in localStorage as they are shown, with a 48-hour TTL (long enough for any overnight hold plus the morning after, short enough that a plan from last week never explains today's offer - the underlying profile refreshes every 12h). Fresh plans overlay remembered ones, so a recomputed plan always wins. The GE offer is the thing being explained; it does not stop being an overnight position because a slider moved.
+
+**A bug inside the fix, worth recording.** `rememberPlans()` rebuilt each returned plan field-by-field, which silently dropped `buySlot`/`sellSlot` the moment those were added to `OvernightPlan`. The store held them and the Map handed to the component did not, so the status kept working while the chart quietly stopped rendering - and it presented as "the fallback does not work" rather than as a missing field. Now destructures `savedAt` off and spreads the rest, so a new field is carried through without being re-listed. The general shape: an explicit field-by-field copy is a silent-drop waiting for the next field.
+
+### Also
+
+- **Price is now the largest thing in the box.** Direct feedback: *"the price is very small print, i would rather have it bigger and bolder."* It was 11px mono at the same weight as the fill counter beside it, so a 50m offer and a "0/4" read as equal-weight trivia. Now `text-base font-semibold` white with tabular numerals, with quantity demoted beside it. Reprice targets get the same treatment - they are a number you retype into the game.
+- **A garbled label**, visible in the same screenshot: "buying at 03:00 (01:00 UTC local)" - the word "local" had ended up attached to the UTC half. Now "buying at 03:00 GMT+2 (01:00 UTC)".
+- **On-plan boxes render the slot chart too.** Previously only suggestions did, but "when do I sell this" is exactly the question once the buy is placed, and the chart is where the answer is.
+
+### Known limitation
+
+A remembered plan is overwritten whenever the item reappears in a newer pick list, so its labels track the *current* best plan for that item rather than the one acted on - buy a position at 03:00 and it may later read "buy 03:30, sell 17:30". Deliberate: the sell recommendation staying current is more useful than a frozen record of the entry, and the text reads as a plan rather than as history. If a real record of the entry is ever wanted, `recommendation_snapshots` already stores `buy_slot`/`sell_slot` per logged overnight pick (14.54).
+
 ## 15. Key references
 
 - [RuneScape:Real-time Prices — OSRS Wiki](https://oldschool.runescape.wiki/w/RuneScape:Real-time_Prices)

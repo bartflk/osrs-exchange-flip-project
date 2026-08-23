@@ -1,7 +1,13 @@
 import type { ReactNode } from "preact/compat";
 import type { GeSlot, MarketItem } from "../api";
 import type { SlotAssignment } from "../capitalAllocator";
-import { buildSlotViews, countNeedsAction, STATUS_STYLE, type SlotView } from "../geSlots";
+import {
+  buildSlotViews,
+  countNeedsAction,
+  STATUS_STYLE,
+  type OvernightPlan,
+  type SlotView,
+} from "../geSlots";
 import { formatGpFull } from "../format";
 
 // DESIGN.md §14.42: one board that mirrors the in-game Grand Exchange, 8 boxes in the same 4x2
@@ -31,6 +37,7 @@ export function GeSlotBoard({
   onSelectItem,
   showHeader = true,
   renderExtra,
+  plans,
 }: {
   slots: GeSlot[];
   suggestions: SlotAssignment[];
@@ -41,11 +48,13 @@ export function GeSlotBoard({
   // render prop rather than a boolean flag so the board stays ignorant of what Overnight knows
   // (bedtime slot, sell slot, paired-day history) -- none of which belongs in a live GE board.
   renderExtra?: (v: SlotView) => ReactNode;
+  // Overnight plans keyed by item id -- see buildSlotViews. Absent for Buy Signals.
+  plans?: Map<number, OvernightPlan>;
   // The Signals panel supplies its own header (with bankroll totals, hold-time and reroll
   // controls), so the board suppresses its own rather than stacking two titles.
   showHeader?: boolean;
 }) {
-  const views = buildSlotViews(slots, suggestions, items);
+  const views = buildSlotViews(slots, suggestions, items, plans);
   const needsAction = countNeedsAction(views);
 
   function open(v: SlotView) {
@@ -114,28 +123,36 @@ export function GeSlotBoard({
                     <span className="text-sm text-gray-100 truncate">{v.headline}</span>
                   </div>
 
-                  {v.slot && (
-                    <>
-                      <div className="flex items-baseline justify-between text-[11px] mb-1">
-                        <span className="font-mono text-gray-300">{formatGpFull(v.slot.price)}</span>
-                        <span className="font-mono text-gray-500">
-                          {v.slot.quantitySold.toLocaleString()}/
-                          {v.slot.totalQuantity.toLocaleString()}
+                  {/* The price is the number you retype into the GE, so it is the largest thing
+                      in the box. It was previously 11px mono in the same weight as the fill
+                      counter beside it, which made a 50m offer and a "0/4" read as equal-weight
+                      trivia -- direct feedback: "the price is very small print." */}
+                  {v.price != null && (
+                    <div className="flex items-baseline justify-between gap-2 mb-1">
+                      <span className="font-mono text-base font-semibold text-white tabular-nums leading-tight">
+                        {formatGpFull(v.price)}
+                      </span>
+                      {v.qtyText && (
+                        <span className="font-mono text-[11px] text-gray-500 shrink-0">
+                          {v.qtyText}
                         </span>
-                      </div>
-                      <div className="h-1 bg-white/10 rounded-full overflow-hidden mb-1.5">
-                        <div
-                          className={`h-full ${v.slot.type === "buy" ? "bg-rose-400/70" : "bg-emerald-400/70"}`}
-                          style={{ width: `${Math.min(100, pct)}%` }}
-                        />
-                      </div>
-                    </>
+                      )}
+                    </div>
                   )}
 
-                  <p className={`text-[10px] leading-snug mt-auto ${style.tone}`}>{v.detail}</p>
+                  {v.slot && (
+                    <div className="h-1 bg-white/10 rounded-full overflow-hidden mb-1.5">
+                      <div
+                        className={`h-full ${v.slot.type === "buy" ? "bg-rose-400/70" : "bg-emerald-400/70"}`}
+                        style={{ width: `${Math.min(100, pct)}%` }}
+                      />
+                    </div>
+                  )}
+
+                  <p className={`text-[11px] leading-snug mt-auto ${style.tone}`}>{v.detail}</p>
 
                   {v.suggestedPrice != null && v.status === "reprice" && (
-                    <p className="text-[10px] text-gray-400 mt-0.5 font-mono">
+                    <p className="text-sm text-amber-200 mt-0.5 font-mono font-semibold tabular-nums">
                       → {formatGpFull(v.suggestedPrice)}
                     </p>
                   )}
