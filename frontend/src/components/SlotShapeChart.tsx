@@ -174,6 +174,11 @@ export function SlotShapeChart({
         </div>
       )}
 
+      {/* Only meaningful for a real PAIR. When the caller passes the same slot for both legs -- an
+          offer with no plan, judged purely on "would this price fill at this hour" -- the paired
+          median is a same-slot spread, which is not the trade being looked at and reads as a
+          verdict on it. Omitted rather than explained away. */}
+      {buySlot !== sellSlot && (
       <p className="text-[10px] leading-snug text-gray-400 mt-1.5">
         Median day{" "}
         <span className={data.medianProfit != null && data.medianProfit >= 0 ? "text-emerald-400" : "text-rose-400"}>
@@ -187,6 +192,7 @@ export function SlotShapeChart({
           : ""}
         .
       </p>
+      )}
     </div>
   );
 }

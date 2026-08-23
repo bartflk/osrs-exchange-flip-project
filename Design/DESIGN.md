@@ -1726,6 +1726,28 @@ A plan supplies a buy slot and a sell slot. An offer placed by hand supplies onl
 
 Direct feedback that the item modal was "just a div box spam". Eleven bordered stat tiles, three range groups, three sizing cards and two volume tiles each carried their own border, background and rounding. They now sit inside shared `.panel` containers separated by hairline dividers - one rectangle each instead of eleven, three and three, with the grid keeping them aligned in columns, which independent boxes never manage once label lengths differ. Measured after: 6 boxed elements where there were ~25, and the chart still starts 225px down.
 
+## 14.63 Status note - A position view, not an item view - 2026-08-23
+
+Reported: *"its clickable now but i would love to see when i do have a offer in to have a detailed position view of it when i click, right now i just see the generic item view."*
+
+Correct, and the distinction matters more than it first sounds. The item modal answers *what is this item* - price, margin, volatility, indicators, history. Looking at your own resting offer you have a different question: **will this fill, what happens if it does, what is it costing me to wait, and what should I do about it.** Every one of those is a property of the offer rather than the item, and none of them appeared anywhere in the item view.
+
+### `PositionModal`
+
+- **What you did**: your bid or ask, quantity, fill progress with a bar, capital committed at your price.
+- **Whether it will happen**: the share of measured days the market actually reached *your* price at *this* hour, from the stored daily readings - the same calculation the tile shows, at a size you can read.
+- **The verdict**, in the identical words the tile uses (they read from the same `SlotView`, so they cannot drift apart), plus the suggested reprice at a legible size.
+- **The plan, when there is one**: sell time with a live countdown, planned ask, what it clears per unit after tax, and what the whole position clears if it fills.
+- **The shape**, at 150px instead of a 54px sparkline, with your own price ruled on it.
+- **Live market context** - buy, sell, margin, ROI - because that is what your price is being judged against.
+- A `Full item details` button, since "what is this thing" is the follow-up question, not the first one.
+
+`GeSlotBoard` gains an optional `onSelectSlot(view)` that takes precedence over `onSelectItem`. Buy Signals passes nothing and keeps opening the item view unchanged.
+
+### One thing suppressed rather than explained
+
+An offer with no plan is judged with the same slot for both legs, since the question is only "would this price fill at this hour". The chart's footer then reported a paired median that is really a same-slot spread - on a Dragon hunter crossbow it read *"median day -232.0k/unit, profitable on 0 of 7 days"*, which looks exactly like a verdict on the offer being viewed and is nothing of the kind. It is now omitted when both legs are the same slot. A number that answers a question nobody asked is worse than no number, because the reader assumes it answers theirs.
+
 ## 15. Key references
 
 - [RuneScape:Real-time Prices — OSRS Wiki](https://oldschool.runescape.wiki/w/RuneScape:Real-time_Prices)

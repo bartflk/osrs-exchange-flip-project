@@ -21,7 +21,13 @@ import { NumberInput, GpInput, EmptyState, Chip, Panel, Toolbar, Field, Select }
 import { GeSlotBoard } from "./GeSlotBoard";
 import { SlotDetail } from "./SlotDetail";
 import { OfferOutlook } from "./OfferOutlook";
-import { buildSlotViews, countNeedsAction, type OvernightPlan } from "../geSlots";
+import { PositionModal } from "./PositionModal";
+import {
+  buildSlotViews,
+  countNeedsAction,
+  type OvernightPlan,
+  type SlotView,
+} from "../geSlots";
 import { rememberPlans } from "../overnightPlans";
 import { InfoTip, LabelWithInfo } from "./InfoTip";
 import type { ExplanationId } from "../explanations";
@@ -364,6 +370,10 @@ export function OvernightTrading({
     [portfolio, catalogue, plans],
   );
 
+  // Clicking a box opens the POSITION, not the item. The item view is still reachable from
+  // inside it -- "what is this thing" is the follow-up question, not the first one.
+  const [openSlot, setOpenSlot] = useState<SlotView | null>(null);
+
   const isNow = effectiveSlot === liveSlot;
 
   // The headline used to sum only the allocator's SUGGESTIONS, so a board with 310m already
@@ -570,6 +580,7 @@ export function OvernightTrading({
             onSelectItem={onSelectItem}
             showHeader={false}
             plans={plans}
+            onSelectSlot={setOpenSlot}
             // The whole point of this page is a position you sleep through, so each box shows the
             // daily price shape it is betting on and how that exact round trip actually went, day
             // by day. Only suggested boxes get one: a live offer already in the GE is a decision
@@ -708,6 +719,25 @@ export function OvernightTrading({
           </p>
         )}
       </Panel>
+
+      {openSlot && (
+        <PositionModal
+          view={openSlot}
+          liveSlot={liveSlot}
+          plan={plans.get(openSlot.slot?.itemId ?? openSlot.suggestion?.item.id ?? -1)}
+          market={catalogue.find(
+            (i) => i.id === (openSlot.slot?.itemId ?? openSlot.suggestion?.item.id),
+          )}
+          fillTarget={fillTarget / 100}
+          onClose={() => setOpenSlot(null)}
+          onOpenItem={() => {
+            const id = openSlot.slot?.itemId ?? openSlot.suggestion?.item.id;
+            const match = catalogue.find((i) => i.id === id);
+            setOpenSlot(null);
+            if (match) onSelectItem(match);
+          }}
+        />
+      )}
 
       {/* Raw ranked picks feeding the board above, so every slot's price/edge can be checked
           against the real numbers rather than taken on faith -- same transparency principle as

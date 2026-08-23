@@ -35,6 +35,7 @@ export function GeSlotBoard({
   suggestions,
   items,
   onSelectItem,
+  onSelectSlot,
   showHeader = true,
   renderExtra,
   plans,
@@ -43,6 +44,10 @@ export function GeSlotBoard({
   suggestions: SlotAssignment[];
   items: MarketItem[];
   onSelectItem: (item: MarketItem) => void;
+  // Preferred handler for a click on a box that holds something. Falls back to onSelectItem when
+  // absent, so Buy Signals keeps opening the item view. When present the caller gets the whole
+  // SlotView -- the position, not just the item that happens to be in it.
+  onSelectSlot?: (view: SlotView) => void;
   // Extra content rendered inside each card, below the existing status line. Overnight uses this
   // for the per-slot price-shape chart; Buy Signals passes nothing and is unchanged. Kept as a
   // render prop rather than a boolean flag so the board stays ignorant of what Overnight knows
@@ -58,6 +63,10 @@ export function GeSlotBoard({
   const needsAction = countNeedsAction(views);
 
   function open(v: SlotView) {
+    if (onSelectSlot) {
+      onSelectSlot(v);
+      return;
+    }
     const id = v.slot?.itemId ?? v.suggestion?.item.id;
     const match = items.find((i) => i.id === id);
     if (match) onSelectItem(match);
