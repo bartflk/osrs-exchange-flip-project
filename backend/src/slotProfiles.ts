@@ -295,6 +295,12 @@ export interface HourlyPick {
   cycleProfit: number;
   /** Calendar days the paired readings span. 4 days over 51 is not a weekly rhythm -- see MAX_PAIRED_SPAN_DAYS. */
   pairedSpanDays: number;
+  // The range the median is a summary of. Returned alongside it because a position you sleep
+  // through cannot be reacted to: the worst measured day is the number that decides whether the
+  // size is sane, and a median on its own hides it completely. Per unit, after tax, same
+  // arithmetic as profitPerUnit.
+  worstDayProfit: number;
+  bestDayProfit: number;
   /** Share of the slot's typical traded volume you'd have to absorb. >1 means you are the market. */
   fillShare: number | null;
   score: number;
@@ -342,6 +348,8 @@ function bestPickForItem(
   let bestPairedDays = 0;
   let bestWinDays = 0;
   let bestSpanDays = 0;
+  let bestWorstDay = 0;
+  let bestBestDay = 0;
   for (let offset = 1; offset <= maxLookaheadSlots; offset++) {
     const s = (slot + offset) % SLOTS_PER_DAY;
     const row = bySlot.get(s);
@@ -362,6 +370,8 @@ function bestPickForItem(
       bestPairedDays = paired.length;
       bestWinDays = profits.filter((x) => x > 0).length;
       bestSpanDays = span;
+      bestWorstDay = Math.min(...profits);
+      bestBestDay = Math.max(...profits);
     }
   }
 
@@ -417,6 +427,8 @@ function bestPickForItem(
     pairedDays: bestPairedDays,
     winDays: bestWinDays,
     pairedSpanDays: bestSpanDays,
+    worstDayProfit: Math.round(bestWorstDay),
+    bestDayProfit: Math.round(bestBestDay),
     holdSlots,
     holdHours,
     volume: r.volume,

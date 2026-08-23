@@ -110,8 +110,6 @@ export function SlotShapeChart({
           ? "text-amber-400"
           : "text-gray-300";
 
-  const worst = data.paired.length ? Math.min(...data.paired.map((p) => p.profit)) : null;
-
   return (
     <div className="mt-1.5">
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full block" style={{ height: `${H}px` }}>
@@ -134,7 +132,7 @@ export function SlotShapeChart({
         <span>00:00</span>
         <span className="text-rose-400">● buy {slotToLocalLabel(buySlot)}</span>
         <span className="text-emerald-400">● sell {slotToLocalLabel(sellSlot)}</span>
-        <span>24:00 UTC</span>
+        <span>24:00</span>
       </div>
 
       {/* One bar per measured day, in date order: the outcomes the median is a summary of. A
@@ -157,7 +155,7 @@ export function SlotShapeChart({
       )}
 
       <p className="text-[10px] leading-snug text-gray-400 mt-1.5">
-        Buy {slotToLocalLabel(buySlot)}, sell {slotToLocalLabel(sellSlot)}. Median day{" "}
+        Median day{" "}
         <span className={data.medianProfit != null && data.medianProfit >= 0 ? "text-emerald-400" : "text-rose-400"}>
           {data.medianProfit != null
             ? `${data.medianProfit >= 0 ? "+" : ""}${formatGp(data.medianProfit)}/unit`
@@ -168,11 +166,6 @@ export function SlotShapeChart({
           ? ` spread over ${data.spanDays}`
           : ""}
         .
-        {/* The worst day is the number that actually matters for a position you sleep through --
-            you cannot react to it, so it belongs next to the median rather than buried. */}
-        {worst != null && worst < 0 && (
-          <span className="text-rose-400"> Worst day {formatGp(worst)}/unit.</span>
-        )}
       </p>
     </div>
   );

@@ -1507,6 +1507,45 @@ Measured against the live board: bankroll 326.37m, `cashInBuyOffers` 310,572,564
 
 This is the third bug in this feature from the same family: **a number displayed or passed that does not mean what its name implies.** 14.54 had "items profiled" counting profiles the ranking could not use; 14.55 had reprice guidance judging an overnight offer against today's spread; this one had "bankroll" meaning total when every consumer downstream needed spendable. In each case the code was internally consistent and the label was the thing that lied.
 
+## 14.57 Status note - Overnight cards say what a position is worth, in one clock - 2026-08-23
+
+Three requests in one pass: *"the slots dont really say how much predicted gp you will earn, what time to wake up and check"*; *"stop using the GMT +2 and all that random stuff, Just use my local time"*; and *"I want to see the expected profit from the ITEMS i have in the GE right NOW and not the items i CAN fill in."*
+
+### Per-slot summary
+
+Every card gains a three-cell block: **Expected** (units x median profit, in gp rather than gp/unit), **Check back** (the sell time in local clock plus a live "in 13h 35m" countdown, refreshed every 30s), and **Worst day** (units x the worst measured day, with the days-won sample beneath it).
+
+All three were derivable from what was already on screen and none were actually readable: units sat in one corner, profit-per-unit in a sentence two lines below, and multiplying them was left to the reader at 3am. The sell time was a chart label with no indication of how far away it was, which is the part that decides when an alarm gets set.
+
+The worst-day figure gets equal billing rather than being folded into prose, for the same reason it exists at all: a median is not a promise, and on a position you sleep through it is the leg you cannot react to. `worstDayProfit`/`bestDayProfit` are now returned per pick (they were already being computed and thrown away).
+
+### One clock
+
+`slotToDualLabel()` is removed and `localZoneLabel()` is gone from every user-facing string. Times read "03:30", not "03:30 GMT+2 (01:30 UTC)". The data is still keyed on UTC internally and every conversion still runs through `slotToLocal()` -- that is a fact about where the numbers come from, and putting it on screen doubled the length of every timestamp without ever changing a decision.
+
+### Held and suggested are different questions
+
+The board footer reported a single "Projected overnight profit" that summed only the allocator's **suggestions**. With 323.83m running in six live offers and 2.54m free, it read **139.0k** -- the value of the two leftover slots, about 2% of what the board was carrying, presented as the board's outlook.
+
+Now two panels side by side:
+
+- **Holding now** - offers count, expected profit on the capital committed, worst-day figure, and the earliest sell time across held positions ("Check back 14:00, in 10h 5m"). Only held positions feed the wake-up time; a suggestion you have not placed has no sell to wake up for.
+- **Could still fill** - the same shape for the proposal, plus idle cash.
+
+Deliberately not summed. One is money already working, the other is a proposal not yet accepted, and a blended figure answers neither.
+
+Live on the current board: holding +7.31m expected on 323.83m against a **-7.94m** worst day; suggestions +139.0k on 2.54m. The first pair is worth sitting with -- the downside on the held book currently exceeds its median upside.
+
+### A bug this surfaced, and its cause
+
+Held cards showed no summary at all, and the held total counted nothing. Cause: 14.56 changed picks to rank against **spendable** cash, so a 50m item already bought is correctly absent from a list sized for the 2.5m still free -- and every consumer that looked up economics via the live pick list silently got nothing. Fixed by carrying the economics on the remembered plan (`profitPerUnit`, `worstDayProfit`, `winDays`, `pairedDays`) and resolving through one `economicsFor()` helper that prefers the live pick and falls back to the plan. Offers with no plan behind them are counted and **named** ("2 offers placed outside a plan - capital counted, profit not estimated") rather than folded in as zeros.
+
+This is the second time a correct change to the pick list broke a downstream consumer that assumed the list was a complete index of everything on the board. The plan, not the ranking, is the durable record of a placed position.
+
+### Layout
+
+Fixed-height header and name rows so prices align across all eight cards; status is a bordered chip rather than bare coloured text; the fill bar always renders (zero-width for a suggestion) so the price line sits at the same height everywhere; `tabular-nums` on every figure; one shared `Figure` cell for both footer panels so they cannot drift apart on type scale.
+
 ## 15. Key references
 
 - [RuneScape:Real-time Prices — OSRS Wiki](https://oldschool.runescape.wiki/w/RuneScape:Real-time_Prices)

@@ -97,22 +97,27 @@ export function GeSlotBoard({
                 v.status !== "empty" ? "cursor-pointer hover:brightness-125" : ""
               }`}
             >
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] uppercase tracking-wide text-gray-600">
+              {/* Fixed-height header row so the status chip sits on the same line in every card
+                  and the prices below line up across the whole board -- previously each card
+                  found its own vertical rhythm depending on how long its name wrapped. */}
+              <div className="flex items-center justify-between gap-2 h-4 mb-1.5">
+                <span className="text-[10px] uppercase tracking-wider text-gray-600 shrink-0">
                   Slot {v.index}
                 </span>
-                <span className={`text-[10px] font-semibold uppercase ${style.tone}`}>
+                <span
+                  className={`px-1.5 py-0.5 rounded border text-[9px] font-semibold uppercase tracking-wider leading-none truncate ${style.pill}`}
+                >
                   {v.slot ? `${style.label} · ${v.slot.type}` : style.label}
                 </span>
               </div>
 
               {v.status === "empty" ? (
-                <div className="flex-1 flex items-center justify-center text-xs text-gray-600">
+                <div className="flex-1 flex items-center justify-center text-xs text-gray-700">
                   —
                 </div>
               ) : (
                 <>
-                  <div className="flex items-center gap-1.5 mb-1">
+                  <div className="flex items-center gap-1.5 h-5 mb-0.5">
                     {(v.slot?.icon || v.suggestion?.item.icon) && (
                       <img
                         src={iconUrl(v.slot?.icon ?? v.suggestion?.item.icon)}
@@ -120,7 +125,9 @@ export function GeSlotBoard({
                         className="w-4 h-4 object-contain shrink-0"
                       />
                     )}
-                    <span className="text-sm text-gray-100 truncate">{v.headline}</span>
+                    <span className="text-[13px] font-medium text-gray-100 truncate">
+                      {v.headline}
+                    </span>
                   </div>
 
                   {/* The price is the number you retype into the GE, so it is the largest thing
@@ -128,28 +135,30 @@ export function GeSlotBoard({
                       counter beside it, which made a 50m offer and a "0/4" read as equal-weight
                       trivia -- direct feedback: "the price is very small print." */}
                   {v.price != null && (
-                    <div className="flex items-baseline justify-between gap-2 mb-1">
-                      <span className="font-mono text-base font-semibold text-white tabular-nums leading-tight">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="font-mono text-[17px] font-semibold text-white tabular-nums leading-none">
                         {formatGpFull(v.price)}
                       </span>
                       {v.qtyText && (
-                        <span className="font-mono text-[11px] text-gray-500 shrink-0">
+                        <span className="font-mono text-[11px] text-gray-500 tabular-nums shrink-0">
                           {v.qtyText}
                         </span>
                       )}
                     </div>
                   )}
 
-                  {v.slot && (
-                    <div className="h-1 bg-white/10 rounded-full overflow-hidden mb-1.5">
-                      <div
-                        className={`h-full ${v.slot.type === "buy" ? "bg-rose-400/70" : "bg-emerald-400/70"}`}
-                        style={{ width: `${Math.min(100, pct)}%` }}
-                      />
-                    </div>
-                  )}
+                  {/* Always rendered, at zero width for a suggestion, so the price line sits at
+                      the same height in every card whether or not an offer is running yet. */}
+                  <div className="h-1 bg-white/[0.07] rounded-full overflow-hidden mt-1.5 mb-1.5">
+                    <div
+                      className={`h-full transition-all ${
+                        v.slot?.type === "sell" ? "bg-emerald-400/70" : "bg-rose-400/70"
+                      }`}
+                      style={{ width: `${v.slot ? Math.min(100, pct) : 0}%` }}
+                    />
+                  </div>
 
-                  <p className={`text-[11px] leading-snug mt-auto ${style.tone}`}>{v.detail}</p>
+                  <p className={`text-[11px] leading-snug ${style.tone}`}>{v.detail}</p>
 
                   {v.suggestedPrice != null && v.status === "reprice" && (
                     <p className="text-sm text-amber-200 mt-0.5 font-mono font-semibold tabular-nums">
@@ -157,7 +166,7 @@ export function GeSlotBoard({
                     </p>
                   )}
 
-                  {renderExtra?.(v)}
+                  <div className="mt-auto">{renderExtra?.(v)}</div>
                 </>
               )}
             </div>

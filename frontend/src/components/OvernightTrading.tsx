@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import {
   fetchItems,
   fetchOvernightPicks,
@@ -10,19 +10,21 @@ import {
 } from "../api";
 import { formatGp, formatGpFull } from "../format";
 import {
-  slotToDualLabel,
+  formatWait,
+  msUntilSlot,
   slotToLocalLabel,
   utcLabelToSlot,
-  localZoneLabel,
 } from "../timeSlots";
 import { useCurrentSlot } from "../useCurrentSlot";
 import { allocateCapital } from "../capitalAllocator";
 import { NumberInput, GpInput, EmptyState, Chip } from "./ui";
 import { GeSlotBoard } from "./GeSlotBoard";
 import { SlotShapeChart } from "./SlotShapeChart";
+import { SlotPlanSummary } from "./SlotPlanSummary";
 import { buildSlotViews, countNeedsAction, type OvernightPlan } from "../geSlots";
 import { rememberPlans } from "../overnightPlans";
 import { InfoTip, LabelWithInfo } from "./InfoTip";
+import type { ExplanationId } from "../explanations";
 
 // Overnight Trading, Phase 1 -- direct request: "I want the GE screen copied and have Overnight
 // positions to buy bottom of the band so i can wake up, set them up to sell them at the top of
@@ -42,6 +44,35 @@ function iconUrl(icon: string | null): string {
 // line and the sell-at column can't drift apart on what "20:30" means.
 function localOf(slotLabel: string): string {
   return slotToLocalLabel(utcLabelToSlot(slotLabel));
+}
+
+// One cell shape for both summary panels: fixed label size, tabular numerals, sub-line always
+// present. The panels sit side by side, so any difference between them reads as meaning.
+function Figure({
+  label,
+  value,
+  sub,
+  tone,
+  explain,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  tone: string;
+  explain?: ExplanationId;
+}) {
+  return (
+    <div className="min-w-0">
+      <div className="flex items-center gap-1 text-[9px] uppercase tracking-wider text-gray-500">
+        <span className="truncate">{label}</span>
+        {explain && <InfoTip id={explain} />}
+      </div>
+      <div className={`font-mono text-lg font-semibold tabular-nums leading-tight truncate ${tone}`}>
+        {value}
+      </div>
+      <div className="text-[10px] text-gray-600 truncate">{sub}</div>
+    </div>
+  );
 }
 
 function loadNumber(key: string, fallback: number): number {
@@ -252,6 +283,10 @@ export function OvernightTrading({
         sellSlotLabel: slotToLocalLabel(p.bestSellSlot),
         buySlot: p.slot,
         sellSlot: p.bestSellSlot,
+        profitPerUnit: p.profitPerUnit ?? undefined,
+        worstDayProfit: p.worstDayProfit,
+        winDays: p.winDays,
+        pairedDays: p.pairedDays,
       });
     }
     // Remembered, not just read: an offer you placed on plan must keep its plan when the bankroll,
@@ -303,6 +338,98 @@ export function OvernightTrading({
 
   const isNow = effectiveSlot === liveSlot;
 
+  // The headline used to sum only the allocator's SUGGESTIONS, so a board with 310m already
+  // working in three big-ticket offers reported "projected overnight profit 254.6k" -- the value
+  // of the four leftover slots, and about 3% of what the board was actually carrying. Positions
+  // already placed are the majority of the plan, not an afterthought to it.
+  // A slot's economics come from the live pick when it is still ranked, and from the remembered
+  // plan when it is not -- which is the normal state for anything already bought, since picks are
+  // ranked against the cash still free (§14.56).
+  const economicsFor = useCallback(
+    (itemId: number) => {
+      const pick = pickById.get(itemId) ?? picksData?.picks.find((p) => p.itemId === itemId);
+      if (pick && pick.profitPerUnit != null && pick.bestSellSlot != null) {
+        return {
+          sellSlot: pick.bestSellSlot,
+          profitPerUnit: pick.profitPerUnit,
+          worstDayProfit: pick.worstDayProfit,
+          winDays: pick.winDays,
+          pairedDays: pick.pairedDays,
+        };
+      }
+      const plan = plans.get(itemId);
+      if (plan?.sellSlot != null && plan.profitPerUnit != null) {
+        return {
+          sellSlot: plan.sellSlot,
+          profitPerUnit: plan.profitPerUnit,
+          worstDayProfit: plan.worstDayProfit ?? 0,
+          winDays: plan.winDays ?? 0,
+          pairedDays: plan.pairedDays ?? 0,
+        };
+      }
+      return null;
+    },
+    [pickById, picksData, plans],
+  );
+
+  const boardOutlook = useMemo(() => {
+    // Held and suggested are reported SEPARATELY, not summed. Direct request: *"I want to see the
+    // expected profit from the ITEMS i have in the GE right NOW and not the items i CAN fill in."*
+    // They are different kinds of claim -- one is money already committed and running, the other
+    // is a proposal you have not accepted -- and a single blended figure answers neither. The
+    // previous total was worse still: it counted only the proposal.
+    const held = { capital: 0, expected: 0, worst: 0, offers: 0, unknown: 0, selling: 0 };
+    for (const slot of portfolio?.slots ?? []) {
+      if (slot.type === "sell") {
+        held.selling += 1;
+        continue;
+      }
+      held.offers += 1;
+      held.capital += slot.price * slot.totalQuantity;
+      const e = economicsFor(slot.itemId);
+      // An offer with no plan behind it (placed by hand, or its plan aged out) contributes
+      // capital but not profit, and is counted so the figure can say what it excludes rather
+      // than quietly under-reporting.
+      if (!e) {
+        held.unknown += 1;
+        continue;
+      }
+      held.expected += e.profitPerUnit * slot.totalQuantity;
+      held.worst += e.worstDayProfit * slot.totalQuantity;
+    }
+
+    const suggested = { capital: allocation.totalCost, expected: allocation.totalProfit, worst: 0 };
+    for (const a of allocation.assignments) {
+      const e = economicsFor(a.item.id);
+      if (e) suggested.worst += e.worstDayProfit * a.qty;
+    }
+
+    return { held, suggested };
+  }, [allocation, portfolio, economicsFor]);
+
+  // When to actually come back: the earliest sell slot across everything on the board, held or
+  // suggested. "Check back at 10:30" is the question the whole page exists to answer, and it was
+  // only derivable by reading eight cards and taking the minimum yourself.
+  const nextCheck = useMemo(() => {
+    let bestSlot: number | null = null;
+    let bestWait = Infinity;
+    const consider = (sellSlot: number | null | undefined) => {
+      if (sellSlot == null) return;
+      const wait = msUntilSlot(sellSlot);
+      if (wait < bestWait) {
+        bestWait = wait;
+        bestSlot = sellSlot;
+      }
+    };
+    // Only positions you are actually holding decide when to come back. A suggestion you have not
+    // placed has no sell time to wake up for.
+    for (const slot of portfolio?.slots ?? []) {
+      if (slot.type !== "buy") continue;
+      consider(economicsFor(slot.itemId)?.sellSlot);
+    }
+    return bestSlot == null ? null : { slot: bestSlot as number, wait: bestWait };
+  }, [portfolio, economicsFor]);
+
   return (
     <div>
       <div className="glass rounded-xl p-4 mb-4 flex flex-wrap items-end gap-6">
@@ -319,18 +446,17 @@ export function OvernightTrading({
           <NumberInput value={numSlots} onChange={updateNumSlots} className="w-20" />
         </label>
         <label className="text-xs text-gray-400 flex flex-col gap-1">
-          Buy time (bedtime) <span className="text-gray-600">({localZoneLabel()})</span>
+          Buy time (bedtime)
           <div className="flex items-center gap-1.5">
             <select
               value={effectiveSlot}
               onChange={(e) => setBedtimeSlot(Number((e.target as HTMLSelectElement).value))}
               className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-gray-200"
             >
-              {/* §14.49: your clock first -- nobody picks a bedtime in UTC. The UTC value stays
-                  visible because the API, the slot data and every design note are keyed on it. */}
+              {/* Your clock, and only your clock -- the UTC half was noise at the point of use. */}
               {Array.from({ length: 48 }, (_, i) => (
                 <option key={i} value={i}>
-                  {slotToDualLabel(i)}
+                  {slotToLocalLabel(i)}
                 </option>
               ))}
             </select>
@@ -375,9 +501,8 @@ export function OvernightTrading({
               : "all slots in use"}
             {picksData && (
               <span className="ml-2 text-xs text-gray-500 font-normal">
-                buying at {localOf(picksData.bedtimeSlotLabel)} {localZoneLabel()} (
-                {picksData.bedtimeSlotLabel} UTC){isNow ? " · now" : ""} · up to{" "}
-                {picksData.maxHoldHours}h hold ·{" "}
+                buying at {localOf(picksData.bedtimeSlotLabel)}
+                {isNow ? " · now" : ""} · up to {picksData.maxHoldHours}h hold ·{" "}
                 {picksData.itemsProfiled} items profiled · sized for{" "}
                 {formatGp(picksData.bankroll)}
                 {committedGp > 0 && (
@@ -426,26 +551,99 @@ export function OvernightTrading({
               const buy = pick ? pick.slot : plans.get(id)?.buySlot;
               const sell = pick ? pick.bestSellSlot : plans.get(id)?.sellSlot;
               if (buy == null || sell == null) return null;
-              return <SlotShapeChart itemId={id} buySlot={buy} sellSlot={sell} />;
+              // Units the summary should multiply by: a placed offer's real quantity, or the
+              // quantity being suggested. Using the pick's own deployableUnits here would be
+              // wrong on both counts -- it is sized for the whole free bankroll, not for this
+              // one slot's share of it.
+              const units = v.slot ? v.slot.totalQuantity : (v.suggestion?.qty ?? 0);
+              const econ = economicsFor(id);
+              return (
+                <>
+                  {econ && units > 0 && <SlotPlanSummary {...econ} units={units} />}
+                  <SlotShapeChart itemId={id} buySlot={buy} sellSlot={sell} />
+                </>
+              );
             }}
           />
         )}
 
-        <div className="grid grid-cols-3 gap-3 mt-3 text-xs">
-          <div>
-            <div className="text-gray-500">Spend</div>
-            <div className="font-mono text-gray-200">{formatGp(allocation.totalCost)}</div>
-          </div>
-          <div>
-            <div className="text-gray-500">Projected overnight profit</div>
-            <div className="font-mono text-emerald-400">{formatGp(allocation.totalProfit)}</div>
-          </div>
-          <div>
-            <div className="text-gray-500 inline-flex items-center gap-1">
-              Idle bankroll
-              <InfoTip id="maximizeUtilization" />
+        {/* Two panels, not one row of five. The left is money already working and is the answer
+            to "what am I actually holding"; the right is a proposal. Blending them produced a
+            single "expected profit" that described neither -- and, before this, described only
+            the proposal, so a board carrying millions in live offers reported 139k. */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-4">
+          <div className="rounded-xl border border-violet-400/25 bg-violet-500/[0.06] p-3">
+            <div className="flex items-baseline justify-between mb-2">
+              <span className="text-[10px] uppercase tracking-wider text-violet-300 font-semibold">
+                Holding now
+              </span>
+              <span className="text-[10px] text-gray-500">
+                {boardOutlook.held.offers} buy offer
+                {boardOutlook.held.offers === 1 ? "" : "s"}
+                {boardOutlook.held.selling > 0 && ` · ${boardOutlook.held.selling} selling`}
+              </span>
             </div>
-            <div className="font-mono text-gray-400">{formatGp(allocation.remainingBankroll)}</div>
+            <div className="grid grid-cols-3 gap-3">
+              <Figure
+                label="Expected"
+                value={`${boardOutlook.held.expected >= 0 ? "+" : ""}${formatGp(boardOutlook.held.expected)}`}
+                sub={`on ${formatGp(boardOutlook.held.capital)}`}
+                tone={boardOutlook.held.expected >= 0 ? "text-emerald-400" : "text-rose-400"}
+              />
+              <Figure
+                label="Worst day"
+                value={`${boardOutlook.held.worst >= 0 ? "+" : ""}${formatGp(boardOutlook.held.worst)}`}
+                sub="if it repeats"
+                tone={boardOutlook.held.worst < 0 ? "text-rose-400" : "text-gray-300"}
+              />
+              <Figure
+                label="Check back"
+                value={nextCheck ? slotToLocalLabel(nextCheck.slot) : "—"}
+                sub={nextCheck ? `in ${formatWait(nextCheck.wait)}` : "nothing to sell"}
+                tone="text-sky-300"
+              />
+            </div>
+            {boardOutlook.held.unknown > 0 && (
+              /* Never fold an un-planned offer into the total as if it were a zero -- say it. */
+              <p className="text-[10px] text-gray-500 mt-2">
+                {boardOutlook.held.unknown} offer
+                {boardOutlook.held.unknown === 1 ? "" : "s"} placed outside a plan — capital
+                counted, profit not estimated.
+              </p>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-sky-400/20 bg-sky-500/[0.04] p-3">
+            <div className="flex items-baseline justify-between mb-2">
+              <span className="text-[10px] uppercase tracking-wider text-sky-300 font-semibold">
+                Could still fill
+              </span>
+              <span className="text-[10px] text-gray-500">
+                {allocation.assignments.length} slot
+                {allocation.assignments.length === 1 ? "" : "s"} suggested
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <Figure
+                label="Expected"
+                value={`${boardOutlook.suggested.expected >= 0 ? "+" : ""}${formatGp(boardOutlook.suggested.expected)}`}
+                sub={`on ${formatGp(boardOutlook.suggested.capital)}`}
+                tone="text-emerald-400"
+              />
+              <Figure
+                label="Worst day"
+                value={`${boardOutlook.suggested.worst >= 0 ? "+" : ""}${formatGp(boardOutlook.suggested.worst)}`}
+                sub="if it repeats"
+                tone={boardOutlook.suggested.worst < 0 ? "text-rose-400" : "text-gray-300"}
+              />
+              <Figure
+                label="Idle"
+                value={formatGp(allocation.remainingBankroll)}
+                sub="unspent"
+                tone="text-gray-400"
+                explain="maximizeUtilization"
+              />
+            </div>
           </div>
         </div>
 
@@ -478,7 +676,7 @@ export function OvernightTrading({
                   <th className="pb-2 pr-3 font-medium">Item</th>
                   <th className="pb-2 pr-3 font-medium text-right">Buy @</th>
                   <th className="pb-2 pr-3 font-medium text-right">Sell @</th>
-                  <th className="pb-2 pr-3 font-medium text-right">Sell at ({localZoneLabel()})</th>
+                  <th className="pb-2 pr-3 font-medium text-right">Sell at</th>
                   <th className="pb-2 pr-3 font-medium text-right">Hold</th>
                   <th className="pb-2 pr-3 font-medium text-right">
                     <LabelWithInfo id="timingEdge">Profit/u</LabelWithInfo>

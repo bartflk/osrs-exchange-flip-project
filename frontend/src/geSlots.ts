@@ -18,23 +18,29 @@ export type SlotStatus =
   | "suggestion" // empty box, allocator has a candidate
   | "empty"; // empty box, nothing to suggest
 
-export const STATUS_STYLE: Record<SlotStatus, { box: string; label: string; tone: string }> = {
+export const STATUS_STYLE: Record<
+  SlotStatus,
+  { box: string; label: string; tone: string; pill: string }
+> = {
   // "Lights up": saturated ring + tinted background for anything needing a decision, deliberately
   // flat/dim for anything that's fine, so a glance finds the actionable boxes.
   collect: {
     box: "border-emerald-400/70 bg-emerald-500/10 ring-1 ring-emerald-400/40",
     label: "Collect",
     tone: "text-emerald-300",
+    pill: "bg-emerald-500/20 text-emerald-200 border-emerald-400/40",
   },
   cancel: {
     box: "border-rose-400/70 bg-rose-500/10 ring-1 ring-rose-400/40",
     label: "Cancel",
     tone: "text-rose-300",
+    pill: "bg-rose-500/20 text-rose-200 border-rose-400/40",
   },
   reprice: {
     box: "border-amber-400/70 bg-amber-500/10 ring-1 ring-amber-400/40",
     label: "Reprice",
     tone: "text-amber-300",
+    pill: "bg-amber-500/20 text-amber-200 border-amber-400/40",
   },
   // Deliberately calm, and deliberately NOT amber: this box is doing exactly what was asked of
   // it. Violet matches the hold-window shading on the slot chart directly below it.
@@ -42,18 +48,31 @@ export const STATUS_STYLE: Record<SlotStatus, { box: string; label: string; tone
     box: "border-violet-400/40 bg-violet-500/[0.07]",
     label: "On plan",
     tone: "text-violet-300",
+    pill: "bg-violet-500/20 text-violet-200 border-violet-400/40",
   },
-  filling: { box: "border-white/10 bg-white/[0.03]", label: "Filling", tone: "text-gray-400" },
-  waiting: { box: "border-white/10 bg-white/[0.03]", label: "Waiting", tone: "text-gray-500" },
+  filling: {
+    box: "border-white/10 bg-white/[0.03]",
+    label: "Filling",
+    tone: "text-gray-400",
+    pill: "bg-white/10 text-gray-300 border-white/15",
+  },
+  waiting: {
+    box: "border-white/10 bg-white/[0.03]",
+    label: "Waiting",
+    tone: "text-gray-500",
+    pill: "bg-white/10 text-gray-400 border-white/15",
+  },
   suggestion: {
     box: "border-sky-400/40 bg-sky-500/[0.06] border-dashed",
     label: "Buy",
     tone: "text-sky-300",
+    pill: "bg-sky-500/20 text-sky-200 border-sky-400/40",
   },
   empty: {
     box: "border-white/5 bg-transparent border-dashed",
     label: "Empty",
     tone: "text-gray-600",
+    pill: "bg-transparent text-gray-600 border-white/10",
   },
 };
 
@@ -72,6 +91,17 @@ export interface OvernightPlan {
   // pick list. Optional because plans stored before this field existed will not have it.
   buySlot?: number;
   sellSlot?: number;
+  // The economics, carried on the plan rather than looked up from the live pick list.
+  //
+  // Necessary once picks are ranked against SPENDABLE cash (14.56): a 50m item you already hold
+  // is correctly absent from a list sized for the 2.5m you have left, so every card showing a
+  // held position lost its expected-profit figure and the board total silently stopped counting
+  // it -- 139k reported for a board actually carrying several million. The plan is the right
+  // home for this: it is what was promised when the offer was placed.
+  profitPerUnit?: number;
+  worstDayProfit?: number;
+  winDays?: number;
+  pairedDays?: number;
 }
 
 // How far a real offer may sit from the planned price and still count as "that plan". Slot prices
@@ -133,7 +163,7 @@ export function buildSlotViews(
               status: "suggestion",
               suggestion,
               headline: suggestion.item.name,
-              detail: `+${formatGp(suggestion.projectedProfit)} projected`,
+              detail: `Ties up ${formatGp(suggestion.cost)}`,
               suggestedPrice: suggestion.item.low ?? null,
               price: suggestion.item.low ?? null,
               qtyText: `buy ${suggestion.qty.toLocaleString()}`,
@@ -208,8 +238,8 @@ export function buildSlotViews(
           : (slot.type === "buy" && slot.price >= (ref ?? 0)) ||
               (slot.type === "sell" && slot.price <= (ref ?? Infinity))
             ? " At market — should fill."
-            : ` ${(gapPct * 100).toFixed(1)}% ${side} market by design — fills when the price comes to you.`;
-      detail = `On plan: buy ${plan.buySlotLabel}, sell ${plan.sellSlotLabel}.${fills}`;
+            : ` Priced ${(gapPct * 100).toFixed(1)}% ${side} market by design.`;
+      detail = `On plan.${fills}`;
       // No suggested reprice: there is nothing to correct.
       suggestedPrice = null;
     } else if (guidance.action === "cancel") {

@@ -946,6 +946,9 @@ export interface HourlyPick {
   winDays: number;
   /** Calendar days those paired readings span -- 4 days over 51 is not a weekly rhythm. */
   pairedSpanDays: number;
+  /** Range behind the median, per unit after tax -- the worst day is what a sleeping position risks. */
+  worstDayProfit: number;
+  bestDayProfit: number;
   holdSlots: number | null;
   holdHours: number | null;
   volume: number;

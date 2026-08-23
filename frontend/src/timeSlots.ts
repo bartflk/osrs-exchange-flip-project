@@ -51,10 +51,12 @@ export function slotToLocalLabel(slot: number): string {
   return `${label} (${dayOffset > 0 ? "+1d" : "-1d"})`;
 }
 
-/** Local first (what you think in), UTC second (what the data is keyed on). */
-export function slotToDualLabel(slot: number): string {
-  return `${slotToLocalLabel(slot)} · ${slotToUtcLabel(slot)} UTC`;
-}
+// Deliberately removed: slots used to render as "03:30 · 01:30 UTC", and the zone was printed
+// next to every time as "(GMT+2)". Direct instruction: *"stop using the GMT +2 and all that random
+// stuff, Just use my local time"*. The data is still keyed on UTC internally and every conversion
+// still goes through slotToLocal() -- that is an implementation detail of where the numbers come
+// from, and putting it on screen made every timestamp twice as long to read for no decision it
+// ever changed. One clock, the reader's.
 
 /** Short zone name for headers, e.g. "GMT+2". Falls back silently if unavailable. */
 export function localZoneLabel(): string {
@@ -92,4 +94,25 @@ export function msUntilNextSlot(): number {
   const mins = d.getUTCMinutes();
   const next = mins < 30 ? 30 : 60;
   return ((next - mins) * 60 - d.getUTCSeconds()) * 1000 - d.getMilliseconds() + 250;
+}
+
+// Milliseconds until the next occurrence of a half-hour slot, wrapping to tomorrow when it has
+// already passed today. Slots are indices into the UTC day, so the arithmetic is done in UTC and
+// only rendered in local time -- doing it the other way round breaks on any DST boundary.
+export function msUntilSlot(slot: number): number {
+  const now = new Date();
+  const target = new Date(now);
+  target.setUTCHours(Math.floor(slot / 2), slot % 2 === 0 ? 0 : 30, 0, 0);
+  if (target.getTime() <= now.getTime()) target.setUTCDate(target.getUTCDate() + 1);
+  return target.getTime() - now.getTime();
+}
+
+/** "14h 20m", "45m", or "now" -- a wait, not a clock time. */
+export function formatWait(ms: number): string {
+  if (ms <= 0) return "now";
+  const totalMinutes = Math.round(ms / 60000);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  if (h === 0) return `${m}m`;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }

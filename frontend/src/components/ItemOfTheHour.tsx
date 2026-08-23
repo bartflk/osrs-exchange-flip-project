@@ -2,10 +2,8 @@ import { useEffect, useState } from "preact/hooks";
 import { fetchItemOfTheHour, type ItemOfTheHourResponse, type MarketItem } from "../api";
 import { formatGp, formatGpFull } from "../format";
 import {
-  slotToDualLabel,
   slotToLocalLabel,
   utcLabelToSlot,
-  localZoneLabel,
 } from "../timeSlots";
 import { useCurrentSlot } from "../useCurrentSlot";
 import { EmptyState } from "./ui";
@@ -68,7 +66,7 @@ export function ItemOfTheHour({
           Item of the hour
           {data && (
             <span className="ml-2 text-xs text-gray-500 font-normal">
-              {slotToLocalLabel(utcLabelToSlot(data.slotLabel))} ({data.slotLabel} UTC)
+              {slotToLocalLabel(utcLabelToSlot(data.slotLabel))}
               {isNow ? " · now" : ""} · {data.itemsProfiled} profiled · sized for{" "}
               {formatGp(bankroll)}
             </span>
@@ -84,7 +82,7 @@ export function ItemOfTheHour({
           >
             {Array.from({ length: 48 }, (_, i) => (
               <option key={i} value={i}>
-                {slotToDualLabel(i)}
+                {slotToLocalLabel(i)}
               </option>
             ))}
           </select>
@@ -130,7 +128,7 @@ export function ItemOfTheHour({
                     <th className="pb-2 pr-3 font-medium">Item</th>
                     <th className="pb-2 pr-3 font-medium text-right">Buy @</th>
                     <th className="pb-2 pr-3 font-medium text-right">Sell @</th>
-                    <th className="pb-2 pr-3 font-medium text-right">Sell at ({localZoneLabel()})</th>
+                    <th className="pb-2 pr-3 font-medium text-right">Sell at</th>
                     <th className="pb-2 pr-3 font-medium text-right">Hold</th>
                     <th className="pb-2 pr-3 font-medium text-right">
                       <LabelWithInfo id="timingEdge">Profit/u</LabelWithInfo>
