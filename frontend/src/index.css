@@ -37,6 +37,29 @@ body,
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+/* The standard surface. `.glass` is a flat 4% wash with a flat border, which reads as a rectangle
+   drawn on the background rather than a panel sitting above it -- direct feedback: "the bar above
+   the overnight slots looks a bit flat." Three cheap cues fix that without any new colour: a
+   top-to-bottom gradient so the surface has a light source, a 1px inset highlight along the top
+   edge, and a soft drop shadow underneath to lift it off the page. */
+.panel {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.022) 100%);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 10px 30px -14px rgba(0, 0, 0, 0.75);
+}
+
+/* A recessed area INSIDE a panel -- the opposite treatment, for grouped readouts that should read
+   as carved into the surface rather than floating on it. */
+.panel-inset {
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
 .price-flash {
   transition: background-color 150ms ease-out;
 }

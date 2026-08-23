@@ -1546,6 +1546,30 @@ This is the second time a correct change to the pick list broke a downstream con
 
 Fixed-height header and name rows so prices align across all eight cards; status is a bordered chip rather than bare coloured text; the fill bar always renders (zero-width for a suggestion) so the price line sits at the same height everywhere; `tabular-nums` on every figure; one shared `Figure` cell for both footer panels so they cannot drift apart on type scale.
 
+## 14.58 Status note - Shared layout primitives; the control bars stop inventing themselves - 2026-08-23
+
+Reported against the Overnight controls: *"the bar above the overnight slots looks a bit flat and the text is not lined up"*, plus *"i want the other parts of the application to be brought up to code with this design language."*
+
+### Why it was misaligned
+
+Every screen had hand-rolled its control bar as `flex flex-wrap items-end`. That combination is the bug, not a tuning problem: with `items-end` a label long enough to wrap ("Max allocation per item (%)") pushes its own input down, and the row then aligns everything by its **bottom** edge, so the labels land at three different heights and the inputs at two. The explanatory paragraph, being a flex child of the same row, got bottom-aligned along with them.
+
+Fixed by making it structurally impossible rather than nudging margins: a `Field` primitive with a fixed-height, non-wrapping label row over a fixed-height control row. Measured after the change: all six Overnight labels share one top coordinate, all controls share one top and one height (36px). Same on Market and Buy Signals.
+
+### Why it looked flat
+
+`.glass` is a flat 4% white wash with a flat border, which reads as a rectangle drawn *on* the background rather than a panel sitting *above* it. New `.panel` adds three cheap depth cues and no new colour: a top-to-bottom gradient so the surface has a light source, a 1px inset highlight along the top edge, and a soft drop shadow beneath. `.panel-inset` is the inverse, for readouts that should read as recessed into a surface.
+
+### Primitives added (`ui.tsx`)
+
+`Panel`, `PanelInset`, `Field` (with optional `explain` marker), `Toolbar` (Fields plus an `aside` pinned right behind a divider, so prose stops competing with controls for the same row), `Select` (the native element was being styled ad hoc in three places), and `PanelHeader`. `Input` gained a fixed `h-9` so inputs, selects and chips share one height.
+
+Applied to the Overnight toolbar and board, the Buy Signals toolbar, and the Market filter bar. The remaining screens still use `.glass` directly and are unchanged; the primitives exist so they can be converted without redesigning each one.
+
+### A silent no-op, caught by the linter
+
+One `str.replace()` in the edit script targeted `"Overnight board —"` and matched nothing, because something in this repo had rewritten that em dash to a colon. Python's `replace` returns the string unchanged rather than raising, so the opening `<div>` stayed while its closing tag became `</Panel>`. **TypeScript compiled it clean**; only `oxlint` caught the mismatched JSX tag. Two lessons worth keeping: assert on every scripted replacement (the ones with asserts in the same script all failed loudly and correctly), and do not treat a clean `tsc` as proof that JSX is well-formed.
+
 ## 15. Key references
 
 - [RuneScape:Real-time Prices — OSRS Wiki](https://oldschool.runescape.wiki/w/RuneScape:Real-time_Prices)

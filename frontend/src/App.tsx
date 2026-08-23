@@ -36,7 +36,16 @@ import { type BlockEntry, loadBlocklist, saveBlocklist, removeFromBlocklist } fr
 import { type HoldingEntry, loadHoldings, saveHoldings } from "./bankHoldings";
 import { type Settings, loadSettings, saveSettings } from "./settings";
 import type { BankValueItem } from "./api";
-import { Button, Chip, IconButton, Input, NumberInput, StatCard } from "./components/ui";
+import {
+  Button,
+  Chip,
+  Field,
+  IconButton,
+  Input,
+  NumberInput,
+  StatCard,
+  Toolbar,
+} from "./components/ui";
 
 type Tab =
   | "market"
@@ -204,7 +213,7 @@ function App() {
         const a = newAlerts[0];
         const message =
           a.kind === "volume"
-            ? `⚠ ${a.name}: unusual volume (z=${a.zScore?.toFixed(1) ?? "?"}) vs its own 24h baseline — possible bot activity`
+            ? `⚠ ${a.name}: unusual volume (z=${a.zScore?.toFixed(1) ?? "?"}) vs its own 24h baseline, possible bot activity`
             : `${a.direction === "crash" ? "▼" : "▲"} ${a.name} ${a.direction === "crash" ? "dropped" : "spiked"} ${Math.abs(a.changePct * 100).toFixed(1)}% in ${a.windowMinutes}m (${formatGp(a.fromPrice)} → ${formatGp(a.toPrice)})`;
         notify(message, "market");
       } else if (newAlerts.length > 1) {
@@ -408,17 +417,14 @@ function App() {
               />
               <StatCard
                 label="Data freshness"
-                value={status ? formatAgo(status.lastUpdate) : "—"}
+                value={status ? formatAgo(status.lastUpdate) : "-"}
                 hint={status ? `${status.itemCount.toLocaleString()} tracked items` : undefined}
               />
               <UpdateCycleBadge />
             </div>
 
-            <div className="glass rounded-xl p-3 mb-4 flex flex-wrap items-end gap-x-4 gap-y-3">
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] uppercase tracking-wider text-gray-500 font-medium">
-                  Search
-                </label>
+            <Toolbar>
+              <Field label="Search">
                 <div className="relative">
                   <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs pointer-events-none">
                     ⌕
@@ -431,12 +437,9 @@ function App() {
                     className="w-56 2xl:w-72 pl-7"
                   />
                 </div>
-              </div>
+              </Field>
 
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] uppercase tracking-wider text-gray-500 font-medium">
-                  Min liquidity/hr
-                </label>
+              <Field label="Min liquidity/hr" explain="liquidity">
                 <NumberInput
                   value={minVolume}
                   onChange={setMinVolume}
@@ -444,87 +447,69 @@ function App() {
                   placeholder="0"
                   className="w-28"
                 />
-              </div>
+              </Field>
 
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] uppercase tracking-wider text-gray-500 font-medium">
-                  Price range (gp)
-                </label>
-                <div className="flex items-center gap-1.5">
-                  <Input
-                    type="text"
-                    inputMode="numeric"
-                    placeholder="Min"
-                    value={minPrice}
-                    onInput={(e) => {
-                      const v = (e.target as HTMLInputElement).value;
-                      if (/^\d*$/.test(v)) setMinPrice(v);
-                    }}
-                    className="w-24"
-                  />
-                  <span className="text-gray-600 text-xs">–</span>
-                  <Input
-                    type="text"
-                    inputMode="numeric"
-                    placeholder="Max"
-                    value={maxPrice}
-                    onInput={(e) => {
-                      const v = (e.target as HTMLInputElement).value;
-                      if (/^\d*$/.test(v)) setMaxPrice(v);
-                    }}
-                    className="w-24"
-                  />
-                </div>
-              </div>
+              <Field label="Price range (gp)">
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Min"
+                  value={minPrice}
+                  onInput={(e) => {
+                    const v = (e.target as HTMLInputElement).value;
+                    if (/^\d*$/.test(v)) setMinPrice(v);
+                  }}
+                  className="w-24"
+                />
+                <span className="text-gray-600 text-xs">–</span>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Max"
+                  value={maxPrice}
+                  onInput={(e) => {
+                    const v = (e.target as HTMLInputElement).value;
+                    if (/^\d*$/.test(v)) setMaxPrice(v);
+                  }}
+                  className="w-24"
+                />
+              </Field>
 
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] uppercase tracking-wider text-gray-500 font-medium">
-                  Membership
-                </label>
+              <Field label="Membership">
                 <Chip active={f2pOnly} onClick={() => setF2pOnly((v) => !v)}>
                   {f2pOnly ? "F2P only" : "All items"}
                 </Chip>
-              </div>
+              </Field>
 
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] uppercase tracking-wider text-gray-500 font-medium">
-                  Pinned
-                </label>
+              <Field label="Pinned">
                 <Chip active={watchedOnly} onClick={() => setWatchedOnly((v) => !v)}>
-                  ★ Watched{Object.keys(watched).length > 0 ? ` (${Object.keys(watched).length})` : ""}
+                  ★ Watched
+                  {Object.keys(watched).length > 0 ? ` (${Object.keys(watched).length})` : ""}
                 </Chip>
-              </div>
+              </Field>
 
-              <div className="flex flex-col gap-1 flex-1 min-w-[220px]">
-                <label className="text-[10px] uppercase tracking-wider text-gray-500 font-medium">
-                  Presets
-                </label>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {(
-                    [
-                      { key: "volume", label: "High volume" },
-                      { key: "pvm", label: "High-value PvM" },
-                      { key: "taxfree", label: "Tax-free starter" },
-                    ] as const
-                  ).map((p) => (
-                    <Chip key={p.key} active={preset === p.key} onClick={() => applyPreset(p.key)}>
-                      {p.label}
-                    </Chip>
-                  ))}
-                </div>
-              </div>
+              <Field label="Presets" className="flex-1 min-w-[220px]">
+                {(
+                  [
+                    { key: "volume", label: "High volume" },
+                    { key: "pvm", label: "High-value PvM" },
+                    { key: "taxfree", label: "Tax-free starter" },
+                  ] as const
+                ).map((p) => (
+                  <Chip key={p.key} active={preset === p.key} onClick={() => applyPreset(p.key)}>
+                    {p.label}
+                  </Chip>
+                ))}
+              </Field>
 
               {hasActiveFilters && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={clearFilters}
-                  className="ml-auto self-end"
-                >
-                  ✕ Clear filters
-                </Button>
+                <Field label="&nbsp;">
+                  <Button variant="ghost" size="sm" onClick={clearFilters}>
+                    ✕ Clear filters
+                  </Button>
+                </Field>
               )}
-            </div>
+            </Toolbar>
 
             {loading && marketItems.length === 0 && (
               <div className="text-xs text-gray-500 mb-2">Loading market data…</div>

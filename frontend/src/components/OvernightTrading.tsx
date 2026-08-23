@@ -17,7 +17,7 @@ import {
 } from "../timeSlots";
 import { useCurrentSlot } from "../useCurrentSlot";
 import { allocateCapital } from "../capitalAllocator";
-import { NumberInput, GpInput, EmptyState, Chip } from "./ui";
+import { NumberInput, GpInput, EmptyState, Chip, Panel, Toolbar, Field, Select } from "./ui";
 import { GeSlotBoard } from "./GeSlotBoard";
 import { SlotShapeChart } from "./SlotShapeChart";
 import { SlotPlanSummary } from "./SlotPlanSummary";
@@ -103,9 +103,9 @@ const RISK_LABEL: Record<RiskPreset, string> = {
   aggressive: "Aggressive",
 };
 const RISK_HINT: Record<RiskPreset, string> = {
-  conservative: "High-volume staples only — easy to fill both sides, smaller edges.",
+  conservative: "High-volume staples only, easy to fill both sides, smaller edges.",
   balanced: "A mix of liquid and moderately-traded items.",
-  aggressive: "Includes expensive, low-volume PvM gear — bigger edges, slower/harder to fill both sides.",
+  aggressive: "Includes expensive, low-volume PvM gear, bigger edges, slower/harder to fill both sides.",
 };
 
 // Turns a ranked overnight pick into a full MarketItem-shaped candidate for allocateCapital() --
@@ -432,70 +432,63 @@ export function OvernightTrading({
 
   return (
     <div>
-      <div className="glass rounded-xl p-4 mb-4 flex flex-wrap items-end gap-6">
-        <label className="text-xs text-gray-400 flex flex-col gap-1">
-          Bankroll (gp)
-          <GpInput value={bankroll} onChange={updateBankroll} className="w-40" />
-        </label>
-        <label className="text-xs text-gray-400 flex flex-col gap-1">
-          Max allocation per item (%)
-          <NumberInput value={allocationPct} onChange={updateAllocation} className="w-24" />
-        </label>
-        <label className="text-xs text-gray-400 flex flex-col gap-1">
-          GE slots
-          <NumberInput value={numSlots} onChange={updateNumSlots} className="w-20" />
-        </label>
-        <label className="text-xs text-gray-400 flex flex-col gap-1">
-          Buy time (bedtime)
-          <div className="flex items-center gap-1.5">
-            <select
-              value={effectiveSlot}
-              onChange={(e) => setBedtimeSlot(Number((e.target as HTMLSelectElement).value))}
-              className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-gray-200"
-            >
-              {/* Your clock, and only your clock -- the UTC half was noise at the point of use. */}
-              {Array.from({ length: 48 }, (_, i) => (
-                <option key={i} value={i}>
-                  {slotToLocalLabel(i)}
-                </option>
-              ))}
-            </select>
-            {bedtimeSlot != null && (
-              <button
-                onClick={() => setBedtimeSlot(null)}
-                className="text-xs text-violet-400 hover:text-violet-300"
-              >
-                now
-              </button>
-            )}
-          </div>
-        </label>
-        <label className="text-xs text-gray-400 flex flex-col gap-1">
-          Max hold (hours)
-          <NumberInput value={maxHoldHours} onChange={updateMaxHoldHours} className="w-20" />
-        </label>
-        <label className="text-xs text-gray-400 flex flex-col gap-1">
-          Risk preset
-          <div className="flex items-center gap-1.5">
-            {(Object.keys(RISK_LABEL) as RiskPreset[]).map((r) => (
-              <Chip key={r} active={riskPreset === r} onClick={() => updateRiskPreset(r)}>
-                {RISK_LABEL[r]}
-              </Chip>
+      <Toolbar
+        aside={
+          <>
+            Buy near each item&apos;s typical price at your bedtime slot, sell near its typical
+            price at the best slot within the hold window — a real (if approximate) band, not a
+            live tick. {RISK_HINT[riskPreset]}
+          </>
+        }
+      >
+        <Field label="Bankroll">
+          <GpInput value={bankroll} onChange={updateBankroll} className="w-36" />
+        </Field>
+        <Field label="Max per item">
+          <NumberInput value={allocationPct} onChange={updateAllocation} className="w-20" />
+          <span className="text-xs text-gray-500">%</span>
+        </Field>
+        <Field label="GE slots">
+          <NumberInput value={numSlots} onChange={updateNumSlots} className="w-16" />
+        </Field>
+        <Field label="Buy time">
+          <Select
+            value={effectiveSlot}
+            onChange={(e) => setBedtimeSlot(Number((e.target as HTMLSelectElement).value))}
+          >
+            {/* Your clock, and only your clock -- the UTC half was noise at the point of use. */}
+            {Array.from({ length: 48 }, (_, i) => (
+              <option key={i} value={i}>
+                {slotToLocalLabel(i)}
+              </option>
             ))}
-          </div>
-        </label>
-        <p className="text-xs text-gray-500 max-w-sm">
-          Buy near each item's typical price at your bedtime slot, sell near its typical price at
-          the best slot within the hold window — a real (if approximate) band, not a live tick.
-          {" "}
-          {RISK_HINT[riskPreset]}
-        </p>
-      </div>
+          </Select>
+          {bedtimeSlot != null && (
+            <button
+              onClick={() => setBedtimeSlot(null)}
+              className="text-xs text-violet-400 hover:text-violet-300"
+            >
+              now
+            </button>
+          )}
+        </Field>
+        <Field label="Max hold">
+          <NumberInput value={maxHoldHours} onChange={updateMaxHoldHours} className="w-16" />
+          <span className="text-xs text-gray-500">hours</span>
+        </Field>
+        <Field label="Risk preset">
+          {(Object.keys(RISK_LABEL) as RiskPreset[]).map((r) => (
+            <Chip key={r} active={riskPreset === r} onClick={() => updateRiskPreset(r)}>
+              {RISK_LABEL[r]}
+            </Chip>
+          ))}
+        </Field>
+      </Toolbar>
 
-      <div className="glass rounded-xl p-4 mb-4">
+      <Panel className="mb-4">
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <h3 className="text-sm font-medium text-gray-200">
-            Overnight board —{" "}
+          <h3 className="text-sm font-semibold text-gray-100">
+            Overnight board:{" "}
             {suggestionSlots > 0
               ? `${suggestionSlots} free slot${suggestionSlots === 1 ? "" : "s"} to fill`
               : "all slots in use"}
@@ -523,7 +516,7 @@ export function OvernightTrading({
         {picksData && picksData.itemsProfiled === 0 && (
           <EmptyState
             title="No item profiles yet"
-            hint="Slot profiles build in the background after startup (up to 250 liquid items, refreshed every 12h) — check back shortly."
+            hint="Slot profiles build in the background after startup (up to 250 liquid items, refreshed every 12h), check back shortly."
           />
         )}
 
@@ -598,7 +591,7 @@ export function OvernightTrading({
               />
               <Figure
                 label="Check back"
-                value={nextCheck ? slotToLocalLabel(nextCheck.slot) : "—"}
+                value={nextCheck ? slotToLocalLabel(nextCheck.slot) : "-"}
                 sub={nextCheck ? `in ${formatWait(nextCheck.wait)}` : "nothing to sell"}
                 tone="text-sky-300"
               />
@@ -607,7 +600,7 @@ export function OvernightTrading({
               /* Never fold an un-planned offer into the total as if it were a zero -- say it. */
               <p className="text-[10px] text-gray-500 mt-2">
                 {boardOutlook.held.unknown} offer
-                {boardOutlook.held.unknown === 1 ? "" : "s"} placed outside a plan — capital
+                {boardOutlook.held.unknown === 1 ? "" : "s"} placed outside a plan, capital
                 counted, profit not estimated.
               </p>
             )}
@@ -649,14 +642,14 @@ export function OvernightTrading({
 
         {limitedByBuyLimits && (
           <p className="text-[11px] text-amber-400/90 mt-2">
-            Capped by GE buy limits, not by bankroll — with {suggestionSlots} slot
+            Capped by GE buy limits, not by bankroll, with {suggestionSlots} slot
             {suggestionSlots === 1 ? "" : "s"} available, the current candidates can only absorb
             about {formatGp(totalCapacity)} between them (each item has a hard 4h purchase limit).
             More slots, or an "Aggressive" risk preset that reaches pricier items, would let more
             of the bankroll get used.
           </p>
         )}
-      </div>
+      </Panel>
 
       {/* Raw ranked picks feeding the board above, so every slot's price/edge can be checked
           against the real numbers rather than taken on faith -- same transparency principle as
@@ -713,22 +706,22 @@ export function OvernightTrading({
                       </div>
                     </td>
                     <td className="py-2 pr-3 text-right font-mono text-gray-300">
-                      {p.buyPrice != null ? formatGpFull(p.buyPrice) : "—"}
+                      {p.buyPrice != null ? formatGpFull(p.buyPrice) : "-"}
                     </td>
                     <td className="py-2 pr-3 text-right font-mono text-violet-300">
-                      {p.sellPrice != null ? formatGpFull(p.sellPrice) : "—"}
+                      {p.sellPrice != null ? formatGpFull(p.sellPrice) : "-"}
                     </td>
                     <td className="py-2 pr-3 text-right font-mono text-violet-300">
-                      {p.bestSellSlotLabel ? slotToLocalLabel(utcLabelToSlot(p.bestSellSlotLabel)) : "—"}
+                      {p.bestSellSlotLabel ? slotToLocalLabel(utcLabelToSlot(p.bestSellSlotLabel)) : "-"}
                     </td>
                     <td className="py-2 pr-3 text-right font-mono text-gray-400">
-                      {p.holdHours != null ? `${p.holdHours}h` : "—"}
+                      {p.holdHours != null ? `${p.holdHours}h` : "-"}
                     </td>
                     <td className="py-2 pr-3 text-right font-mono text-gray-200">
-                      {p.profitPerUnit != null ? formatGpFull(p.profitPerUnit) : "—"}
+                      {p.profitPerUnit != null ? formatGpFull(p.profitPerUnit) : "-"}
                     </td>
                     <td className="py-2 pr-3 text-right font-mono text-emerald-400">
-                      {p.timingEdgePct != null ? `${(p.timingEdgePct * 100).toFixed(2)}%` : "—"}
+                      {p.timingEdgePct != null ? `${(p.timingEdgePct * 100).toFixed(2)}%` : "-"}
                     </td>
                       {/* §14.51: the sample, next to the claim. "4/7 days" is the difference
                           between a pattern and a coincidence, and it costs one column. */}
@@ -747,7 +740,7 @@ export function OvernightTrading({
                           : "")
                       }
                       >
-                        {p.pairedDays > 0 ? `${p.winDays}/${p.pairedDays}` : "—"}
+                        {p.pairedDays > 0 ? `${p.winDays}/${p.pairedDays}` : "-"}
                       </td>
                     {/* Units this bankroll can actually take (buy limit or affordability,
                         whichever binds), what that ties up, and what it earns -- same bankroll-
@@ -780,7 +773,7 @@ export function OvernightTrading({
           <p className="text-[10px] text-gray-600 mt-2 leading-relaxed">
             Same method as Item of the Hour, window-constrained to an actual overnight hold:
             median buy/sell price per half-hour slot over the last ~7.6 days, detrended per day
-            and aggregated with a median. "Edge" is the real after-tax return — it requires
+            and aggregated with a median. "Edge" is the real after-tax return, it requires
             holding for the stated time, not an instant margin.
           </p>
         </div>

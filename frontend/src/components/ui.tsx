@@ -1,5 +1,10 @@
 import { useEffect, useState } from "preact/hooks";
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "preact/compat";
+import type {
+  ButtonHTMLAttributes,
+  InputHTMLAttributes,
+  ReactNode,
+  SelectHTMLAttributes,
+} from "preact/compat";
 import { formatGpCompact, parseGpShorthand } from "../format";
 import { InfoTip } from "./InfoTip";
 import type { ExplanationId } from "../explanations";
@@ -100,7 +105,7 @@ export function Badge({
 export function Input({ className = "", ...rest }: InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
-      className={`glass rounded-lg px-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 outline-none focus:border-violet-400/40 focus:ring-1 focus:ring-violet-400/30 transition-colors ${className}`}
+      className={`h-9 glass rounded-lg px-3 text-sm text-gray-100 placeholder:text-gray-500 outline-none focus:border-violet-400/40 focus:ring-1 focus:ring-violet-400/30 transition-colors ${className}`}
       {...rest}
     />
   );
@@ -277,6 +282,130 @@ export function StatCard({
       </div>
       <div className={`font-mono text-lg font-semibold mt-0.5 ${valueClass}`}>{value}</div>
       {hint && <div className="text-[11px] text-gray-500 mt-0.5">{hint}</div>}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Layout primitives. Every screen had been hand-rolling its own control bar out of
+// `flex flex-wrap items-end`, which is the direct cause of the misalignment reported on the
+// Overnight bar: with `items-end`, a label long enough to wrap ("Max allocation per item (%)")
+// pushes its own input down, and the row then aligns everything by its BOTTOM edge -- so the
+// labels land at three different heights and the inputs at two. Fixed label and control heights
+// remove the possibility rather than tuning around it.
+
+/** Standard elevated surface. Prefer this over a bare `.glass` div. */
+export function Panel({
+  children,
+  className = "",
+  padded = true,
+}: {
+  children: ReactNode;
+  className?: string;
+  padded?: boolean;
+}) {
+  return (
+    <div className={`panel rounded-xl ${padded ? "p-4" : ""} ${className}`}>{children}</div>
+  );
+}
+
+/** Recessed group inside a Panel, for a block of readouts. */
+export function PanelInset({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <div className={`panel-inset rounded-lg ${className}`}>{children}</div>;
+}
+
+/**
+ * One labelled control. The label is a single non-wrapping line at a fixed height and the control
+ * sits in a fixed-height row beneath it, so a bar of these aligns on two clean baselines no matter
+ * how long any individual label is.
+ */
+export function Field({
+  label,
+  children,
+  hint,
+  explain,
+  className = "",
+}: {
+  label: string;
+  children: ReactNode;
+  hint?: string;
+  explain?: ExplanationId;
+  className?: string;
+}) {
+  return (
+    <div className={`flex flex-col gap-1.5 ${className}`}>
+      <span className="h-3 flex items-center gap-1 text-[10px] uppercase tracking-wider text-gray-500 font-medium whitespace-nowrap">
+        {label}
+        {explain && <InfoTip id={explain} />}
+      </span>
+      <div className="h-9 flex items-center gap-1.5">{children}</div>
+      {hint && <span className="text-[10px] text-gray-600 leading-tight">{hint}</span>}
+    </div>
+  );
+}
+
+/**
+ * A bar of Fields, with optional explanatory text pinned to the right behind a divider so it
+ * reads as an aside rather than as another control competing for the same row.
+ */
+export function Toolbar({
+  children,
+  aside,
+  className = "",
+}: {
+  children: ReactNode;
+  aside?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <Panel className={`mb-4 ${className}`}>
+      <div className="flex flex-wrap items-start gap-x-6 gap-y-4">
+        {children}
+        {aside && (
+          <p className="text-[11px] leading-relaxed text-gray-500 max-w-xs ml-auto self-stretch border-l border-white/10 pl-4">
+            {aside}
+          </p>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
+/** Native select, styled to match Input so a control bar reads as one set of controls. */
+export function Select({
+  className = "",
+  children,
+  ...rest
+}: SelectHTMLAttributes<HTMLSelectElement> & { children: ReactNode }) {
+  return (
+    <select
+      className={`h-9 glass rounded-lg px-2.5 text-sm text-gray-100 outline-none focus:border-violet-400/40 focus:ring-1 focus:ring-violet-400/30 transition-colors ${className}`}
+      {...rest}
+    >
+      {children}
+    </select>
+  );
+}
+
+/** Section heading inside a Panel: title, muted meta, optional right-hand slot. */
+export function PanelHeader({
+  title,
+  meta,
+  right,
+  className = "",
+}: {
+  title: ReactNode;
+  meta?: ReactNode;
+  right?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`flex items-baseline justify-between gap-3 flex-wrap mb-3 ${className}`}>
+      <h3 className="text-sm font-semibold text-gray-100 flex items-baseline gap-2 flex-wrap">
+        {title}
+        {meta && <span className="text-[11px] font-normal text-gray-500">{meta}</span>}
+      </h3>
+      {right}
     </div>
   );
 }

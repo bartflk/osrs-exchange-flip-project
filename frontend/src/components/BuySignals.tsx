@@ -8,7 +8,7 @@ import {
 } from "../api";
 import { formatGp, formatGpFull, formatPct } from "../format";
 import { allocateCapital } from "../capitalAllocator";
-import { NumberInput, GpInput, Chip, Button } from "./ui";
+import { NumberInput, GpInput, Chip, Button, Toolbar, Field } from "./ui";
 import { type Offer, loadOffers, saveOffers } from "../offers";
 import { type Fill, loadFills, saveFills } from "../fills";
 import { GeOffersPanel } from "./GeOffersPanel";
@@ -430,35 +430,29 @@ export function BuySignals({
 
   return (
     <div>
-      <div className="glass rounded-xl p-4 mb-4 flex flex-wrap items-end gap-6">
-        <label className="text-xs text-gray-400 flex flex-col gap-1">
-          <span className="inline-flex items-center gap-1">
-            Bankroll (gp)
-            <InfoTip id="capitalAllocator" />
-          </span>
-          <GpInput value={bankroll} onChange={updateBankroll} className="w-40" />
-        </label>
-        <label className="text-xs text-gray-400 flex flex-col gap-1">
-          <span className="inline-flex items-center gap-1">
-            Max allocation per item (%)
-            <InfoTip id="capitalAllocator" />
-          </span>
-          <NumberInput value={allocationPct} onChange={updateAllocation} className="w-24" />
-        </label>
-        <label className="text-xs text-gray-400 flex flex-col gap-1">
-          GE slots
+      <Toolbar
+        aside={
+          <>
+            Suggested quantity = min(buy limit, {formatGp(bankroll * (allocationPct / 100))} ÷ buy
+            price). Ranked by the same score as the Market tab.
+          </>
+        }
+      >
+        <Field label="Bankroll" explain="capitalAllocator">
+          <GpInput value={bankroll} onChange={updateBankroll} className="w-36" />
+        </Field>
+        <Field label="Max per item" explain="capitalAllocator">
+          <NumberInput value={allocationPct} onChange={updateAllocation} className="w-20" />
+          <span className="text-xs text-gray-500">%</span>
+        </Field>
+        <Field label="GE slots">
           <NumberInput
             value={numSlots}
             onChange={(v) => updateNumSlots(Math.max(1, Math.min(8, v)))}
-            className="w-20"
+            className="w-16"
           />
-        </label>
-        <p className="text-xs text-gray-500 max-w-md">
-          Suggested quantity = min(buy limit, {formatGp(bankroll * (allocationPct / 100))} ÷ buy
-          price). Ranked by the same score as the Market tab. No account/bank data yet — see
-          DESIGN.md §6.5.
-        </p>
-      </div>
+        </Field>
+      </Toolbar>
 
       {/* DESIGN.md §11.3 item 7: capital allocator -- fills your actual GE slots, one item each,
           respecting the per-item cap and the total bankroll (not just "everything affordable").
@@ -474,7 +468,7 @@ export function BuySignals({
             <h3 className="text-sm font-medium text-gray-200">
               {/* Says what it's actually planning, rather than implying all 8 slots are yours to
                   fill when the GE says otherwise. */}
-              Grand Exchange —{" "}
+              Grand Exchange:{" "}
               {suggestionSlots > 0
                 ? `${suggestionSlots} free slot${suggestionSlots === 1 ? "" : "s"} to fill`
                 : "all slots in use"}
