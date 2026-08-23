@@ -65,20 +65,20 @@ export function TechnicalIndicatorsPanel({ itemId }: { itemId: number }) {
         <Stat label="EMA 26" value={formatGpFull(data.ema26)} />
         <Stat
           label="MACD"
-          value={data.macd != null ? formatGpFull(data.macd.macd) : "—"}
+          value={data.macd != null ? formatGpFull(data.macd.macd) : "-"}
         />
         <Stat
           label="MACD signal"
-          value={data.macd?.signal != null ? formatGpFull(data.macd.signal) : "—"}
+          value={data.macd?.signal != null ? formatGpFull(data.macd.signal) : "-"}
         />
-        <Stat label="RSI 14" value={data.rsi14 != null ? data.rsi14.toFixed(1) : "—"} tone={rsiTone} />
+        <Stat label="RSI 14" value={data.rsi14 != null ? data.rsi14.toFixed(1) : "-"} tone={rsiTone} />
         <Stat label="ATR 14" value={formatGpFull(data.atr14)} />
         <Stat
           label="Bollinger band"
           value={
             data.bollinger20
               ? `${formatGpFull(data.bollinger20.lower)} – ${formatGpFull(data.bollinger20.upper)}`
-              : "—"
+              : "-"
           }
         />
         <Stat
@@ -90,15 +90,15 @@ export function TechnicalIndicatorsPanel({ itemId }: { itemId: number }) {
         <Stat label="Trend slope (%/day)" value={formatPct(data.trendSlopePctPerDay)} />
         <Stat
           label="Buy-limit utilization"
-          value={data.buyLimitUtilization != null ? `${data.buyLimitUtilization.toFixed(1)}x` : "—"}
+          value={data.buyLimitUtilization != null ? `${data.buyLimitUtilization.toFixed(1)}x` : "-"}
         />
         <Stat
           label="Days since crash"
-          value={data.daysSinceCrash != null ? `${data.daysSinceCrash}d` : "—"}
+          value={data.daysSinceCrash != null ? `${data.daysSinceCrash}d` : "-"}
         />
         <Stat
           label="Days since spike"
-          value={data.daysSinceSpike != null ? `${data.daysSinceSpike}d` : "—"}
+          value={data.daysSinceSpike != null ? `${data.daysSinceSpike}d` : "-"}
         />
         <Stat
           label="Calendar (UTC)"
@@ -108,8 +108,8 @@ export function TechnicalIndicatorsPanel({ itemId }: { itemId: number }) {
 
       <p className="text-[11px] text-gray-600">
         Textbook SMA/EMA/MACD/RSI/Bollinger/ATR formulas over daily closes (price_daily
-        warehouse), not fitted or backtested. Fields read "—" when there isn't enough daily
-        history yet rather than guess — see DESIGN.md §10 item 25.
+        warehouse), not fitted or backtested. Fields read "-" when there isn't enough daily
+        history yet rather than guess, see DESIGN.md §10 item 25.
       </p>
     </div>
   );

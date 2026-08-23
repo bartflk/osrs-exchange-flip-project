@@ -484,7 +484,7 @@ export function MarketTable({
                         showToast(
                           isBlocked
                             ? `${item.name} unblocked`
-                            : `${item.name} blocked — won't appear in Buy Signals`,
+                            : `${item.name} blocked, won't appear in Buy Signals`,
                           isBlocked ? "neutral" : "danger",
                         );
                       }}
@@ -546,12 +546,12 @@ export function MarketTable({
                     {Math.round(item.liquidity).toLocaleString()}
                   </td>
                   <td className="px-3 py-2 font-mono text-gray-400 text-right">
-                    {item.buy_limit != null ? item.buy_limit.toLocaleString() : "—"}
+                    {item.buy_limit != null ? item.buy_limit.toLocaleString() : "-"}
                   </td>
                   <td
                     className={`px-3 py-2 font-mono text-right ${potProfit == null ? "text-gray-600" : potProfit > 0 ? "text-emerald-400" : "text-rose-400"}`}
                   >
-                    {potProfit != null && potProfit > 0 ? formatGp(potProfit) : "—"}
+                    {potProfit != null && potProfit > 0 ? formatGp(potProfit) : "-"}
                   </td>
                   <td
                     className={`px-3 py-2 font-mono text-right ${positive ? "text-emerald-400" : "text-rose-400"}`}

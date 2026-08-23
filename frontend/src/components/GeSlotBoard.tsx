@@ -113,7 +113,7 @@ export function GeSlotBoard({
 
               {v.status === "empty" ? (
                 <div className="flex-1 flex items-center justify-center text-xs text-gray-700">
-                  —
+                  -
                 </div>
               ) : (
                 <>

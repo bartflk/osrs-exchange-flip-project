@@ -100,7 +100,7 @@ export function TrendLeaderboard({
       {!loading && !error && entries.length === 0 && (
         <p className="text-xs text-gray-500 py-2">
           {timeWindow === "7d" || timeWindow === "30d"
-            ? "Not enough local price history yet for this window — the daily rollup needs to run for that many days first."
+            ? "Not enough local price history yet for this window, the daily rollup needs to run for that many days first."
             : "No qualifying movers right now."}
         </p>
       )}

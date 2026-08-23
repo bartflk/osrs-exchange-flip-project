@@ -51,7 +51,7 @@ export function ItemMentions({ itemId }: { itemId: number }) {
             </a>
             <span className="text-gray-600">
               {" "}
-              — {sourceLabel(m.source)} · {m.eventDate}
+             , {sourceLabel(m.source)} · {m.eventDate}
             </span>
           </li>
         ))}

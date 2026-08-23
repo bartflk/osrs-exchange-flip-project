@@ -219,7 +219,7 @@ export function buildSlotViews(
 
     if (done) {
       status = "collect";
-      detail = `${slot.type === "buy" ? "Bought" : "Sold"} all ${slot.totalQuantity.toLocaleString()} — collect it`;
+      detail = `${slot.type === "buy" ? "Bought" : "Sold"} all ${slot.totalQuantity.toLocaleString()}, collect it`;
       suggestedPrice = null;
     } else if (onPlan && plan) {
       // Checked BEFORE cancel as well as before reprice, and both for the same reason: those two
@@ -237,7 +237,7 @@ export function buildSlotViews(
           ? ""
           : (slot.type === "buy" && slot.price >= (ref ?? 0)) ||
               (slot.type === "sell" && slot.price <= (ref ?? Infinity))
-            ? " At market — should fill."
+            ? " At market, should fill."
             : ` Priced ${(gapPct * 100).toFixed(1)}% ${side} market by design.`;
       detail = `On plan.${fills}`;
       // No suggested reprice: there is nothing to correct.

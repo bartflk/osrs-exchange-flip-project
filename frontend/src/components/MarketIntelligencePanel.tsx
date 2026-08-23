@@ -122,7 +122,7 @@ export function MarketIntelligencePanel({ itemId }: { itemId: number }) {
         />
         <IndicatorStat
           label="Spread stability"
-          value={ind.spreadStabilityScore != null ? `${ind.spreadStabilityScore}/100` : "—"}
+          value={ind.spreadStabilityScore != null ? `${ind.spreadStabilityScore}/100` : "-"}
         />
         <IndicatorStat
           label="Mean reversion"
@@ -153,7 +153,7 @@ export function MarketIntelligencePanel({ itemId }: { itemId: number }) {
       </div>
 
       <p className="text-[11px] text-gray-600">
-        Based on {ind.sampleSize} local price ticks — heuristic, not backtested. Opportunity score combines all of the above; see DESIGN.md §10 items 36-45.
+        Based on {ind.sampleSize} local price ticks, heuristic, not backtested. Opportunity score combines all of the above; see DESIGN.md §10 items 36-45.
       </p>
     </div>
   );

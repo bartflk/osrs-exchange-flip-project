@@ -155,7 +155,7 @@ export function BankImport({
       setText(clip);
       await handleParse(clip, mode);
     } catch {
-      setError("Couldn't read the clipboard — paste manually into the box instead.");
+      setError("Couldn't read the clipboard, paste manually into the box instead.");
     }
   }
 
@@ -220,7 +220,7 @@ export function BankImport({
           "(League)"/ "(Tournament)", plus any you've manually named) alongside the live one. Make
           sure you're right-clicking the top-most{" "}
           <span className="text-gray-300">"Current bank &lt;name&gt;"</span> entry under Saved Banks
-          — not an older named snapshot — before choosing "Copy item data to clipboard," or you'll
+         , not an older named snapshot, before choosing "Copy item data to clipboard," or you'll
           get a stale export. "Parse & add" below merges multiple pastes if you still need to
           combine snapshots.
         </p>
@@ -270,7 +270,7 @@ export function BankImport({
             >
               ⚠ {skipped.length} line{skipped.length === 1 ? "" : "s"} couldn't be read from that
               paste
-              {showSkipped ? " — hide" : " — show"}
+              {showSkipped ? ", hide" : ", show"}
             </button>
             {showSkipped && (
               <pre className="mt-1 glass rounded-lg p-2 text-gray-400 whitespace-pre-wrap max-h-32 overflow-auto">

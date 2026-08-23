@@ -52,7 +52,7 @@ export function PlayerPanel({ username }: { username: string }) {
   if (!username.trim()) {
     return (
       <p className="text-xs text-gray-500 py-2">
-        Enter your OSRS username above to pull skill levels from Wise Old Man — used by the upcoming
+        Enter your OSRS username above to pull skill levels from Wise Old Man, used by the upcoming
         session planner to suggest activities you can actually do.
       </p>
     );
@@ -76,7 +76,7 @@ export function PlayerPanel({ username }: { username: string }) {
           return (
             <div key={skill} className="flex items-center justify-between">
               <span className="text-gray-500 capitalize">{skill}</span>
-              <span className="font-mono text-gray-200">{entry?.level ?? "—"}</span>
+              <span className="font-mono text-gray-200">{entry?.level ?? "-"}</span>
             </div>
           );
         })}

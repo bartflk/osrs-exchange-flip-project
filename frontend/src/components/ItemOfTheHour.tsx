@@ -114,7 +114,7 @@ export function ItemOfTheHour({
               title="No timing edge at this slot"
               hint={
                 data.itemsProfiled === 0
-                  ? "Item profiles are still being built — this runs in the background shortly after startup."
+                  ? "Item profiles are still being built, this runs in the background shortly after startup."
                   : "Nothing profiled shows a profitable later sell point for this half-hour."
               }
             />
@@ -165,24 +165,24 @@ export function ItemOfTheHour({
                         </div>
                       </td>
                       <td className="py-2 pr-3 text-right font-mono text-gray-300">
-                        {p.buyPrice != null ? formatGpFull(p.buyPrice) : "—"}
+                        {p.buyPrice != null ? formatGpFull(p.buyPrice) : "-"}
                       </td>
                       {/* §14.45: real gp at the sell slot, so buy@ -> sell@ -> profit/unit is
                           arithmetic the reader can check, not a percentage to take on faith. */}
                       <td className="py-2 pr-3 text-right font-mono text-orange-300">
-                        {p.sellPrice != null ? formatGpFull(p.sellPrice) : "—"}
+                        {p.sellPrice != null ? formatGpFull(p.sellPrice) : "-"}
                       </td>
                       <td className="py-2 pr-3 text-right font-mono text-orange-300">
-                        {p.bestSellSlotLabel ? slotToLocalLabel(utcLabelToSlot(p.bestSellSlotLabel)) : "—"}
+                        {p.bestSellSlotLabel ? slotToLocalLabel(utcLabelToSlot(p.bestSellSlotLabel)) : "-"}
                       </td>
                       <td className="py-2 pr-3 text-right font-mono text-gray-400">
-                        {p.holdHours != null ? `${p.holdHours}h` : "—"}
+                        {p.holdHours != null ? `${p.holdHours}h` : "-"}
                       </td>
                       <td className="py-2 pr-3 text-right font-mono text-gray-200">
-                        {p.profitPerUnit != null ? formatGpFull(p.profitPerUnit) : "—"}
+                        {p.profitPerUnit != null ? formatGpFull(p.profitPerUnit) : "-"}
                       </td>
                       <td className="py-2 pr-3 text-right font-mono text-emerald-400">
-                        {p.timingEdgePct != null ? `${(p.timingEdgePct * 100).toFixed(2)}%` : "—"}
+                        {p.timingEdgePct != null ? `${(p.timingEdgePct * 100).toFixed(2)}%` : "-"}
                       </td>
                       {/* §14.51: the sample, next to the claim. "4/7 days" is the difference
                           between a pattern and a coincidence, and it costs one column. */}
@@ -201,7 +201,7 @@ export function ItemOfTheHour({
                             : "")
                         }
                       >
-                        {p.pairedDays > 0 ? `${p.winDays}/${p.pairedDays}` : "—"}
+                        {p.pairedDays > 0 ? `${p.winDays}/${p.pairedDays}` : "-"}
                       </td>
                       {/* §14.46: units your bankroll can actually take (buy limit or affordability,
                           whichever binds), the gp it ties up, and what that earns. Amber when the

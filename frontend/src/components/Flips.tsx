@@ -21,7 +21,7 @@ function iconUrl(icon: string | null | undefined): string {
 }
 
 function fmtTime(unix: number | null): string {
-  if (!unix) return "—";
+  if (!unix) return "-";
   return new Date(unix * 1000).toLocaleString(undefined, {
     month: "short",
     day: "numeric",
@@ -203,10 +203,10 @@ function FlipsTable({
               <td className="py-2 pr-3 text-right font-mono text-gray-400">{f.bought.toLocaleString()}</td>
               <td className="py-2 pr-3 text-right font-mono text-gray-400">{f.sold.toLocaleString()}</td>
               <td className="py-2 pr-3 text-right font-mono text-gray-300">
-                {f.avgBuyPrice ? formatGpFull(f.avgBuyPrice) : "—"}
+                {f.avgBuyPrice ? formatGpFull(f.avgBuyPrice) : "-"}
               </td>
               <td className="py-2 pr-3 text-right font-mono text-gray-300">
-                {f.avgSellPrice ? formatGpFull(f.avgSellPrice) : "—"}
+                {f.avgSellPrice ? formatGpFull(f.avgSellPrice) : "-"}
               </td>
               <td className="py-2 pr-3 text-right font-mono text-gray-500">{formatGp(f.tax)}</td>
               <td className="py-2 pr-3 text-right">
@@ -219,7 +219,7 @@ function FlipsTable({
                 )}
               </td>
               <td className="py-2 text-right font-mono text-gray-400">
-                {f.sold > f.bought || f.roiPct == null ? "—" : formatPct(f.roiPct)}
+                {f.sold > f.bought || f.roiPct == null ? "-" : formatPct(f.roiPct)}
               </td>
             </tr>
           ))}
@@ -286,7 +286,7 @@ function TransactionsTable() {
               <td className="py-2 pr-3 text-right font-mono text-gray-300">{t.quantity.toLocaleString()}</td>
               <td className="py-2 pr-3 text-right font-mono text-gray-400">{formatGpFull(t.price)}</td>
               <td className="py-2 pr-3 text-right font-mono text-gray-300">{formatGp(t.spent)}</td>
-              <td className="py-2 pr-3 text-right font-mono text-gray-600">{t.slot ?? "—"}</td>
+              <td className="py-2 pr-3 text-right font-mono text-gray-600">{t.slot ?? "-"}</td>
               <td className="py-2 text-[11px] text-gray-600">{t.source}</td>
             </tr>
           ))}
@@ -401,8 +401,8 @@ function VisualizeFlip({
               <DetailRow label="Status" value={flip.status} />
               <DetailRow label="Bought" value={flip.bought.toLocaleString()} />
               <DetailRow label="Sold" value={flip.sold.toLocaleString()} />
-              <DetailRow label="Avg. buy price" value={flip.avgBuyPrice ? formatGpFull(flip.avgBuyPrice) : "—"} />
-              <DetailRow label="Avg. sell price" value={flip.avgSellPrice ? formatGpFull(flip.avgSellPrice) : "—"} />
+              <DetailRow label="Avg. buy price" value={flip.avgBuyPrice ? formatGpFull(flip.avgBuyPrice) : "-"} />
+              <DetailRow label="Avg. sell price" value={flip.avgSellPrice ? formatGpFull(flip.avgSellPrice) : "-"} />
               <DetailRow label="Tax" value={formatGp(flip.tax)} />
               <DetailRow
                 label="Profit"
@@ -412,7 +412,7 @@ function VisualizeFlip({
               <DetailRow label="Profit ea." value={flip.sold > flip.bought ? "n/a" : formatGp(flip.profitEach)} />
               <DetailRow
                 label="ROI"
-                value={flip.sold > flip.bought || flip.roiPct == null ? "—" : formatPct(flip.roiPct)}
+                value={flip.sold > flip.bought || flip.roiPct == null ? "-" : formatPct(flip.roiPct)}
               />
             </div>
             {detail.length > 1 && (
@@ -493,7 +493,7 @@ function MissedFlips({ onVisualize }: { onVisualize: (itemId: number) => void })
       <div className="glass rounded-xl p-4">
         <h3 className="text-sm font-medium text-gray-200 mb-1">Stalled over 24h</h3>
         <p className="text-xs text-gray-500 mb-3">
-          Open more than a day — either still filling, or worth a look at your price.
+          Open more than a day, either still filling, or worth a look at your price.
         </p>
         <MissedTable flips={data.stalled} onVisualize={onVisualize} empty="Nothing stalled." />
       </div>
@@ -544,7 +544,7 @@ function MissedTable({
               <td className="py-2 pr-3 text-right font-mono text-gray-400">{f.bought.toLocaleString()}</td>
               <td className="py-2 pr-3 text-right font-mono text-gray-400">{f.sold.toLocaleString()}</td>
               <td className="py-2 text-right font-mono text-gray-300">
-                {f.avgSellPrice ? formatGpFull(f.avgSellPrice) : "—"}
+                {f.avgSellPrice ? formatGpFull(f.avgSellPrice) : "-"}
               </td>
             </tr>
           ))}

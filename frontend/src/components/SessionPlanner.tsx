@@ -115,8 +115,8 @@ export function SessionPlanner({ username }: { username: string }) {
       </div>
       <p className="text-xs text-gray-500 mb-3">
         Filtered to what your current skill levels actually unlock. Profit shown where computable
-        from live GE prices (gem cutting, Herblore potions) — pure-XP activities show no figure
-        rather than a fabricated one. Goal changes ranking, not just what's shown — "Max profit"
+        from live GE prices (gem cutting, Herblore potions), pure-XP activities show no figure
+        rather than a fabricated one. Goal changes ranking, not just what's shown, "Max profit"
         always ranks by GP, "Active grinding" favors non-AFK activities, "AFK-first" (default)
         favors passive activities when the wait is long enough to matter.
       </p>

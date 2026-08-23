@@ -38,7 +38,7 @@ export function MarketTemperatureGauge() {
   return (
     <div
       className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${LABEL_TONE[temp.label]}`}
-      title={`${temp.gainersCount} up, ${temp.losersCount} down, ${temp.flatCount} flat of ${temp.totalCount} tracked items (24h) — avg ${(temp.avgChangePct * 100).toFixed(2)}%`}
+      title={`${temp.gainersCount} up, ${temp.losersCount} down, ${temp.flatCount} flat of ${temp.totalCount} tracked items (24h), avg ${(temp.avgChangePct * 100).toFixed(2)}%`}
     >
       <span className="font-semibold">Market: {LABEL_TEXT[temp.label]}</span>
       <span className="font-mono opacity-80">{(temp.gainerPct * 100).toFixed(0)}% up</span>

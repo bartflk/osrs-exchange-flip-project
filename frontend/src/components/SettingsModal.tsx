@@ -135,7 +135,7 @@ export function SettingsModal({
                 : permission === "granted"
                   ? "Enabled"
                   : permission === "denied"
-                    ? "Blocked — enable in your browser's site settings"
+                    ? "Blocked, enable in your browser's site settings"
                     : "Not enabled yet"
             }
           >
@@ -238,7 +238,7 @@ export function SettingsModal({
                     ✓ {llmTest.result.model} responded in {llmTest.result.latencyMs}ms
                   </div>
                   <div className="text-gray-400 mt-0.5">
-                    {llmTest.result.baseURL} — reply: "{llmTest.result.reply}"
+                    {llmTest.result.baseURL}, reply: "{llmTest.result.reply}"
                   </div>
                 </>
               ) : (

@@ -10,7 +10,7 @@ import { InfoTip } from "./InfoTip";
 // local generation must never hold up data that's already computed.
 
 function fmtHour(h: number | null | undefined): string {
-  if (h == null) return "—";
+  if (h == null) return "-";
   return `${String(h).padStart(2, "0")}:00`;
 }
 
@@ -112,7 +112,7 @@ export function TradingHoursPanel({ itemId }: { itemId: number }) {
           />
           <Stat
             label="Timing edge"
-            value={data.timingEdgePct != null ? `${(data.timingEdgePct * 100).toFixed(2)}%` : "—"}
+            value={data.timingEdgePct != null ? `${(data.timingEdgePct * 100).toFixed(2)}%` : "-"}
             hint="after tax"
             tone="text-emerald-300"
           />
@@ -121,7 +121,7 @@ export function TradingHoursPanel({ itemId }: { itemId: number }) {
               seasonality look like a quick flip. */}
           <Stat
             label="Hold time"
-            value={data.holdHours != null ? `~${data.holdHours}h` : "—"}
+            value={data.holdHours != null ? `~${data.holdHours}h` : "-"}
             hint="buy → sell window"
             tone="text-gray-200"
           />

@@ -238,15 +238,15 @@ export async function computeTradingHours(itemId: number): Promise<TradingHours>
   let caveat: string | null = null;
   if (hoursCovered < MIN_HOURS_COVERED) {
     reliable = false;
-    caveat = `Only ${hoursCovered} of 24 hours have enough data — not enough to call a best time.`;
+    caveat = `Only ${hoursCovered} of 24 hours have enough data, not enough to call a best time.`;
   } else if (Math.max(buySwing, sellSwing) < MEANINGFUL_SWING_PCT) {
     reliable = false;
-    caveat = `This item's price barely moves by hour (swing under ${(MEANINGFUL_SWING_PCT * 100).toFixed(1)}%) — timing it isn't worth much.`;
+    caveat = `This item's price barely moves by hour (swing under ${(MEANINGFUL_SWING_PCT * 100).toFixed(1)}%), timing it isn't worth much.`;
   } else if (daysCovered < 6) {
     // 7 days is the API's maximum hourly window, so this fires only when an item genuinely has
     // gaps (thin trading), not merely because the window is short.
     reliable = false;
-    caveat = `Only ${daysCovered} days of hourly data — too thin to call a pattern.`;
+    caveat = `Only ${daysCovered} days of hourly data, too thin to call a pattern.`;
   }
 
   const result: TradingHours = {

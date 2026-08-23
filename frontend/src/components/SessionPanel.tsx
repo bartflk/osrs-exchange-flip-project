@@ -136,7 +136,7 @@ export function SessionPanel() {
               tone={stats.unrealizedProfit > 0 ? "good" : stats.unrealizedProfit < 0 ? "bad" : undefined}
             />
             <Row label="Flips made" value={String(stats.flipsFinished)} />
-            <Row label="ROI" value={stats.roiPct != null ? formatPct(stats.roiPct) : "—"} />
+            <Row label="ROI" value={stats.roiPct != null ? formatPct(stats.roiPct) : "-"} />
             <Row label="Session time" value={formatDuration(elapsed)} />
             <Row label="Hourly profit" value={`${formatGp(stats.gpPerHour ?? 0)}/hr`} explain="gpPerHour" />
             <Row label="Portfolio value" value={formatGp(stats.positionsValue)} />
@@ -149,7 +149,7 @@ export function SessionPanel() {
           {stats.excludedUnmatchedFlips > 0 && (
             <p className="mt-3 pt-3 border-t border-white/10 text-[11px] text-amber-400/80 leading-relaxed">
               {stats.excludedUnmatchedFlips} flip{stats.excludedUnmatchedFlips === 1 ? "" : "s"} (
-              {formatGp(stats.excludedUnmatchedRevenue)} of sales) excluded — bought before tracking
+              {formatGp(stats.excludedUnmatchedRevenue)} of sales) excluded, bought before tracking
               started, so profit can't be calculated. See Missed flips.
             </p>
           )}

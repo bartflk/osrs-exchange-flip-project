@@ -47,7 +47,7 @@ export function MarketAlerts({
           onClick={() => openAlert(a)}
           title={
             a.kind === "volume"
-              ? "Unusual volume vs. this item's own 24h baseline — possible bot activity"
+              ? "Unusual volume vs. this item's own 24h baseline, possible bot activity"
               : undefined
           }
           className={`group flex items-center gap-1.5 pl-1.5 pr-1 py-0.5 rounded-full text-xs border transition-colors ${

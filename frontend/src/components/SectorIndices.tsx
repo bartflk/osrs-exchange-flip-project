@@ -72,7 +72,7 @@ export function SectorIndices() {
         <div>
           <h3 className="text-sm font-medium text-gray-200">Sector indices</h3>
           <p className="text-xs text-gray-500">
-            Curated item baskets, averaged — small, stable-price groups so one item's move doesn't
+            Curated item baskets, averaged, small, stable-price groups so one item's move doesn't
             dominate. See DESIGN.md §10 item 20.
           </p>
         </div>

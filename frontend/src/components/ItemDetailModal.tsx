@@ -320,13 +320,13 @@ export function ItemDetailModal({
           />
           <Stat
             label="GE tax (2%)"
-            value={item.tax ? `-${formatGp(item.tax)}` : "—"}
+            value={item.tax ? `-${formatGp(item.tax)}` : "-"}
             positive={item.tax ? false : undefined}
             explain="geTax"
           />
           <Stat
             label="Buy limit (4h)"
-            value={item.buy_limit != null ? item.buy_limit.toLocaleString() : "—"}
+            value={item.buy_limit != null ? item.buy_limit.toLocaleString() : "-"}
             explain="buyLimitWindow"
           />
           <Stat
@@ -339,7 +339,7 @@ export function ItemDetailModal({
             value={
               (item.vol_high_1h ?? 0) > 0
                 ? ((item.vol_low_1h ?? 0) / item.vol_high_1h!).toFixed(2)
-                : "—"
+                : "-"
             }
             positive={
               (item.vol_high_1h ?? 0) > 0
@@ -351,7 +351,7 @@ export function ItemDetailModal({
           <VolStat label="Vol 5m" buy={item.vol_low_5m} sell={item.vol_high_5m} />
           <Stat
             label="Volatility (24h)"
-            value={item.volatility_pct != null ? `${(item.volatility_pct * 100).toFixed(1)}%` : "—"}
+            value={item.volatility_pct != null ? `${(item.volatility_pct * 100).toFixed(1)}%` : "-"}
             positive={item.volatility_pct != null ? item.volatility_pct < 0.05 : undefined}
             explain="volatility"
           />
@@ -419,7 +419,7 @@ export function ItemDetailModal({
             <Stat
               label="This item's success rate"
               value={
-                trackRecord.winRate != null ? `${(trackRecord.winRate * 100).toFixed(0)}%` : "—"
+                trackRecord.winRate != null ? `${(trackRecord.winRate * 100).toFixed(0)}%` : "-"
               }
               positive={trackRecord.winRate != null ? trackRecord.winRate >= 0.5 : undefined}
             />
@@ -455,7 +455,7 @@ export function ItemDetailModal({
 
         {blended && (
           <p className="text-[11px] text-gray-500 mb-2">
-            Full history from the item's GE release, via the OSRS Wiki's long-range archive — daily
+            Full history from the item's GE release, via the OSRS Wiki's long-range archive, daily
             blended price only (no separate buy/sell spread this far back), shown as a single line
             below.
           </p>

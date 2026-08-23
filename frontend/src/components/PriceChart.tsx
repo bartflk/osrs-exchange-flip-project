@@ -522,7 +522,7 @@ export function PriceChart({
               fill={m.kind === "buy" ? "#38bdf8" : "#fb923c"}
               opacity={0.9}
             >
-              <title>{`${m.label} — ${m.when}`}</title>
+              <title>{`${m.label}, ${m.when}`}</title>
             </circle>
             <text
               x={m.cx}

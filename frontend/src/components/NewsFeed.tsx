@@ -44,7 +44,7 @@ export function NewsFeed() {
     <div>
       <div className="glass rounded-xl p-4 mb-4">
         <p className="text-sm text-gray-300">
-          Official OSRS patch notes (daily) and top-of-day posts from r/2007scape (hourly) —
+          Official OSRS patch notes (daily) and top-of-day posts from r/2007scape (hourly):
           titles, links, and post dates only, no comments or per-item impact tagging yet.
         </p>
         <p className="text-xs text-gray-500 mt-1">
@@ -56,7 +56,7 @@ export function NewsFeed() {
 
       {events.length === 0 ? (
         <div className="glass rounded-xl p-10 text-center text-gray-400">
-          No news fetched yet — the first poll runs within a minute of the backend starting.
+          No news fetched yet, the first poll runs within a minute of the backend starting.
         </div>
       ) : (
         <div className="flex flex-col gap-3">

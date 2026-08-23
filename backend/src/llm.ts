@@ -46,6 +46,8 @@ export interface Explanation {
 
 const SYSTEM_PROMPT = `You are a terse OSRS (Old School RuneScape) Grand Exchange flipping analyst. You're given one item's current market data -- already scored by a deterministic signal engine, not by you. Your job is narrow: explain in plain language why this flip looks worthwhile (or note if it's marginal), and flag the single biggest risk. You are a sanity check on the numbers, not the primary filter -- the item was already selected by the score. Be concrete and specific to the numbers given, not generic. No hedging filler like "as always, do your own research." Assume the reader already knows what GE flipping is.
 
+Never use an em dash (—); use a comma, period, or colon instead.
+
 Respond with ONLY a JSON object matching this exact shape, no markdown fences, no other text:
 {"rationale": "1-2 sentences on why this flip looks worthwhile right now", "riskLevel": "low" | "medium" | "high", "riskNote": "1 sentence on the biggest risk to this specific flip, or why there isn't one"}`;
 
@@ -122,7 +124,7 @@ export async function explainItem(input: ExplainInput): Promise<Explanation> {
 // same "narrate, don't invent" split as explainItem() above. Plain markdown text back, not JSON --
 // more forgiving for a small local model than strict structured output, and the frontend just
 // renders it as-is.
-const DIGEST_SYSTEM_PROMPT = `You are a terse OSRS Grand Exchange research analyst writing a periodic digest for a solo flipper. You are given real, already-computed data -- track record stats, price movers, and alerts. Your only job is to turn these numbers into short, readable prose under the given headings. Use ONLY the numbers provided. Never invent a price, percentage, or item that isn't in the data. If a section's data is empty, write one honest sentence saying so rather than inventing content. No preamble, no closing disclaimer, no markdown fences -- just the sections.`;
+const DIGEST_SYSTEM_PROMPT = `You are a terse OSRS Grand Exchange research analyst writing a periodic digest for a solo flipper. You are given real, already-computed data -- track record stats, price movers, and alerts. Your only job is to turn these numbers into short, readable prose under the given headings. Use ONLY the numbers provided. Never invent a price, percentage, or item that isn't in the data. If a section's data is empty, write one honest sentence saying so rather than inventing content. No preamble, no closing disclaimer, no markdown fences -- just the sections. Never use an em dash (—); use a comma, period, or colon instead.`;
 
 export interface DigestSection {
   heading: string;
@@ -171,6 +173,8 @@ export interface MarketIntelligence {
 }
 
 const INTELLIGENCE_SYSTEM_PROMPT = `You are an OSRS Grand Exchange market analyst. You're given one item's net margin/ROI and a bundle of already-computed indicators (liquidity score, buy/sell pressure, spread stability, mean reversion signal, supply/demand shock, flip saturation, an overall opportunity score). All numbers are real and already calculated -- you do not compute anything, you only synthesize what they mean together into one concrete conclusion. Reference at least two specific indicators by name in your reasoning. Be direct, not hedgy. No "as always, do your own research."
+
+Never use an em dash (—); use a comma, period, or colon instead.
 
 Respond with ONLY a JSON object, no markdown fences, no other text:
 {"conclusion": "2-3 sentences synthesizing what the indicators together suggest about this item right now", "confidence": "low" | "medium" | "high"}`;
@@ -226,7 +230,8 @@ Rules:
 - Mention liquidity if busiest/quietest hours are given, and get the direction right: the BUSIEST
   hour is when offers fill fastest, the QUIETEST is when they sit unfilled. Never suggest a quiet
   hour is good for filling. (A live test inverted this, so it is stated explicitly.)
-- No preamble, no headings, no bullet points. Just the sentences.`;
+- No preamble, no headings, no bullet points. Just the sentences.
+- Never use an em dash (—); use a comma, period, or colon instead.`;
 
 export interface TradingHoursNarrationInput {
   itemName: string;

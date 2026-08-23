@@ -57,7 +57,7 @@ export function Sets() {
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-medium text-gray-200">Set conversion arbitrage</h2>
           <span className="text-xs text-gray-500">
-            Buy pieces, sell as a set — or the reverse — whichever direction is currently
+            Buy pieces, sell as a set, or the reverse, whichever direction is currently
             profitable. See DESIGN.md §10 item 15.
           </span>
         </div>
@@ -143,7 +143,7 @@ export function Sets() {
                                   <td className="py-1 font-mono text-gray-300 text-right">
                                     {formatGp(p.buy)}
                                   </td>
-                                  <td className="py-1 font-mono text-gray-600 text-right">—</td>
+                                  <td className="py-1 font-mono text-gray-600 text-right">-</td>
                                   <td className="py-1 font-mono text-rose-400 text-right">
                                     -{formatGp(p.buy)}
                                   </td>
@@ -173,7 +173,7 @@ export function Sets() {
                                 <td className="py-1 font-mono text-gray-300 text-right">
                                   {formatGp(s.setBuy)}
                                 </td>
-                                <td className="py-1 font-mono text-gray-600 text-right">—</td>
+                                <td className="py-1 font-mono text-gray-600 text-right">-</td>
                                 <td className="py-1 font-mono text-rose-400 text-right">
                                   -{formatGp(s.setBuy)}
                                 </td>
@@ -210,7 +210,7 @@ export function Sets() {
           <h2 className="text-sm font-medium text-gray-200">Barrows repair flip</h2>
           <span className="text-xs text-gray-500">
             Buy a fully-degraded (0%) piece, repair it, sell it undegraded. Repair cost = 1000 ×
-            slot multiplier (Wiki-sourced, NPC rate — a house armour stand + Smithing level would be
+            slot multiplier (Wiki-sourced, NPC rate, a house armour stand + Smithing level would be
             cheaper). See DESIGN.md §10 item 16.
           </span>
         </div>

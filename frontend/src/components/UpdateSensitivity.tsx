@@ -87,7 +87,7 @@ export function UpdateSensitivity() {
           >
             {officialEvents.map((e) => (
               <option key={e.id} value={e.eventDate}>
-                {e.eventDate} — {e.title}
+                {e.eventDate}, {e.title}
               </option>
             ))}
           </select>
@@ -120,7 +120,7 @@ export function UpdateSensitivity() {
           {data && data.itemsCompared === 0 && (
             <EmptyState
               title="Not enough price history around this date"
-              hint="price_daily only retains data going forward from when the app was first run — an event older than that, or too recent to have a full window after it, won't have both sides to compare yet."
+              hint="price_daily only retains data going forward from when the app was first run, an event older than that, or too recent to have a full window after it, won't have both sides to compare yet."
             />
           )}
 
@@ -172,7 +172,7 @@ export function UpdateSensitivity() {
                 Daily close price {data.beforeDate} vs. {data.afterDate} ({data.windowDays} days each
                 side of {selectedEvent?.eventDate ?? data.eventDate}), {data.itemsCompared} items
                 compared (≥1,000gp, ≥20 liquidity/hr, capped at ±300% to exclude data artifacts). No
-                attempt is made to judge whether this event actually caused the move — it's a real
+                attempt is made to judge whether this event actually caused the move, it's a real
                 measured before/after, not a claimed cause.
               </p>
             </>

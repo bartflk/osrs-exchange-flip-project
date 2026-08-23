@@ -47,7 +47,7 @@ export function ResearchReport() {
         <div>
           <h3 className="text-sm font-medium text-gray-200">Research digest</h3>
           <p className="text-xs text-gray-500">
-            Synthesized by the local LLM from real Track Record, trend, and alert data — never
+            Synthesized by the local LLM from real Track Record, trend, and alert data, never
             invented numbers, see DESIGN.md §10 item 34.
           </p>
         </div>

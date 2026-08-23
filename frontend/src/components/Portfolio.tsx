@@ -124,17 +124,17 @@ export function Portfolio({
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-5">
         <StatCard
           label="Assets value"
-          value={totals ? formatGp(totals.assetsValue) : "—"}
+          value={totals ? formatGp(totals.assetsValue) : "-"}
           hint={totals ? `${totals.uniqueItems} unique item${totals.uniqueItems === 1 ? "" : "s"}` : ""}
         />
         <StatCard
           label="Cash in buy offers"
-          value={totals ? formatGp(totals.cashInBuyOffers) : "—"}
+          value={totals ? formatGp(totals.cashInBuyOffers) : "-"}
           hint={totals ? `${totals.slotsUsed}/8 slots used` : ""}
         />
         <StatCard
           label="Unrealized profit"
-          value={totals ? formatGp(totals.unrealizedProfit) : "—"}
+          value={totals ? formatGp(totals.unrealizedProfit) : "-"}
           hint="net of GE tax"
           explain="netMargin"
         />
@@ -149,7 +149,7 @@ export function Portfolio({
               ? formatGp(trueNetWorth)
               : latestNetWorth != null
                 ? formatGp(latestNetWorth)
-                : "—"
+                : "-"
           }
           hint={
             trueNetWorth != null && latestBank != null
@@ -166,7 +166,7 @@ export function Portfolio({
           value={
             portfolio?.captureStartedAt
               ? new Date(portfolio.captureStartedAt * 1000).toLocaleDateString()
-              : "—"
+              : "-"
           }
           hint="live capture start"
         />
@@ -198,7 +198,7 @@ export function Portfolio({
           ) : (
             <>
               Net worth currently <span className="text-amber-400">excludes</span> inventory coins
-              and worn gear — no RuneLite plugin writes either to disk. Enter it here to complete
+              and worn gear, no RuneLite plugin writes either to disk. Enter it here to complete
               the figure.
             </>
           )}
@@ -212,7 +212,7 @@ export function Portfolio({
             This reads <code className="text-gray-300">~/.runelite/flipping-copilot/</code> (live GE
             slots) and <code className="text-gray-300">~/.runelite/flipping/</code> (trade history).
             Install either plugin from the RuneLite Plugin Hub and they'll be picked up
-            automatically — see Design/RUNELITE_PLUGIN_GUIDE.md.
+            automatically, see Design/RUNELITE_PLUGIN_GUIDE.md.
           </p>
         </div>
       )}
@@ -231,7 +231,7 @@ export function Portfolio({
               title="Bank value over time"
               unitLabel="auto snapshots"
               note={
-                "Bank value only — coins and stock committed to the Grand Exchange are not in your bank, " +
+                "Bank value only, coins and stock committed to the Grand Exchange are not in your bank, " +
                 "so this falls as you deploy capital. Right now " +
                 formatGp(bankHistory?.geValueNow ?? 0) +
                 " is on the GE and excluded from this line. Net worth is the stat above."
@@ -300,7 +300,7 @@ export function Portfolio({
                       {formatGpFull(p.avgBuyPrice)}
                     </td>
                     <td className="py-2 pr-3 text-right font-mono text-gray-300">
-                      {p.marketValue != null ? formatGp(p.marketValue) : "—"}
+                      {p.marketValue != null ? formatGp(p.marketValue) : "-"}
                     </td>
                     <td
                       className={`py-2 pr-3 text-right font-mono ${
@@ -311,7 +311,7 @@ export function Portfolio({
                             : "text-gray-400"
                       }`}
                     >
-                      {p.unrealizedProfit != null ? formatGp(p.unrealizedProfit) : "—"}
+                      {p.unrealizedProfit != null ? formatGp(p.unrealizedProfit) : "-"}
                     </td>
                     <td
                       className={`py-2 text-right font-mono ${
@@ -322,7 +322,7 @@ export function Portfolio({
                             : "text-gray-400"
                       }`}
                     >
-                      {p.unrealizedRoiPct != null ? formatPct(p.unrealizedRoiPct) : "—"}
+                      {p.unrealizedRoiPct != null ? formatPct(p.unrealizedRoiPct) : "-"}
                     </td>
                   </tr>
                 ))}

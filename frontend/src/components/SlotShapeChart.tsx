@@ -159,7 +159,7 @@ export function SlotShapeChart({
         <span className={data.medianProfit != null && data.medianProfit >= 0 ? "text-emerald-400" : "text-rose-400"}>
           {data.medianProfit != null
             ? `${data.medianProfit >= 0 ? "+" : ""}${formatGp(data.medianProfit)}/unit`
-            : "—"}
+            : "-"}
         </span>
         , profitable on <span className={winTone}>{data.winDays} of {data.pairedDays}</span> days
         {data.spanDays > 0 && data.spanDays > data.pairedDays

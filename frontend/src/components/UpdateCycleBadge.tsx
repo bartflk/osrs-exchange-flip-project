@@ -63,7 +63,7 @@ export function UpdateCycleBadge() {
     ? formatDaysAgo(
         Math.floor((now.getTime() - Date.parse(lastUpdateDate + "T00:00:00Z")) / 86400000),
       )
-    : "—";
+    : "-";
 
   return (
     <StatCard

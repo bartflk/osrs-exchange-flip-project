@@ -89,7 +89,7 @@ export function TrackRecord() {
         <div className="flex items-center gap-5 text-sm">
           <div className="text-center">
             <div className="text-gray-200 font-mono">
-              {summary.winRate != null ? `${(summary.winRate * 100).toFixed(0)}%` : "—"}
+              {summary.winRate != null ? `${(summary.winRate * 100).toFixed(0)}%` : "-"}
             </div>
             <div className="text-[10px] uppercase tracking-wide text-gray-500">Win rate</div>
           </div>
@@ -161,15 +161,15 @@ export function TrackRecord() {
                   <tr key={h.hours} className="border-t border-white/5">
                     <td className="pr-4 py-1.5 text-gray-200 font-mono">{h.hours}h</td>
                     <td className="px-3 py-1.5 text-right font-mono text-gray-200">
-                      {h.winRate != null ? `${(h.winRate * 100).toFixed(0)}%` : "—"}
+                      {h.winRate != null ? `${(h.winRate * 100).toFixed(0)}%` : "-"}
                     </td>
                     <td
                       className={`px-3 py-1.5 text-right font-mono ${(h.avgNetMargin ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}`}
                     >
-                      {h.avgNetMargin != null ? formatGp(h.avgNetMargin) : "—"}
+                      {h.avgNetMargin != null ? formatGp(h.avgNetMargin) : "-"}
                     </td>
                     <td className="px-3 py-1.5 text-right font-mono text-gray-300">
-                      {h.avgRoiPct != null ? formatPct(h.avgRoiPct) : "—"}
+                      {h.avgRoiPct != null ? formatPct(h.avgRoiPct) : "-"}
                     </td>
                     <td className="px-3 py-1.5 text-right font-mono text-gray-500">
                       {h.resolvedCount} / {h.pendingCount}
@@ -184,7 +184,7 @@ export function TrackRecord() {
 
       {recent.length === 0 ? (
         <p className="text-xs text-gray-500 mt-3">
-          No recommendations logged yet — the first batch is taken within 30 minutes of the backend
+          No recommendations logged yet, the first batch is taken within 30 minutes of the backend
           starting.
         </p>
       ) : (

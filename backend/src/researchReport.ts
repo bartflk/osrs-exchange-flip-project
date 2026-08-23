@@ -83,8 +83,8 @@ export async function getResearchReport(period: ReportPeriod, force = false): Pr
     winRate: summary.winRate != null ? fmtPct(summary.winRate) : "not enough data yet",
     wins: summary.wins,
     losses: summary.losses,
-    avgNetMargin: summary.avgNetMargin != null ? `${Math.round(summary.avgNetMargin)}gp` : "—",
-    avgRoiPct: summary.avgRoiPct != null ? fmtPct(summary.avgRoiPct) : "—",
+    avgNetMargin: summary.avgNetMargin != null ? `${Math.round(summary.avgNetMargin)}gp` : "-",
+    avgRoiPct: summary.avgRoiPct != null ? fmtPct(summary.avgRoiPct) : "-",
   };
 
   // Each section gets only the facts it needs, not the whole blob repeated -- keeps the prompt

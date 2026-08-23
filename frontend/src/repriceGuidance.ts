@@ -49,7 +49,7 @@ export function computeRepriceGuidance(
     return {
       action: "unknown",
       suggestedPrice: null,
-      reason: "Not in the current Market fetch — too illiquid to compare, or a name mismatch.",
+      reason: "Not in the current Market fetch, too illiquid to compare, or a name mismatch.",
     };
   }
 
@@ -68,7 +68,7 @@ export function computeRepriceGuidance(
         action: "cancel",
         suggestedPrice: null,
         reason:
-          "No longer profitable — the sell price (or tax/spread) has moved enough that this flip no longer clears a positive margin.",
+          "No longer profitable, the sell price (or tax/spread) has moved enough that this flip no longer clears a positive margin.",
       };
     }
 
@@ -76,7 +76,7 @@ export function computeRepriceGuidance(
       return {
         action: "hold",
         suggestedPrice: null,
-        reason: "At or above the current market low — should fill.",
+        reason: "At or above the current market low, should fill.",
       };
     }
     const gapPct = (market.low - offer.price) / market.low;
@@ -85,8 +85,8 @@ export function computeRepriceGuidance(
       suggestedPrice: market.low,
       reason:
         gapPct <= SLIGHT_GAP
-          ? `${(gapPct * 100).toFixed(1)}% below market — a small reprice would likely fill.`
-          : `${(gapPct * 100).toFixed(1)}% below market — may sit unfilled at this price.`,
+          ? `${(gapPct * 100).toFixed(1)}% below market, a small reprice would likely fill.`
+          : `${(gapPct * 100).toFixed(1)}% below market, may sit unfilled at this price.`,
     };
   }
 
@@ -98,7 +98,7 @@ export function computeRepriceGuidance(
     return {
       action: "hold",
       suggestedPrice: null,
-      reason: "At or below the current market high — should fill.",
+      reason: "At or below the current market high, should fill.",
     };
   }
   const gapPct = (offer.price - market.high) / market.high;
@@ -107,7 +107,7 @@ export function computeRepriceGuidance(
     suggestedPrice: market.high,
     reason:
       gapPct <= SLIGHT_GAP
-        ? `${(gapPct * 100).toFixed(1)}% above market — a small reprice would likely fill.`
-        : `${(gapPct * 100).toFixed(1)}% above market — may sit unfilled at this price.`,
+        ? `${(gapPct * 100).toFixed(1)}% above market, a small reprice would likely fill.`
+        : `${(gapPct * 100).toFixed(1)}% above market, may sit unfilled at this price.`,
   };
 }

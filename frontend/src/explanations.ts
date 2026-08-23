@@ -34,7 +34,7 @@ export const EXPLANATIONS = {
     ],
     caveat:
       "A whitelist of tax-exempt items exists in game (bonds, teleport tabs, charged jewellery, basic tools, some food and ammo). This app does not model it yet, so margins on those specific items are understated.",
-    source: "backend/src/signals.ts — geTax()",
+    source: "backend/src/signals.ts, geTax()",
   },
 
   netMargin: {
@@ -44,8 +44,8 @@ export const EXPLANATIONS = {
       "What one unit clears after tax, using the most recent price someone actually bought at and the most recent price someone actually sold at.",
     ],
     caveat:
-      "Buy and sell here are the last completed trades, not a live order book. An offer placed at exactly those prices can sit unfilled — see Execution margin for a more realistic pair.",
-    source: "backend/src/signals.ts — scoreItem()",
+      "Buy and sell here are the last completed trades, not a live order book. An offer placed at exactly those prices can sit unfilled, see Execution margin for a more realistic pair.",
+    source: "backend/src/signals.ts, scoreItem()",
   },
 
   roi: {
@@ -55,7 +55,7 @@ export const EXPLANATIONS = {
       "Return per gp tied up, not per flip. A 5% ROI on a 1k item and on a 100m item are the same efficiency but wildly different absolute profit.",
       "Rank by ROI when your bankroll is the binding constraint. Rank by Potential profit when your GE slots are.",
     ],
-    source: "backend/src/signals.ts — scoreItem()",
+    source: "backend/src/signals.ts, scoreItem()",
   },
 
   liquidity: {
@@ -65,7 +65,7 @@ export const EXPLANATIONS = {
       "A conservative estimate of how many units per hour actually change hands.",
       "Both sides are minimised before anything else: an item with 5,000 buys and 3 sells is not liquid, it is a trap, so it scores as 3. The 5-minute figure is scaled up to an hourly rate and then the smaller of the two windows wins, so a momentary burst can't inflate it.",
     ],
-    source: "backend/src/signals.ts — scoreItem()",
+    source: "backend/src/signals.ts, scoreItem()",
   },
 
   score: {
@@ -73,12 +73,12 @@ export const EXPLANATIONS = {
     formula: "score = (net margin × log₁₀(liquidity + 1)) ÷ (1 + volatility)",
     body: [
       "The single ranking number used by the Market table, Buy Signals and the Capital Allocator alike.",
-      "Absolute gp margin drives it, because gp is what you actually keep. Liquidity enters through a log, so going from 10 to 100 units per hour matters a lot and 1,000 to 10,000 barely matters at all — past a point, more volume doesn't help you fill any faster.",
+      "Absolute gp margin drives it, because gp is what you actually keep. Liquidity enters through a log, so going from 10 to 100 units per hour matters a lot and 1,000 to 10,000 barely matters at all, past a point, more volume doesn't help you fill any faster.",
       "Volatility divides it as a mild penalty. An item with no volatility history yet gets a penalty of exactly 1, meaning it ranks the same as it did before volatility existed rather than being punished for missing data.",
     ],
     caveat:
       "The shape of this formula is a considered judgement, not a backtested optimum. It has never been calibrated against the resolved outcomes in Track Record.",
-    source: "backend/src/signals.ts — scoreItem()",
+    source: "backend/src/signals.ts, scoreItem()",
   },
 
   potentialProfit: {
@@ -86,11 +86,11 @@ export const EXPLANATIONS = {
     formula: "potential = net margin × GE buy limit",
     body: [
       "The most this item could pocket in one 4-hour buy-limit cycle, if every unit filled at the quoted prices.",
-      "This is the number to sort by when you have slots free and money spare — it answers 'how much can this item actually absorb', which ROI deliberately ignores.",
+      "This is the number to sort by when you have slots free and money spare, it answers 'how much can this item actually absorb', which ROI deliberately ignores.",
     ],
     caveat:
       "Assumes the full limit fills at today's spread. Thin items rarely do. It also uses the catalogue limit, not what's left of your own 4h window.",
-    source: "frontend/src/components/MarketTable.tsx — potentialProfit()",
+    source: "frontend/src/components/MarketTable.tsx, potentialProfit()",
   },
 
   volatility: {
@@ -113,8 +113,8 @@ export const EXPLANATIONS = {
       "Buying a touch above the last buy price and selling a touch below the last sell price is what actually gets an offer filled quickly. This is that trade-off priced in.",
     ],
     caveat:
-      "The 0.5% nudge is a flat heuristic, not the real GE tick-size table, and it has not been calibrated against fill data — no fill-rate history exists yet to calibrate against. Treat it as a sanity check on the optimistic number, not a promise.",
-    source: "backend/src/signals.ts — executionNudge()",
+      "The 0.5% nudge is a flat heuristic, not the real GE tick-size table, and it has not been calibrated against fill data, no fill-rate history exists yet to calibrate against. Treat it as a sanity check on the optimistic number, not a promise.",
+    source: "backend/src/signals.ts, executionNudge()",
   },
 
   // ---------------------------------------------------------------- position & risk
@@ -126,7 +126,7 @@ export const EXPLANATIONS = {
     body: [
       "Three sizes rather than one number, so the spread between them communicates confidence without needing a sentence.",
       "The ceiling is whichever binds first: the GE's 4-hour buy limit, or how much volume genuinely clears in an hour. There's no point sizing past what could realistically fill.",
-      "Volatility then shrinks all three. An item with unknown volatility gets 0.6 — a moderate default rather than false confidence.",
+      "Volatility then shrinks all three. An item with unknown volatility gets 0.6, a moderate default rather than false confidence.",
     ],
     caveat: "The ×10 volatility scaling is a chosen constant, not a backtested one.",
     source: "frontend/src/positionSizing.ts",
@@ -137,9 +137,9 @@ export const EXPLANATIONS = {
     formula:
       "rank by score → fill slots one at a time\nqty = min(remaining 4h limit, floor(cap ÷ buy price))\ncap = min(bankroll × max allocation %, cash left)",
     body: [
-      "A greedy allocator, not a portfolio optimiser. Markowitz-style optimisation assumes short-selling and continuous rebalancing, and the GE offers neither — you get eight buy-only slots with hard quantity limits.",
+      "A greedy allocator, not a portfolio optimiser. Markowitz-style optimisation assumes short-selling and continuous rebalancing, and the GE offers neither, you get eight buy-only slots with hard quantity limits.",
       "It walks the ranked list, gives each slot the best item it can still afford, and moves on. The per-item cap stops a single item eating the whole bankroll.",
-      "Quantity respects what's left of your real 4-hour buy limit, taken from your actual fills — not the catalogue limit. Suggesting 11,000 Diamond when 9,360 of the limit is already spent is a suggestion the GE would simply refuse.",
+      "Quantity respects what's left of your real 4-hour buy limit, taken from your actual fills, not the catalogue limit. Suggesting 11,000 Diamond when 9,360 of the limit is already spent is a suggestion the GE would simply refuse.",
     ],
     source: "frontend/src/capitalAllocator.ts",
   },
@@ -148,7 +148,7 @@ export const EXPLANATIONS = {
     title: "Maximise utilisation",
     formula: "rank = score × (0.4 + 0.6 × min(1, item capacity ÷ (bankroll ÷ slots)))",
     body: [
-      "With a large bankroll and few slots, ranking on score alone leaves most of the money idle — the highest-edge item may have a buy limit that caps its spend at a few million while you're holding hundreds of millions.",
+      "With a large bankroll and few slots, ranking on score alone leaves most of the money idle, the highest-edge item may have a buy limit that caps its spend at a few million while you're holding hundreds of millions.",
       "This re-ranks so an item that can absorb its full fair share keeps its whole score, and one that can only take a sliver is discounted proportionally. A tiny-limit item ranked #1 no longer claims a slot a bigger item could have filled.",
     ],
     caveat:
@@ -164,11 +164,11 @@ export const EXPLANATIONS = {
       "for each day both slots have a reading:\n  profit = sell − tax(sell) − buy\nedge = median(those daily profits) ÷ buy",
     body: [
       "How much a round trip is worth if you buy at one half-hour slot and sell at another, judged across roughly a week of days.",
-      "The buy and sell readings are paired inside the same day before anything is compared. That pairing is the whole point: a round trip happens within one day's prices, so taking the median of all sell prices and subtracting the median of all buy prices measures something else entirely — on a trending item those two medians land on different days and the trend gets reported as timing edge.",
+      "The buy and sell readings are paired inside the same day before anything is compared. That pairing is the whole point: a round trip happens within one day's prices, so taking the median of all sell prices and subtracting the median of all buy prices measures something else entirely, on a trending item those two medians land on different days and the trend gets reported as timing edge.",
       "Tax is applied to the sale, not to the edge, and the result is expressed against the buy price so it reads as a return.",
     ],
     caveat:
-      "Needs at least 4 paired days, and those days must fall inside a 16-day window. The Wiki API caps a request at 365 points rather than 365 days, so a thinly-traded item's readings can stretch across 51 calendar days — four samples taken seven weeks apart are not a daily rhythm, and picks like that are now rejected rather than ranked.",
+      "Needs at least 4 paired days, and those days must fall inside a 16-day window. The Wiki API caps a request at 365 points rather than 365 days, so a thinly-traded item's readings can stretch across 51 calendar days, four samples taken seven weeks apart are not a daily rhythm, and picks like that are now rejected rather than ranked.",
     source: "backend/src/slotProfiles.ts + db.ts getPairedDays()",
   },
 
@@ -188,7 +188,7 @@ export const EXPLANATIONS = {
     formula:
       "per hour-of-day: deviation from that day's own mean, then median across days",
     body: [
-      "Built from 7 days of hourly prices from the Wiki API — the API caps every request at 365 points, which is what limits the window.",
+      "Built from 7 days of hourly prices from the Wiki API, the API caps every request at 365 points, which is what limits the window.",
       "Each reading is first expressed as a percentage deviation from its own day's mean. That removes the week's overall trend, so a falling item doesn't make every late hour look 'cheap'.",
       "The median across days is then taken rather than the mean, because prices are heavy-tailed and one freak print will drag a mean somewhere the item never actually traded.",
     ],
@@ -206,7 +206,7 @@ export const EXPLANATIONS = {
     ],
     caveat:
       "Profiles older than 3 days are excluded from ranking rather than shown as current. A stale profile is a claim about last week's market.",
-    source: "backend/src/slotProfiles.ts — computeItemOfTheHour()",
+    source: "backend/src/slotProfiles.ts, computeItemOfTheHour()",
   },
 
   deployableUnits: {
@@ -214,9 +214,9 @@ export const EXPLANATIONS = {
     formula: "units = min(GE buy limit, floor(bankroll ÷ buy price))\nfill share = units ÷ volume per 30m slot",
     body: [
       "How many units your bankroll can actually take here, capped by whichever binds first: the 4-hour buy limit or what you can afford.",
-      "The number turns amber once the position is more than half a typical slot's volume. Past that point you're not taking the observed price any more, you're setting it — and a historical median stops predicting your own fill.",
+      "The number turns amber once the position is more than half a typical slot's volume. Past that point you're not taking the observed price any more, you're setting it, and a historical median stops predicting your own fill.",
     ],
-    source: "backend/src/slotProfiles.ts — bestPickForItem()",
+    source: "backend/src/slotProfiles.ts, bestPickForItem()",
   },
 
   slotScore: {
@@ -229,7 +229,7 @@ export const EXPLANATIONS = {
     ],
     caveat:
       "These weights have never been calibrated against the resolved outcomes this app already stores. It's a reasoned ranking, not a measured one.",
-    source: "backend/src/slotProfiles.ts — bestPickForItem()",
+    source: "backend/src/slotProfiles.ts, bestPickForItem()",
   },
 
   // ---------------------------------------------------------------- realised results
@@ -238,7 +238,7 @@ export const EXPLANATIONS = {
     title: "Realised profit",
     formula: "per flip: (sell × qty) − tax − (buy × qty),  buys matched to sells FIFO",
     body: [
-      "Actual money made on completed round trips, read from your real GE fills — not a projection.",
+      "Actual money made on completed round trips, read from your real GE fills, not a projection.",
       "Buys are matched to sells first-in-first-out, so a partially sold position reports profit only on the units that actually closed.",
       "Prices are the realised ones: gp spent ÷ quantity filled, taken from the change between two slot readings. Nothing is inferred from the price you asked for.",
     ],
@@ -255,8 +255,8 @@ export const EXPLANATIONS = {
       "The clock runs whether or not you were trading, so an idle stretch dilutes it exactly as much as it dilutes your actual earnings.",
     ],
     caveat:
-      "Early in a session this is extremely noisy — one flip closing divides by a very small number of hours.",
-    source: "backend/src/flips.ts — computeSession()",
+      "Early in a session this is extremely noisy, one flip closing divides by a very small number of hours.",
+    source: "backend/src/flips.ts, computeSession()",
   },
 
   realization: {
@@ -276,11 +276,11 @@ export const EXPLANATIONS = {
     formula: "bank value + cash on hand + worn gear + value sitting in GE offers",
     body: [
       "Bank value comes from RuneLite's Bank Value Tracker snapshots (main tab only). GE value is added to the newest point only, since it's a live figure with no history behind it.",
-      "Cash and gear on hand are values you enter yourself — nothing on disk reports them.",
+      "Cash and gear on hand are values you enter yourself, nothing on disk reports them.",
     ],
     caveat:
       "Only the newest point includes GE value, so the shape of the historical line and the current total are measuring slightly different things.",
-    source: "backend/src/runeliteBank.ts — combineNetWorth()",
+    source: "backend/src/runeliteBank.ts, combineNetWorth()",
   },
 
   buyLimitWindow: {
@@ -288,11 +288,11 @@ export const EXPLANATIONS = {
     formula: "catalogue limit − units bought in the trailing 4 hours",
     body: [
       "The GE resets each item's buy limit every 4 hours, per item, on a rolling window from your first purchase.",
-      "This is computed from your real fills, so it reflects what the GE will actually let you buy next — not what the item's limit is in principle.",
+      "This is computed from your real fills, so it reflects what the GE will actually let you buy next, not what the item's limit is in principle.",
     ],
     caveat:
       "Only counts fills seen since this app started watching your slots. Purchases made before that are invisible to it and the remaining limit will read high.",
-    source: "backend/src/flips.ts — computeBuyLimitUsage()",
+    source: "backend/src/flips.ts, computeBuyLimitUsage()",
   },
 } as const satisfies Record<string, Explanation>;
 
