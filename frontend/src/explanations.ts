@@ -168,7 +168,7 @@ export const EXPLANATIONS = {
       "Tax is applied to the sale, not to the edge, and the result is expressed against the buy price so it reads as a return.",
     ],
     caveat:
-      "Needs at least 4 paired days to show at all. Check the Days won column beside it — the same profit figure from 4 days and from 7 are different claims.",
+      "Needs at least 4 paired days, and those days must fall inside a 16-day window. The Wiki API caps a request at 365 points rather than 365 days, so a thinly-traded item's readings can stretch across 51 calendar days — four samples taken seven weeks apart are not a daily rhythm, and picks like that are now rejected rather than ranked.",
     source: "backend/src/slotProfiles.ts + db.ts getPairedDays()",
   },
 

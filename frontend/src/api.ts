@@ -944,6 +944,8 @@ export interface HourlyPick {
   // claims, and only one column separates them.
   pairedDays: number;
   winDays: number;
+  /** Calendar days those paired readings span -- 4 days over 51 is not a weekly rhythm. */
+  pairedSpanDays: number;
   holdSlots: number | null;
   holdHours: number | null;
   volume: number;
@@ -1030,5 +1032,51 @@ export interface BankHistoryResponse {
 export async function fetchBankHistory(): Promise<BankHistoryResponse> {
   const res = await fetch("/api/bank-history");
   if (!res.ok) throw new Error(`Failed to load bank history: ${res.status}`);
+  return res.json();
+}
+
+
+// The stored shape behind one pick: the item's whole 48-slot day plus the day-by-day outcomes of
+// a specific buy->sell pair. Served straight from SQLite (no Wiki request), so fetching one per
+// visible slot card is cheap.
+export interface SlotProfilePoint {
+  slot: number;
+  slotLabel: string;
+  buyPrice: number | null;
+  sellPrice: number | null;
+  volume: number;
+  days: number;
+}
+
+export interface PairedDay {
+  day: string;
+  buy: number;
+  sell: number;
+  profit: number;
+}
+
+export interface SlotProfileResponse {
+  itemId: number;
+  updatedAt: number | null;
+  slots: SlotProfilePoint[];
+  buySlot: number | null;
+  sellSlot: number | null;
+  paired: PairedDay[];
+  pairedDays: number;
+  winDays: number;
+  spanDays: number;
+  medianProfit: number | null;
+}
+
+export async function fetchSlotProfile(
+  itemId: number,
+  buySlot?: number,
+  sellSlot?: number,
+): Promise<SlotProfileResponse> {
+  const q = new URLSearchParams();
+  if (buySlot != null) q.set("buySlot", String(buySlot));
+  if (sellSlot != null) q.set("sellSlot", String(sellSlot));
+  const res = await fetch(`/api/items/${itemId}/slot-profile?${q}`);
+  if (!res.ok) throw new Error(`slot profile failed: ${res.status}`);
   return res.json();
 }

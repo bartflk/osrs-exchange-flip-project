@@ -216,12 +216,27 @@ for (const [table, column, type] of [
   // "[4151,11840]"), NULL until the linking pass has looked at it -- distinct from `tags`, which
   // is reserved for §11.3 item 1's separate (still unbuilt) exposure-category classification.
   ["events", "linked_item_ids", "TEXT"],
+  // Which feature produced a recommendation. Without it the Overnight page's picks would pool
+  // into the same win rate as Buy Signals' 4-hour calls and neither number would describe
+  // anything: they are different strategies over different horizons. Existing rows predate the
+  // column and are backfilled to 'signals' below, which is what they all were.
+  ["recommendation_snapshots", "strategy", "TEXT"],
+  // Overnight picks name the slot they were taken for and the slot they plan to sell into, so a
+  // resolved outcome can be traced back to the exact timing claim rather than just the item.
+  ["recommendation_snapshots", "buy_slot", "INTEGER"],
+  ["recommendation_snapshots", "sell_slot", "INTEGER"],
 ] as const) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all() as unknown as { name: string }[];
   if (!cols.some((c) => c.name === column)) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
   }
 }
+
+// Every recommendation logged before the `strategy` column existed came from Buy Signals -- the
+// Overnight page never wrote to this table at all. Backfilling them as 'signals' rather than
+// leaving NULL keeps "WHERE strategy = 'signals'" honest instead of silently dropping 715 rows
+// of real history from the track record the moment it starts filtering.
+db.exec(`UPDATE recommendation_snapshots SET strategy = 'signals' WHERE strategy IS NULL`);
 
 const upsertItemStmt = db.prepare(`
   INSERT INTO items (id, name, examine, members, lowalch, highalch, buy_limit, value, icon)
@@ -783,6 +798,42 @@ const profiledItemsStmt = db.prepare(
 
 export function getProfiledItems(): { item_id: number; updated_at: number }[] {
   return profiledItemsStmt.all() as unknown as { item_id: number; updated_at: number }[];
+}
+
+// Items the ranking can ACTUALLY use: a fresh profile AND per-day rows to pair against.
+// Both halves are load-bearing and they are stored in different tables, so "has a profile" and
+// "can produce a pick" are not the same set. Measured before this existed: 556 items had
+// profiles, the header reported 556, and only 434 could ever produce a pick.
+const rankableItemCountStmt = db.prepare(`
+  SELECT COUNT(*) AS c FROM (
+    SELECT p.item_id
+    FROM item_slot_profile p
+    WHERE p.updated_at > ?
+      AND EXISTS (SELECT 1 FROM item_slot_daily d WHERE d.item_id = p.item_id)
+    GROUP BY p.item_id
+  )
+`);
+
+export function countRankableItems(freshSince: number): number {
+  const row = rankableItemCountStmt.get(freshSince) as unknown as { c: number };
+  return row?.c ?? 0;
+}
+
+// Items holding a profile with no per-day rows behind it. These are silently unrankable:
+// getPairedDays() returns nothing for them, bestPickForItem() returns null, and no log or UI
+// signal says so. They arise when an item was profiled before item_slot_daily existed (or a
+// write half-failed) and has since dropped out of the refresh candidate list, so it is never
+// revisited -- it just sits there looking fresh until the 14-day prune. Fed back into the
+// refresh job's candidate set so they self-heal instead of quietly shrinking the ranking pool.
+const unbackedProfileItemsStmt = db.prepare(`
+  SELECT DISTINCT p.item_id
+  FROM item_slot_profile p
+  WHERE NOT EXISTS (SELECT 1 FROM item_slot_daily d WHERE d.item_id = p.item_id)
+`);
+
+export function getUnbackedProfileItems(): number[] {
+  const rows = unbackedProfileItemsStmt.all() as unknown as { item_id: number }[];
+  return rows.map((r) => r.item_id);
 }
 
 // The whole slot profile for one item, used to find where its best sell slot is.

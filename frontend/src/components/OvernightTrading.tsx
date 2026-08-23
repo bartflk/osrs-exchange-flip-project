@@ -19,6 +19,7 @@ import { useCurrentSlot } from "../useCurrentSlot";
 import { allocateCapital } from "../capitalAllocator";
 import { NumberInput, GpInput, EmptyState, Chip } from "./ui";
 import { GeSlotBoard } from "./GeSlotBoard";
+import { SlotShapeChart } from "./SlotShapeChart";
 import { buildSlotViews, countNeedsAction } from "../geSlots";
 import { InfoTip, LabelWithInfo } from "./InfoTip";
 
@@ -219,6 +220,14 @@ export function OvernightTrading({
     return picksData.picks.filter((p) => p.volume >= minVolume);
   }, [picksData, riskPreset]);
 
+  // The board renders allocator assignments (item + qty), which carry no timing information --
+  // the buy/sell slots live on the pick that produced them. Keyed by item id so a card can find
+  // its own history without threading picks through the shared board component.
+  const pickById = useMemo(
+    () => new Map(riskFilteredPicks.map((p) => [p.itemId, p])),
+    [riskFilteredPicks],
+  );
+
   const candidates = useMemo(() => {
     return riskFilteredPicks
       .map((p) => toOvernightCandidate(p, catalogue))
@@ -364,6 +373,19 @@ export function OvernightTrading({
             items={catalogue}
             onSelectItem={onSelectItem}
             showHeader={false}
+            // The whole point of this page is a position you sleep through, so each box shows the
+            // daily price shape it is betting on and how that exact round trip actually went, day
+            // by day. Only suggested boxes get one: a live offer already in the GE is a decision
+            // you have made, and its history is no longer the question.
+            renderExtra={(v) => {
+              const id = v.suggestion?.item.id;
+              if (id == null) return null;
+              const pick = pickById.get(id);
+              if (!pick || pick.bestSellSlot == null) return null;
+              return (
+                <SlotShapeChart itemId={id} buySlot={pick.slot} sellSlot={pick.bestSellSlot} />
+              );
+            }}
           />
         )}
 
@@ -478,7 +500,12 @@ export function OvernightTrading({
                               ? "text-amber-400"
                               : "text-gray-400"
                         }`}
-                        title={`Median of ${p.pairedDays} days where both the buy and sell slot had a reading`}
+                        title={
+                        `Median of ${p.pairedDays} days where both the buy and sell slot had a reading` +
+                        (p.pairedSpanDays > p.pairedDays
+                          ? `, spread across ${p.pairedSpanDays} calendar days`
+                          : "")
+                      }
                       >
                         {p.pairedDays > 0 ? `${p.winDays}/${p.pairedDays}` : "—"}
                       </td>

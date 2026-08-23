@@ -2,6 +2,8 @@ import { fetchTimeseriesByStep } from "./wiki.js";
 import {
   upsertSlotProfiles,
   getProfiledItems,
+  countRankableItems,
+  getUnbackedProfileItems,
   getMostLiquidItemIds,
   getHighValueItemIds,
   getItemsAtSlot,
@@ -52,6 +54,14 @@ const REQUEST_SPACING_MS = 400;
 const MIN_DAYS_PER_SLOT = 4;
 // §14.51: a paired buy/sell median needs enough days on BOTH slots to mean anything.
 const MIN_PAIRED_DAYS = 4;
+// The Wiki API caps a timeseries at 365 POINTS, not 365 days -- so "7.6 days at 30m resolution"
+// only holds for an item that trades in most slots. A thin item's 365 points stretch much
+// further: measured live, Armageddon teleport scroll's rows span 51 calendar days, Ankou mask 18,
+// Broad arrowheads 14. Four paired days drawn from a 51-day span is not a daily rhythm, it is
+// four samples taken up to seven weeks apart, and the per-day detrending that makes this method
+// work cannot remove drift it never saw. Picks whose evidence is stretched that thin are rejected
+// rather than ranked alongside genuinely weekly ones.
+const MAX_PAIRED_SPAN_DAYS = 16;
 // Matches the frontend's own default so an un-set bankroll behaves the same on both sides.
 export const DEFAULT_BANKROLL = 10_000_000;
 // §14.45: items that fall out of the top-MAX_ITEMS liquidity list never get refreshed again, so
@@ -59,6 +69,21 @@ export const DEFAULT_BANKROLL = 10_000_000;
 // items were being recommended on 9-day-old patterns.
 const MAX_PROFILE_AGE_SECONDS = 3 * 24 * 60 * 60;
 const PRUNE_AGE_SECONDS = 14 * 24 * 60 * 60;
+
+// Calendar days between the first and last paired reading, inclusive. Distinct from the COUNT of
+// paired days: 4 readings can span 4 days or 51, and only the second number says whether those
+// readings describe a repeating daily pattern or four scattered snapshots.
+function pairedSpanDays(paired: { day: string }[]): number {
+  if (paired.length === 0) return 0;
+  let min = paired[0].day;
+  let max = paired[0].day;
+  for (const p of paired) {
+    if (p.day < min) min = p.day;
+    if (p.day > max) max = p.day;
+  }
+  const ms = Date.parse(max + "T00:00:00Z") - Date.parse(min + "T00:00:00Z");
+  return Math.round(ms / 86_400_000) + 1;
+}
 
 function slotOf(date: Date): number {
   return date.getUTCHours() * 2 + (date.getUTCMinutes() >= 30 ? 1 : 0);
@@ -194,7 +219,14 @@ export async function refreshSlotProfiles(force = false): Promise<ProfileRunResu
 
   const liquid = getMostLiquidItemIds(MAX_ITEMS);
   const highValue = getHighValueItemIds(HIGH_VALUE_ITEMS, HIGH_VALUE_MIN_VOLUME);
-  const candidates = [...new Set([...liquid, ...highValue])];
+  // Items whose profile has no per-day rows behind it can never produce a pick, so they go into
+  // the candidate set regardless of whether they still rank as liquid or high-value -- otherwise
+  // they stay broken until the 14-day prune quietly removes them.
+  const unbacked = getUnbackedProfileItems();
+  const candidates = [...new Set([...liquid, ...highValue, ...unbacked])];
+  if (unbacked.length) {
+    console.log(`[slots] ${unbacked.length} profile(s) missing per-day rows -- requeued`);
+  }
   const lastSeen = new Map(getProfiledItems().map((r) => [r.item_id, r.updated_at]));
   candidates.sort((a, b) => (lastSeen.get(a) ?? 0) - (lastSeen.get(b) ?? 0));
 
@@ -261,6 +293,8 @@ export interface HourlyPick {
   capitalUsed: number;
   /** deployableUnits x profitPerUnit -- gp this pick earns YOUR bankroll per limit cycle. */
   cycleProfit: number;
+  /** Calendar days the paired readings span. 4 days over 51 is not a weekly rhythm -- see MAX_PAIRED_SPAN_DAYS. */
+  pairedSpanDays: number;
   /** Share of the slot's typical traded volume you'd have to absorb. >1 means you are the market. */
   fillShare: number | null;
   score: number;
@@ -302,6 +336,7 @@ function bestPickForItem(
   let bestProfit = 0;
   let bestPairedDays = 0;
   let bestWinDays = 0;
+  let bestSpanDays = 0;
   for (let offset = 1; offset <= maxLookaheadSlots; offset++) {
     const s = (slot + offset) % SLOTS_PER_DAY;
     const row = bySlot.get(s);
@@ -309,6 +344,9 @@ function bestPickForItem(
 
     const paired = getPairedDays(r.item_id, slot, s);
     if (paired.length < MIN_PAIRED_DAYS) continue;
+    // Reject evidence stretched across too wide a calendar window (see MAX_PAIRED_SPAN_DAYS).
+    const span = pairedSpanDays(paired);
+    if (span > MAX_PAIRED_SPAN_DAYS) continue;
     const profits = paired.map((d) => d.sell - geTax(Math.round(d.sell)) - d.buy);
     const m = median(profits);
     if (m == null) continue;
@@ -318,6 +356,7 @@ function bestPickForItem(
       bestSellSlot = s;
       bestPairedDays = paired.length;
       bestWinDays = profits.filter((x) => x > 0).length;
+      bestSpanDays = span;
     }
   }
 
@@ -372,6 +411,7 @@ function bestPickForItem(
     profitPerUnit: Math.round(bestProfit),
     pairedDays: bestPairedDays,
     winDays: bestWinDays,
+    pairedSpanDays: bestSpanDays,
     holdSlots,
     holdHours,
     volume: r.volume,
@@ -421,10 +461,19 @@ export function computeOvernightPicks(
   return picks.sort((a, b) => b.score - a.score).slice(0, limit);
 }
 
-export function slotProfileCoverage(): { items: number; lastRun: number | null } {
+export function slotProfileCoverage(): {
+  items: number;
+  profiledItems: number;
+  lastRun: number | null;
+} {
   const last = kvGet(LAST_RUN_KEY);
+  const freshSince = Math.floor(Date.now() / 1000) - MAX_PROFILE_AGE_SECONDS;
   return {
-    items: getProfiledItems().length,
+    // What the ranking can actually draw on: fresh AND backed by per-day rows. Reporting the raw
+    // profile count here overstated coverage by 28% (556 claimed against 434 usable), which is
+    // exactly the kind of number that reads as reassuring and means nothing.
+    items: countRankableItems(freshSince),
+    profiledItems: getProfiledItems().length,
     lastRun: last ? Number(last.value) : null,
   };
 }

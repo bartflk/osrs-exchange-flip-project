@@ -21,13 +21,15 @@ interface SnapshotRow {
 
 const openSnapshotStmt = db.prepare(
   `SELECT item_id, taken_at FROM recommendation_snapshots
-   WHERE resolved_at IS NULL AND taken_at > ?`,
+   WHERE resolved_at IS NULL AND taken_at > ? AND strategy = ?`,
 );
 
 const insertSnapshotStmt = db.prepare(`
   INSERT INTO recommendation_snapshots
-    (item_id, name, icon, taken_at, rank, score, buy_price, sell_price, net_margin, roi_pct, resolve_at)
-  VALUES (@item_id, @name, @icon, @taken_at, @rank, @score, @buy_price, @sell_price, @net_margin, @roi_pct, @resolve_at)
+    (item_id, name, icon, taken_at, rank, score, buy_price, sell_price, net_margin, roi_pct,
+     resolve_at, strategy, buy_slot, sell_slot)
+  VALUES (@item_id, @name, @icon, @taken_at, @rank, @score, @buy_price, @sell_price, @net_margin,
+          @roi_pct, @resolve_at, @strategy, @buy_slot, @sell_slot)
 `);
 
 // Reads the same scored/joined view /api/items builds, kept independent of the route so this
@@ -52,7 +54,9 @@ export function logRecommendationSnapshots(): number {
   const now = Math.floor(Date.now() / 1000);
   const cooldownCutoff = now - RELOG_COOLDOWN_SECONDS;
   const openItemIds = new Set(
-    (openSnapshotStmt.all(cooldownCutoff) as unknown as SnapshotRow[]).map((r) => r.item_id),
+    (openSnapshotStmt.all(cooldownCutoff, "signals") as unknown as SnapshotRow[]).map(
+      (r) => r.item_id,
+    ),
   );
 
   let logged = 0;
@@ -70,6 +74,69 @@ export function logRecommendationSnapshots(): number {
       net_margin: item.net_margin,
       roi_pct: item.roi_pct,
       resolve_at: now + HORIZON_SECONDS,
+      strategy: "signals",
+      buy_slot: null,
+      sell_slot: null,
+    });
+    logged++;
+  });
+  return logged;
+}
+
+// DESIGN.md 10 item 1, applied to Overnight Trading (item 54). Buy Signals has been scored
+// against real outcomes since early on; the Overnight page never has. Everything on it -- the
+// timing edge, the days-won column, the projected profit -- has been a projection nobody checked.
+//
+// The horizon is the pick's OWN hold window, not a fixed 4 hours: an overnight call says "buy at
+// this slot, sell at that slot", so resolving it at any other time measures a different claim.
+// Resolution then reuses resolveRecommendationSnapshots() unchanged -- at resolve_at it compares
+// against the live price, which is exactly the question ("could you actually have sold into it").
+const OVERNIGHT_TOP_N = 5;
+const OVERNIGHT_COOLDOWN_SECONDS = 12 * 60 * 60;
+
+export function logOvernightSnapshots(
+  picks: {
+    itemId: number;
+    name: string;
+    icon: string | null;
+    slot: number;
+    bestSellSlot: number | null;
+    score: number;
+    buyPrice: number | null;
+    sellPrice: number | null;
+    profitPerUnit: number | null;
+    timingEdgePct: number | null;
+    holdHours: number | null;
+  }[],
+): number {
+  const now = Math.floor(Date.now() / 1000);
+  const openItemIds = new Set(
+    (
+      openSnapshotStmt.all(now - OVERNIGHT_COOLDOWN_SECONDS, "overnight") as unknown as SnapshotRow[]
+    ).map((r) => r.item_id),
+  );
+
+  let logged = 0;
+  picks.slice(0, OVERNIGHT_TOP_N).forEach((p, idx) => {
+    if (openItemIds.has(p.itemId)) return;
+    if (p.buyPrice == null || p.sellPrice == null || p.bestSellSlot == null) return;
+    if (p.holdHours == null || p.holdHours <= 0) return;
+
+    insertSnapshotStmt.run({
+      item_id: p.itemId,
+      name: p.name,
+      icon: p.icon ?? "",
+      taken_at: now,
+      rank: idx + 1,
+      score: p.score,
+      buy_price: Math.round(p.buyPrice),
+      sell_price: Math.round(p.sellPrice),
+      net_margin: p.profitPerUnit != null ? Math.round(p.profitPerUnit) : 0,
+      roi_pct: p.timingEdgePct ?? 0,
+      resolve_at: now + Math.round(p.holdHours * 3600),
+      strategy: "overnight",
+      buy_slot: p.slot,
+      sell_slot: p.bestSellSlot,
     });
     logged++;
   });
@@ -149,6 +216,7 @@ const recentStmt = db.prepare(`
   SELECT id, item_id, name, icon, taken_at, rank, score, buy_price, sell_price, net_margin, roi_pct,
          resolve_at, resolved_at, resolved_high, realized_net_margin, realized_roi_pct, outcome
   FROM recommendation_snapshots
+  WHERE strategy = ?
   ORDER BY taken_at DESC
   LIMIT 50
 `);
@@ -160,7 +228,7 @@ const summaryStmt = db.prepare(`
          AVG(realized_roi_pct) AS avg_roi_pct,
          AVG(net_margin) AS avg_projected_net_margin
   FROM recommendation_snapshots
-  WHERE resolved_at IS NOT NULL
+  WHERE resolved_at IS NOT NULL AND strategy = ?
 `);
 
 // DESIGN.md §10 item 12: "the single highest-value idea from the whole competitor pass" -- once
@@ -230,8 +298,17 @@ export function getItemTrackRecord(itemId: number): ItemTrackRecord {
   };
 }
 
-export function getTrackRecord(): { summary: TrackRecordSummary; recent: TrackRecordEntry[] } {
-  const row = summaryStmt.get() as {
+// Scoped per strategy, and deliberately not defaulted to "everything". Pooling Buy Signals'
+// 4-hour calls with Overnight's multi-hour holds would produce a win rate and a realization ratio
+// that describe neither -- and the ratio is not cosmetic, it scales the profit figure Buy Signals
+// shows. A mixed ratio would silently miscalibrate a number the user acts on.
+export type Strategy = "signals" | "overnight";
+
+export function getTrackRecord(strategy: Strategy = "signals"): {
+  summary: TrackRecordSummary;
+  recent: TrackRecordEntry[];
+} {
+  const row = summaryStmt.get(strategy) as {
     total: number;
     wins: number | null;
     losses: number | null;
@@ -247,10 +324,12 @@ export function getTrackRecord(): { summary: TrackRecordSummary; recent: TrackRe
       ? Math.max(MIN_RATIO, Math.min(MAX_RATIO, row.avg_net_margin / row.avg_projected_net_margin))
       : null;
   const pendingRow = db
-    .prepare(`SELECT COUNT(*) AS c FROM recommendation_snapshots WHERE resolved_at IS NULL`)
-    .get() as { c: number };
+    .prepare(
+      `SELECT COUNT(*) AS c FROM recommendation_snapshots WHERE resolved_at IS NULL AND strategy = ?`,
+    )
+    .get(strategy) as { c: number };
 
-  const rows = recentStmt.all() as unknown as {
+  const rows = recentStmt.all(strategy) as unknown as {
     id: number;
     item_id: number;
     name: string;

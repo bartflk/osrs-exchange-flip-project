@@ -196,7 +196,12 @@ export function ItemOfTheHour({
                               ? "text-amber-400"
                               : "text-gray-400"
                         }`}
-                        title={`Median of ${p.pairedDays} days where both the buy and sell slot had a reading`}
+                        title={
+                          `Median of ${p.pairedDays} days where both the buy and sell slot had a reading` +
+                          (p.pairedSpanDays > p.pairedDays
+                            ? `, spread across ${p.pairedSpanDays} calendar days`
+                            : "")
+                        }
                       >
                         {p.pairedDays > 0 ? `${p.winDays}/${p.pairedDays}` : "—"}
                       </td>

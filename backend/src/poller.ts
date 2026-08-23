@@ -2,13 +2,22 @@ import { fetchMapping, fetchLatest, fetchWindow } from "./wiki.js";
 import { upsertItems, upsertSnapshots } from "./db.js";
 import { recordSampleAndCheck, checkVolumeAnomalies } from "./alerts.js";
 import { refreshVolatility } from "./volatility.js";
-import { logRecommendationSnapshots, resolveRecommendationSnapshots } from "./scorekeeping.js";
+import {
+  logOvernightSnapshots,
+  logRecommendationSnapshots,
+  resolveRecommendationSnapshots,
+} from "./scorekeeping.js";
 import { runDailyRollup } from "./rollup.js";
 import { fetchOfficialNews } from "./news.js";
 import { fetchRedditPosts } from "./redditFeed.js";
 import { insertNewEvents, kvGet, kvSet } from "./db.js";
 import { syncGeSlots, backfillFlippingUtilities } from "./geLedger.js";
-import { refreshSlotProfiles } from "./slotProfiles.js";
+import {
+  DEFAULT_BANKROLL,
+  computeOvernightPicks,
+  currentSlot,
+  refreshSlotProfiles,
+} from "./slotProfiles.js";
 import { linkPendingEvents } from "./eventItemLinking.js";
 
 // DESIGN.md §14.22: the frontend's own "next refresh" countdown (§14.21) was a guess based on
@@ -127,9 +136,17 @@ function runVolatilityRefresh() {
 function runScorekeeping() {
   try {
     const logged = logRecommendationSnapshots();
+    // Overnight picks logged against the CURRENT slot, with each pick's own hold window as its
+    // horizon. Uses the same default bankroll the API falls back to rather than the user's real
+    // one -- the point is to score the ranking method, and a track record whose horizon moves
+    // every time a setting changes measures the setting, not the method.
+    const overnightPicks = computeOvernightPicks(currentSlot(), 16, 5, DEFAULT_BANKROLL);
+    const loggedOvernight = logOvernightSnapshots(overnightPicks);
     const resolved = resolveRecommendationSnapshots();
-    if (logged || resolved) {
-      console.log(`[scorekeeping] logged ${logged}, resolved ${resolved}`);
+    if (logged || loggedOvernight || resolved) {
+      console.log(
+        `[scorekeeping] logged ${logged} signals, ${loggedOvernight} overnight, resolved ${resolved}`,
+      );
     }
   } catch (err) {
     console.error("[scorekeeping] error", err);

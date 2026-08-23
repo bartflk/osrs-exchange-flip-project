@@ -1,4 +1,7 @@
 import type { FastifyInstance } from "fastify";
+import { getSlotProfile, getPairedDays } from "../db.js";
+import { geTax } from "../signals.js";
+import { median } from "../stats.js";
 import {
   DEFAULT_BANKROLL,
   computeItemOfTheHour,
@@ -85,7 +88,71 @@ export async function itemOfTheHourRoutes(app: FastifyInstance) {
       ),
       bankroll: parseBankroll(bankroll),
       itemsProfiled: coverage.items,
+      profiledItems: coverage.profiledItems,
       lastRun: coverage.lastRun,
+    };
+  });
+
+  // The shape behind a single pick: the item's whole 48-slot day, plus the day-by-day outcomes
+  // of the specific buy->sell pair being proposed. Everything here is already computed and stored
+  // -- no Wiki request -- it simply was never exposed, so a pick could be read but not seen.
+  //
+  // Both halves matter and they answer different questions. The 48 slots say "is this a real
+  // daily shape or noise"; the paired days say "how often did this actually work". A chart of the
+  // first without the second is the §14.51 mistake drawn in pixels.
+  app.get("/api/items/:id/slot-profile", async (req, reply) => {
+    const itemId = Number((req.params as { id: string }).id);
+    if (!Number.isInteger(itemId)) return reply.code(400).send({ error: "bad item id" });
+
+    const profile = getSlotProfile(itemId);
+    if (!profile.length) return reply.code(404).send({ error: "no slot profile for this item" });
+
+    const { buySlot, sellSlot } = req.query as { buySlot?: string; sellSlot?: string };
+    const b = Number(buySlot);
+    const sl = Number(sellSlot);
+    const havePair =
+      Number.isInteger(b) && b >= 0 && b < 48 && Number.isInteger(sl) && sl >= 0 && sl < 48;
+
+    const paired = havePair
+      ? getPairedDays(itemId, b, sl).map((d) => ({
+          day: d.day,
+          buy: Math.round(d.buy),
+          sell: Math.round(d.sell),
+          // Same arithmetic the ranking uses, returned per day so the chart and the table can
+          // never disagree about what a day was worth.
+          profit: Math.round(d.sell - geTax(Math.round(d.sell)) - d.buy),
+        }))
+      : [];
+    paired.sort((x, y) => (x.day < y.day ? -1 : x.day > y.day ? 1 : 0));
+
+    const profits = paired.map((d) => d.profit);
+    const spanDays =
+      paired.length > 0
+        ? Math.round(
+            (Date.parse(paired[paired.length - 1].day + "T00:00:00Z") -
+              Date.parse(paired[0].day + "T00:00:00Z")) /
+              86_400_000,
+          ) + 1
+        : 0;
+
+    return {
+      itemId,
+      updatedAt: profile[0]?.updated_at ?? null,
+      slots: profile.map((r) => ({
+        slot: r.slot,
+        slotLabel: slotLabel(r.slot),
+        buyPrice: r.buy_price,
+        sellPrice: r.sell_price,
+        volume: r.volume,
+        days: r.days,
+      })),
+      buySlot: havePair ? b : null,
+      sellSlot: havePair ? sl : null,
+      paired,
+      pairedDays: paired.length,
+      winDays: profits.filter((x) => x > 0).length,
+      spanDays,
+      medianProfit: profits.length ? Math.round(median(profits) ?? 0) : null,
     };
   });
 }

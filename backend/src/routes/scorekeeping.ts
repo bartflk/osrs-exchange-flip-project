@@ -3,7 +3,13 @@ import { getTrackRecord, getItemTrackRecord } from "../scorekeeping.js";
 import { computeHorizonTrackRecord } from "../trackRecordHorizons.js";
 
 export async function scorekeepingRoutes(app: FastifyInstance) {
-  app.get("/api/track-record", async () => getTrackRecord());
+  // ?strategy=overnight scopes the record to the Overnight page's picks. Defaults to "signals"
+  // so existing callers keep the exact record they had -- see getTrackRecord() for why these
+  // must not be pooled.
+  app.get("/api/track-record", async (req) => {
+    const { strategy } = req.query as { strategy?: string };
+    return getTrackRecord(strategy === "overnight" ? "overnight" : "signals");
+  });
 
   // DESIGN.md §14.12: per-item slice, for the item detail modal's flipsmart-parity stats block.
   app.get("/api/items/:id/track-record", async (req) => {

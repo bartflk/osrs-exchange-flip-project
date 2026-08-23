@@ -1404,6 +1404,53 @@ Historical snapshots are **not** rewritten automatically. Re-pasting and re-savi
 
 `handleViewSaved()` in `BankImport.tsx` sets the displayed result but never calls `onHoldingsChange`, so viewing a saved snapshot leaves the cached `bankHoldings` in localStorage pointing at whatever was last *pasted*. Noted, not changed.
 
+## 14.54 Status note - Overnight audit: three data bugs, per-slot charts, and a feedback loop - 2026-08-23
+
+Direct request: audit Overnight, then *"start building"*. Four things shipped.
+
+### A. Three data bugs found by auditing the stored tables
+
+**1. Coverage was overstated by 28%.** The header read "556 items profiled". The ranking could only ever draw on **434**. `slotProfileCoverage()` called `getProfiledItems()`, which has no freshness filter and no join against `item_slot_daily` - so it counted profiles, while a pick requires a fresh profile *and* per-day rows to pair against. Now `countRankableItems(freshSince)` reports the pool that can actually produce a pick, with the raw count kept alongside as `profiledItems`.
+
+**2. 52 items were silently unrankable.** They held profiles updated inside the 3-day freshness window with **zero** `item_slot_daily` rows - profiled before 14.51 added that table, then dropped out of the top-250/120 candidate list, so they were never revisited. `getPairedDays()` returned nothing, `bestPickForItem()` returned null, and nothing logged it. Freshness was judged on one table while rankability depended on another, and nothing checked they agreed. `getUnbackedProfileItems()` now feeds them back into the refresh candidate set, with a log line.
+
+**3. The "7.6-day window" is false for thin items.** The Wiki API caps a request at 365 **points**, not 365 days. An item that does not trade in most slots stretches those points much further - measured live: Armageddon teleport scroll **51 calendar days**, Ankou mask 18, Broad arrowheads 14. Four paired days drawn from a 51-day span is not a daily rhythm, it is four samples up to seven weeks apart, and per-day detrending cannot remove drift it never observed. `MAX_PAIRED_SPAN_DAYS = 16` rejects them; `pairedSpanDays` is returned and shown wherever the day count is. Verified: 0 of 20 live picks violate the guard.
+
+### B. Per-slot price-shape charts
+
+New `GET /api/items/:id/slot-profile` - all 48 slots plus the day-by-day outcomes of a specific buy-to-sell pair. Served entirely from SQLite; no Wiki request. The data has existed since 14.44 and had simply never been exposed.
+
+`SlotShapeChart.tsx` draws **both halves deliberately**, because a pick makes two separate claims and showing only the first is the 14.51 mistake redrawn in pixels:
+
+- the **shape** - buy (rose) and sell (emerald) medians across all 48 slots, hold window shaded, entry and exit marked. A flat noisy line means there is no rhythm and the pick is just the max of 48 numbers.
+- the **outcomes** - one bar per measured day, green or red, so three red days behind a green median are visible without reading a number. Plus a sentence, and the **worst day**, which is the number that actually matters for a position you sleep through.
+
+Wired via a `renderExtra` render prop on `GeSlotBoard` so Buy Signals is untouched, and only *suggested* boxes get one - a live offer is a decision already made.
+
+### C. Overnight is finally being scored
+
+The single largest gap in the audit: Buy Signals has been scored against real outcomes since early on, and **Overnight never has**. Every number on the page was an unchecked projection.
+
+`recommendation_snapshots` gains `strategy`, `buy_slot`, `sell_slot`; the 727 existing rows are backfilled to `'signals'`, which is what they all were. `logOvernightSnapshots()` uses each pick's **own hold window** as its horizon rather than the fixed 4 hours - an overnight call says "buy this slot, sell that slot", so resolving it anywhere else measures a different claim. Resolution reuses `resolveRecommendationSnapshots()` unchanged.
+
+`getTrackRecord(strategy)` is scoped and deliberately **not** defaulted to "everything": pooling 4-hour calls with multi-hour holds would produce a win rate and a realization ratio describing neither, and the ratio is not cosmetic - it scales the profit figure Buy Signals displays.
+
+Confirmed live within minutes: 5 overnight picks logged, ranks 1-5, holds 4.5h-8h.
+
+### D. Reddit sources widened, on evidence
+
+Measured first: of **126 ingested r/2007scape posts, 10 linked to any item** - and the one that did was a meme about copper ore. Its top-of-day is achievements, memes and drama, because it is the general community sub. Added `r/OSRSflipping` (43k, confirmed reachable, HTTP 200) and `r/GrandExchangeBets` (30k, **not** confirmed - probing returned 429, but so did r/2007scape on the same burst, so that is an IP cooldown rather than evidence the feed is missing).
+
+Both read `new` rather than `top?t=day`: probed live, r/OSRSflipping returned exactly **one** post for top-of-day, because a "top today" feed on a low-traffic sub is mostly empty.
+
+**Fetching is now serialised with 4s spacing.** The old `Promise.allSettled(SUBREDDITS.map(...))` fired every subreddit at once - fine at one subreddit, guaranteed 429 at three. Confirmed live: five rapid requests earned a cooldown that then rejected feeds known to work.
+
+Recorded because it governs how these should be used: the flipping subs are an **attention and manipulation signal, not a buy list**. They are small enough that a "buy X" post can be the pump itself, and a move that reaches them has usually already happened. The value is joining post activity against the existing z-score alerting (10 items 5 and 42), not reading them as recommendations.
+
+### Surfaced, not fixed
+
+The signals track record now reports its realization ratio as **0**, and that is not a bug in the scoping change - it is the honest output. Across 693 resolved picks the average *realized* net margin is **-803gp** against an average *projected* +63,729gp, so the clamp at `MIN_RATIO = 0` is doing its job. Win rate is 64% while the mean is negative, meaning the losses are larger than the wins. Left exactly as-is and flagged here: the app is reporting that its own Buy Signals picks have not made money on average, which is the entire reason scorekeeping exists.
+
 ## 15. Key references
 
 - [RuneScape:Real-time Prices — OSRS Wiki](https://oldschool.runescape.wiki/w/RuneScape:Real-time_Prices)

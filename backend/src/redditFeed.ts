@@ -12,7 +12,43 @@
 // browser-realistic User-Agent + Accept headers resolves it -- confirmed 200 OK repeatedly.
 // OSRS only -- r/runescape is the RS3 community, a separate game with its own economy and its own
 // updates, so its posts are noise against this app's price data rather than signal.
-const SUBREDDITS = ["2007scape"];
+//
+// r/2007scape alone was measured and found close to useless for trading: of 126 ingested posts,
+// 10 linked to any item, and the one that did was a meme about copper ore. Its top-of-day is
+// achievement posts, memes and drama, because it is the general community sub. The two
+// flipping-specific subs are added for the signal r/2007scape structurally cannot carry.
+//
+// Each feed names its own sort. This is not cosmetic: r/2007scape's top-of-day is a firehose,
+// while r/OSRSflipping returned exactly ONE post for top-of-day when probed live -- a "top today"
+// feed on a low-traffic sub is mostly empty, so those read `new` instead and catch everything.
+//
+// HOW TO READ THESE, and it matters: the flipping subs are best treated as an ATTENTION and
+// MANIPULATION signal, not a buy list. They are small enough that a "buy X" post can be the pump
+// itself, and by the time a move is posted it has usually already happened. The value is joining
+// post activity against the existing z-score alerting -- "spiking AND being talked about" is a
+// much sharper flag than either half alone (DESIGN.md 10 items 5 and 42).
+interface SubredditFeed {
+  subreddit: string;
+  /** Path after /r/<sub>/ -- the sort and window this sub actually warrants. */
+  path: string;
+}
+
+const SUBREDDIT_FEEDS: SubredditFeed[] = [
+  { subreddit: "2007scape", path: "top/.rss?t=day&limit=15" },
+  // 43k members. Confirmed reachable live (HTTP 200 on the RSS feed).
+  { subreddit: "OSRSflipping", path: "new/.rss?limit=25" },
+  // 30k members. NOT confirmed reachable -- probing it returned 429, but so did r/2007scape on
+  // the same burst, so that is this IP's rate-limit cooldown rather than evidence the feed is
+  // missing. Left in: a failing feed logs loudly below and drops nothing else, which is the
+  // right way to carry an unverified source.
+  { subreddit: "GrandExchangeBets", path: "new/.rss?limit=25" },
+];
+
+// Reddit rate-limits bursts hard. The previous version fired every subreddit at once through
+// Promise.allSettled, which was fine at one subreddit and would 429 at three -- confirmed live,
+// five rapid requests earned a cooldown that rejected even feeds known to work. Requests are now
+// serialised with real spacing; this job runs hourly and has no deadline.
+const REQUEST_SPACING_MS = 4000;
 const REDDIT_HEADERS = {
   "User-Agent":
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -47,8 +83,9 @@ function decodeEntities(s: string): string {
     .replace(/&amp;/g, "&");
 }
 
-async function fetchSubredditTopOfDay(subreddit: string): Promise<RedditPost[]> {
-  const res = await fetch(`https://www.reddit.com/r/${subreddit}/top/.rss?t=day&limit=15`, {
+async function fetchSubredditFeed(feed: SubredditFeed): Promise<RedditPost[]> {
+  const { subreddit, path } = feed;
+  const res = await fetch(`https://www.reddit.com/r/${subreddit}/${path}`, {
     headers: REDDIT_HEADERS,
   });
   if (!res.ok) throw new Error(`Failed to fetch r/${subreddit} RSS: ${res.status}`);
@@ -74,20 +111,24 @@ async function fetchSubredditTopOfDay(subreddit: string): Promise<RedditPost[]> 
 }
 
 export async function fetchRedditPosts(): Promise<RedditPost[]> {
-  const results = await Promise.allSettled(SUBREDDITS.map(fetchSubredditTopOfDay));
   const posts: RedditPost[] = [];
-  results.forEach((r, i) => {
-    // A single subreddit fetch failing (rate limit, transient error) shouldn't drop the others --
-    // same "additive, not load-bearing" principle as the sidecar's Reddit/Discord collectors.
-    if (r.status === "fulfilled") {
-      posts.push(...r.value);
-      return;
+  for (let i = 0; i < SUBREDDIT_FEEDS.length; i++) {
+    const feed = SUBREDDIT_FEEDS[i];
+    try {
+      posts.push(...(await fetchSubredditFeed(feed)));
+    } catch (err) {
+      // A single subreddit failing (rate limit, transient error, sub renamed) must not drop the
+      // others -- same "additive, not load-bearing" principle as the sidecar's collectors.
+      //
+      // ...but it must not fail SILENTLY. Found live: r/2007scape had zero rows in the events
+      // table while r/runescape had 18, because its fetch was rejecting inside a Promise.allSettled
+      // and nobody ever saw it. A swallowed rejection looks identical to "the subreddit had no
+      // posts today," which is exactly the wrong thing to be ambiguous about.
+      console.error(`[reddit] r/${feed.subreddit} fetch failed:`, err);
     }
-    // ...but it must not fail *silently*. Found live: r/2007scape had zero rows in the events
-    // table while r/runescape had 18, because its fetch was rejecting inside this allSettled and
-    // nobody ever saw it. A swallowed rejection here looks identical to "the subreddit had no
-    // posts today," which is exactly the wrong thing to be ambiguous about.
-    console.error(`[reddit] r/${SUBREDDITS[i]} fetch failed:`, r.reason);
-  });
+    if (i < SUBREDDIT_FEEDS.length - 1) {
+      await new Promise((r) => setTimeout(r, REQUEST_SPACING_MS));
+    }
+  }
   return posts;
 }

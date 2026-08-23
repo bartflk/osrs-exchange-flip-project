@@ -1,3 +1,4 @@
+import type { ReactNode } from "preact/compat";
 import type { GeSlot, MarketItem } from "../api";
 import type { SlotAssignment } from "../capitalAllocator";
 import { buildSlotViews, countNeedsAction, STATUS_STYLE, type SlotView } from "../geSlots";
@@ -29,11 +30,17 @@ export function GeSlotBoard({
   items,
   onSelectItem,
   showHeader = true,
+  renderExtra,
 }: {
   slots: GeSlot[];
   suggestions: SlotAssignment[];
   items: MarketItem[];
   onSelectItem: (item: MarketItem) => void;
+  // Extra content rendered inside each card, below the existing status line. Overnight uses this
+  // for the per-slot price-shape chart; Buy Signals passes nothing and is unchanged. Kept as a
+  // render prop rather than a boolean flag so the board stays ignorant of what Overnight knows
+  // (bedtime slot, sell slot, paired-day history) -- none of which belongs in a live GE board.
+  renderExtra?: (v: SlotView) => ReactNode;
   // The Signals panel supplies its own header (with bankroll totals, hold-time and reroll
   // controls), so the board suppresses its own rather than stacking two titles.
   showHeader?: boolean;
@@ -132,6 +139,8 @@ export function GeSlotBoard({
                       → {formatGpFull(v.suggestedPrice)}
                     </p>
                   )}
+
+                  {renderExtra?.(v)}
                 </>
               )}
             </div>
