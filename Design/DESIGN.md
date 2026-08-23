@@ -1570,6 +1570,61 @@ Applied to the Overnight toolbar and board, the Buy Signals toolbar, and the Mar
 
 One `str.replace()` in the edit script targeted `"Overnight board —"` and matched nothing, because something in this repo had rewritten that em dash to a colon. Python's `replace` returns the string unchanged rather than raising, so the opening `<div>` stayed while its closing tag became `</Panel>`. **TypeScript compiled it clean**; only `oxlint` caught the mismatched JSX tag. Two lessons worth keeping: assert on every scripted replacement (the ones with asserts in the same script all failed loudly and correctly), and do not treat a clean `tsc` as proof that JSX is well-formed.
 
+## 14.59 Status note - The overnight edge was 93% winner's curse - 2026-08-23
+
+Two questions: is there weekday/weekend analysis, and where can the overnight algorithm be improved. Both answered by measurement against the stored `item_slot_daily` table rather than by argument.
+
+### Weekly seasonality: not built, and not yet measurable
+
+`technicalIndicators.ts` carries `isWeekendUtc`/`isUpdateDayUtc`, but those are calendar flags describing *right now*, not analysis. Backlog item 40 (Weekly Seasonality) remains unbuilt, and the data cannot support it yet.
+
+Measured across 20,133 item/slot groups, expressing each reading as a deviation from its own item+slot mean (which removes both price level and time-of-day shape, leaving only the day effect):
+
+| | Sun | Mon | Tue | Wed | Thu | Fri | Sat |
+|---|---|---|---|---|---|---|---|
+| median deviation | +0.000% | -0.150% | -0.076% | -0.073% | +0.000% | +0.035% | +0.000% |
+
+Weekday median -0.032%, weekend median 0.000%, **gap 0.032pp** - noise beside a 2% tax.
+
+More importantly the sample cannot answer the question even in principle. Full 434-item coverage only begins 2026-08-15; before that a day holds 5-31 items. So there is roughly **one** fully-covered occurrence of each weekday, and "the Monday effect" is inseparable from "what the market happened to do on 17 August." Weekly seasonality needs weeks, and `item_slot_daily` is replaced wholesale on each refresh (§14.44) rather than accumulated. Building it needs an append-only observations table first - that is the real prerequisite, not the analysis.
+
+### The overnight edge, tested out of sample
+
+`bestPickForItem()` searches up to 47 candidate sell slots and keeps the highest median profit, where each median comes from 4-7 daily observations. The maximum of 47 noisy estimates is largely a measure of which slot got lucky, and the profit then reported is measured on the very days that chose the slot.
+
+Proper test: choose the sell slot on the earlier 60% of days, then score that same choice on the later days it never saw. 14,767 buy-slot cases:
+
+| | claimed | realised | kept | profitable |
+|---|---|---|---|---|
+| **current** (search 47, keep max) | 2.19% | **0.144%** | 7% | **52.4%** |
+
+**93.4% of the edge disappears, and what remains is a coin flip.** This is not a bug in the arithmetic - §14.51 already fixed that, and it verified correctly. It is a selection effect that correct arithmetic cannot detect, because every individual number is right.
+
+### Fix: gate the search, measured
+
+| variant | realised | profitable |
+|---|---|---|
+| current | 0.144% | 52.4% |
+| require >=80% training win rate | 0.454% | 58.5% |
+| require edge >= 1% of buy price | 0.641% | 59.4% |
+| **both, at 14h lookahead (shipped)** | **1.087%** | **64.0%** |
+| both, at full 47-slot lookahead | 0.968% | 63.8% |
+| both, at 8h lookahead | 1.166% | 65.3% |
+
+`MIN_WIN_RATE = 0.8` and `MIN_EDGE_PCT = 0.01`, both applied **inside** the search loop rather than as a filter afterwards - filtering after the fact would still let the luckiest candidate crowd out a steadier one before anything got rejected.
+
+Both gates attack noise rather than signal, which is why they compound: a slot that wins on only some days is precisely what an over-fitted maximum looks like, and a sub-1% edge is inside the noise floor of a median of five numbers. **7.5x better out of sample** at the current settings. Verified live: the board still fills 20 candidates and every one now wins at least 80% of measured days, where the previous top picks included several at 4/7 (57%).
+
+Note the shorter the hold window the better the out-of-sample result, because fewer candidates means less room for the maximum to be luck. Surfaced here rather than forced - the hold window is the user's setting.
+
+### Consequence for the UI
+
+The "Days won" column is now >=80% by construction, so it no longer discriminates between shown picks. It still earns its place as the sample disclosure (§14.51) - "6/7" and "4/5" are different amounts of evidence for the same threshold - but it can no longer be read as a ranking signal.
+
+### The methodological point
+
+§14.45 was wrong arithmetic. §14.51 fixed the arithmetic and verified it to 0.00pp. This is the third layer: **arithmetic that is correct, verified, and still overstates, because the number was selected by the same data that scored it.** The only check that catches this is holding data back. Nothing in the app does that yet, and until the scorekeeping added in §14.54 accumulates resolved overnight picks, this offline split is the only validation available.
+
 ## 15. Key references
 
 - [RuneScape:Real-time Prices — OSRS Wiki](https://oldschool.runescape.wiki/w/RuneScape:Real-time_Prices)

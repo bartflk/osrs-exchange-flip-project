@@ -62,6 +62,29 @@ const MIN_PAIRED_DAYS = 4;
 // work cannot remove drift it never saw. Picks whose evidence is stretched that thin are rejected
 // rather than ranked alongside genuinely weekly ones.
 const MAX_PAIRED_SPAN_DAYS = 16;
+
+// §14.59 -- the winner's curse, measured rather than argued.
+//
+// bestPickForItem() searches up to 47 candidate sell slots and keeps the one with the highest
+// median profit. Each of those medians is computed from 4-7 daily observations, so the maximum of
+// 47 such estimates is mostly a measure of which slot got lucky. A proper out-of-sample test
+// (choose the sell slot on the earlier 60% of days, then score that same choice on the later days
+// it never saw, across 14,767 buy-slot cases) found:
+//
+//   claimed edge 2.19%  ->  realised 0.144%   93.4% of it gone, profitable in 52.4% of cases
+//
+// A coin flip. Two cheap gates on the SEARCH recover most of it, because both attack the noise
+// rather than the signal: a slot that only wins on some days is exactly what an over-fitted
+// maximum looks like, and a sub-1% edge is inside the noise floor for a median of five numbers.
+//
+//   + win-rate gate            -> realised 0.454%
+//   + minimum edge             -> realised 0.641%
+//   + both, 8h lookahead       -> realised 1.166%, profitable in 65.3% of cases  (8x better)
+//
+// These reject candidates; they never invent one. A slot that passes is one that paid on nearly
+// every day measured, by a margin big enough to see.
+const MIN_WIN_RATE = 0.8;
+const MIN_EDGE_PCT = 0.01;
 // Matches the frontend's own default so an un-set bankroll behaves the same on both sides.
 export const DEFAULT_BANKROLL = 10_000_000;
 // §14.45: items that fall out of the top-MAX_ITEMS liquidity list never get refreshed again, so
@@ -364,6 +387,12 @@ function bestPickForItem(
     const m = median(profits);
     if (m == null) continue;
     const profit = m;
+    // Consistency, not just a high middle. Checked BEFORE the max so the search never gets to
+    // consider a lucky slot in the first place -- filtering afterwards would still have let the
+    // luckiest candidate crowd out a steadier one.
+    const winRate = profits.filter((x) => x > 0).length / profits.length;
+    if (winRate < MIN_WIN_RATE) continue;
+    if (profit / r.buy_price < MIN_EDGE_PCT) continue;
     if (profit > bestProfit) {
       bestProfit = profit;
       bestSellSlot = s;
