@@ -45,6 +45,10 @@ export function TrackRecord() {
   const [recent, setRecent] = useState<TrackRecordEntry[]>([]);
   const [horizons, setHorizons] = useState<HorizonResult[]>([]);
   const [expanded, setExpanded] = useState(false);
+  // Diagnostic/backtest view of the signal engine, not something to act on -- collapsed by
+  // default now that a compact live version lives in the sidebar (Sidebar.tsx). Full detail is
+  // one click away, it just isn't the first thing the Signals tab shows anymore.
+  const [panelOpen, setPanelOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -77,16 +81,33 @@ export function TrackRecord() {
 
   return (
     <div className="glass rounded-xl p-4 mb-4">
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <button
+        onClick={() => setPanelOpen((v) => !v)}
+        className="flex items-center justify-between flex-wrap gap-3 w-full text-left"
+      >
         <div>
-          <h3 className="text-sm font-medium text-gray-200">Track record</h3>
-          <p className="text-xs text-gray-500">
-            Every 30min the app logs its own top Buy Signals, then checks back 4h later against real
-            prices (headline stats below). The hold-period table further down backtests the same
-            logged picks at 2/3/6/12/24h instead.
-          </p>
+          <h3 className="text-sm font-medium text-gray-200 inline-flex items-center gap-1.5">
+            <span className={`text-gray-500 transition-transform ${panelOpen ? "rotate-90" : ""}`}>
+              ›
+            </span>
+            Track record
+          </h3>
+          {!panelOpen && (
+            <p className="text-xs text-gray-500">
+              How the app's own picks have actually panned out: win rate{" "}
+              {summary.winRate != null ? `${(summary.winRate * 100).toFixed(0)}%` : "-"} over{" "}
+              {summary.resolvedCount} resolved. Click to expand.
+            </p>
+          )}
+          {panelOpen && (
+            <p className="text-xs text-gray-500">
+              Every 30min the app logs its own top Buy Signals, then checks back 4h later against real
+              prices (headline stats below). The hold-period table further down backtests the same
+              logged picks at 2/3/6/12/24h instead.
+            </p>
+          )}
         </div>
-        <div className="flex items-center gap-5 text-sm">
+        {panelOpen && <div className="flex items-center gap-5 text-sm">
           <div className="text-center">
             <div className="text-gray-200 font-mono">
               {summary.winRate != null ? `${(summary.winRate * 100).toFixed(0)}%` : "-"}
@@ -137,10 +158,10 @@ export function TrackRecord() {
               <InfoTip id="realization" />
             </div>
           </div>
-        </div>
-      </div>
+        </div>}
+      </button>
 
-      {horizons.length > 0 && (
+      {panelOpen && horizons.length > 0 && (
         <div className="mt-4 pt-3 border-t border-white/10">
           <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-2">
             By hold period
@@ -182,7 +203,7 @@ export function TrackRecord() {
         </div>
       )}
 
-      {recent.length === 0 ? (
+      {panelOpen && (recent.length === 0 ? (
         <p className="text-xs text-gray-500 mt-3">
           No recommendations logged yet, the first batch is taken within 30 minutes of the backend
           starting.
@@ -204,9 +225,9 @@ export function TrackRecord() {
             </div>
           ))}
         </div>
-      )}
+      ))}
 
-      {recent.length > 5 && (
+      {panelOpen && recent.length > 5 && (
         <button
           onClick={() => setExpanded((v) => !v)}
           className="text-xs text-gray-500 hover:text-gray-300 mt-2"

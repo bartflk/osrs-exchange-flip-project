@@ -64,6 +64,10 @@ export function BuySignals({
     () => localStorage.getItem("allocatorTimeframe") ?? "1h",
   );
   const [rerollCount, setRerollCount] = useState(0);
+  // Direct feedback: "there is just 500 items just sitting there" -- this list was always
+  // rendered in full (up to 30 cards). Capped by default, same show-more pattern TrackRecord
+  // already uses for its own recent list, since the GE board above is the actual plan now.
+  const [showAllSignals, setShowAllSignals] = useState(false);
 
   function updateTimeframe(key: string) {
     setTimeframe(key);
@@ -459,9 +463,10 @@ export function BuySignals({
           Full width, 4-wide grid to actually resemble the real GE's 4x2 slot layout instead of a
           cramped 2-wide column squeezed next to a side panel -- per direct request. onPaste
           covers this whole section (not just a corner textbox) since screenshot+Ctrl-V is the
-          primary way offers get tracked now, not the fallback. */}
-      <ItemOfTheHour items={items} onSelectItem={onSelectItem} />
-
+          primary way offers get tracked now, not the fallback.
+          Moved to the very top of the page (direct feedback: "the GE is not at the top for some
+          reason") -- it's the one panel here that's directly actionable right now, not a table to
+          read and act on manually. */}
       <div className="mb-4" onPaste={handlePanelPaste}>
         <div className="glass rounded-xl p-4">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
@@ -602,6 +607,8 @@ export function BuySignals({
         <GeOffersPanel offers={offers} setOffers={setOffers} fills={fills} setFills={setFills} />
       </div>
 
+      <ItemOfTheHour items={items} onSelectItem={onSelectItem} />
+
       {signalsDiff && signalsDiff.previousAt != null && (
         <div className="glass rounded-xl p-3 mb-3 text-xs flex flex-wrap items-center gap-x-5 gap-y-1">
           <span className="text-gray-500 uppercase tracking-wide text-[10px]">
@@ -626,8 +633,17 @@ export function BuySignals({
         </div>
       )}
 
+      {signals.length > 0 && (
+        <h3 className="text-sm font-medium text-gray-200 mb-2">
+          More candidates{" "}
+          <span className="text-xs font-normal text-gray-500">
+            ({signals.length}, ranked by score)
+          </span>
+        </h3>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
-        {signals.map(({ item, qty, projectedProfit }) => (
+        {(showAllSignals ? signals : signals.slice(0, 10)).map(({ item, qty, projectedProfit }) => (
           <div key={item.id} className="glass rounded-xl p-4 flex flex-col gap-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 min-w-0">
@@ -702,6 +718,15 @@ export function BuySignals({
           </div>
         )}
       </div>
+
+      {signals.length > 10 && (
+        <button
+          onClick={() => setShowAllSignals((v) => !v)}
+          className="text-xs text-gray-500 hover:text-gray-300 mt-3"
+        >
+          {showAllSignals ? "Show less" : `Show ${signals.length - 10} more`}
+        </button>
+      )}
     </div>
   );
 }

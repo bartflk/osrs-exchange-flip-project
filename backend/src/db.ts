@@ -797,6 +797,15 @@ const slotDailyLowsStmt = db.prepare(
   `SELECT low FROM item_slot_daily WHERE item_id = ? AND slot = ? AND low IS NOT NULL`,
 );
 
+const slotDailyHighsStmt = db.prepare(
+  `SELECT high FROM item_slot_daily WHERE item_id = ? AND slot = ? AND high IS NOT NULL`,
+);
+
+export function getSlotDailyHighs(itemId: number, slot: number): number[] {
+  const rows = slotDailyHighsStmt.all(itemId, slot) as unknown as { high: number }[];
+  return rows.map((r) => r.high);
+}
+
 export function getSlotDailyLows(itemId: number, slot: number): number[] {
   const rows = slotDailyLowsStmt.all(itemId, slot) as unknown as { low: number }[];
   return rows.map((r) => r.low);

@@ -1700,6 +1700,32 @@ Direct feedback: *"before i even see the chart i see like 50 boxes."* The chart 
 
 Draggable floor/ceiling lines. The request needs one decision first: the slot-shape sparkline is 232x54px, which is not a drag target, while the modal's large chart is a time series rather than the daily distribution these prices come from. Building drag on the wrong surface is real work wasted, so it is left for the answer.
 
+## 14.62 Status note - Every offer gets a picture; the band tightens instead of jumping - 2026-08-23
+
+Three reports, all correct.
+
+### 1. The band jumped instead of tightening
+
+Not the slider. `quantile()` was nearest-rank, so with seven daily observations the eighteen slider positions collapsed onto **six distinct prices** - the bid sat still for three or four steps and then jumped fifty gp.
+
+Now linearly interpolated between neighbouring observations: eighteen distinct prices from eighteen steps. The original comment argued against interpolation because it "invents a price that was never observed", and that reasoning was wrong here. A price you **place** is a decision and any integer is available to it; a statistic you **report** is a claim about history. Bid and ask are decisions, so they interpolate. The fill rates beside them are claims, so they stay empirical - counted against real observations, never interpolated. Bid rounds down and ask rounds up, so rounding never quietly flatters the trade.
+
+### 2. Offers from other tools had no visualisation
+
+Six of eight slots showed one line of reprice text while the single planned slot got a chart, a forecast and a fill rate. Nothing made those six less worth understanding; they arrived by a different route.
+
+A plan supplies a buy slot and a sell slot. An offer placed by hand supplies only a price - but *"would this price have filled at this time of day?"* needs nothing more than the price and that slot's daily readings, both of which are stored. `/api/items/:id/slot-profile` now returns `buyDays`/`sellDays` (raw readings, independent of pairing) and `OfferOutlook` renders the shape chart with the offer's own price ruled on it plus **"your price fills N% of days"**. Deliberately one rule, not two: there is no paired leg, and drawing a second line would imply a decision that was never made. All eight tiles now carry a chart.
+
+### 3. Clicking a tile did nothing
+
+`GeSlotBoard.open()` resolves the item through the Market catalogue, and an item placed from another tool is normally below the Market tab's liquidity filter and therefore absent - so `find()` returned undefined and the click silently did nothing. Reproduced on a Sanguinesti staff (uncharged) tile. Slot item ids are now fetched alongside pick ids.
+
+**Caught while fixing it:** adding `portfolio` to that effect's dependency array created a temporal-dead-zone crash, because the state was declared thirty lines *below* the effect and a dependency array is evaluated during render. **`tsc --noEmit` passed it.** Moved the declaration above its use. Worth remembering alongside §14.58's mismatched-JSX case: a clean typecheck is not a clean bill of health for hook ordering either.
+
+### Box consolidation
+
+Direct feedback that the item modal was "just a div box spam". Eleven bordered stat tiles, three range groups, three sizing cards and two volume tiles each carried their own border, background and rounding. They now sit inside shared `.panel` containers separated by hairline dividers - one rectangle each instead of eleven, three and three, with the grid keeping them aligned in columns, which independent boxes never manage once label lengths differ. Measured after: 6 boxed elements where there were ~25, and the chart still starts 225px down.
+
 ## 15. Key references
 
 - [RuneScape:Real-time Prices — OSRS Wiki](https://oldschool.runescape.wiki/w/RuneScape:Real-time_Prices)

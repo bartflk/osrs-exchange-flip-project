@@ -283,7 +283,8 @@ export function BankImport({
 
       {result && (
         <div className="glass rounded-xl overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+          <div className="flex items-center justify-between px-4 py-3">
+
             <div>
               <div className="text-xs text-gray-500 uppercase tracking-wide">
                 {viewingSavedId ? `Saved snapshot #${viewingSavedId}` : "Current total"}
@@ -323,6 +324,15 @@ export function BankImport({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Trend visual before the flat item table -- direct feedback flagged the raw table sitting
+          above the highest-signal view of "is my bank going up," which is backwards. */}
+      {history.length > 0 && <NetWorthChart history={history} />}
+
+      {result && (
+        <div className="glass rounded-xl overflow-hidden">
           <div className="flex items-center gap-3 flex-wrap px-4 py-2 border-b border-white/10">
             <input
               type="text"
@@ -424,8 +434,6 @@ export function BankImport({
           </div>
         </div>
       )}
-
-      {history.length > 0 && <NetWorthChart history={history} />}
 
       {history.length > 0 && (
         <div className="glass rounded-xl overflow-hidden mt-4">

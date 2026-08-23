@@ -1,5 +1,10 @@
 import type { FastifyInstance } from "fastify";
-import { getSlotProfile, getPairedDays } from "../db.js";
+import {
+  getSlotProfile,
+  getPairedDays,
+  getSlotDailyLows,
+  getSlotDailyHighs,
+} from "../db.js";
 import { geTax } from "../signals.js";
 import { median } from "../stats.js";
 import {
@@ -135,9 +140,18 @@ export async function itemOfTheHourRoutes(app: FastifyInstance) {
           ) + 1
         : 0;
 
+    // The raw daily readings at each slot, independent of pairing. `paired` only exists for a
+    // buy/sell PAIR, which an offer placed by hand (or by another plugin) does not have -- but
+    // "would my price have filled at this time of day?" is answerable for any price at all, and
+    // these are what answers it.
+    const buyDays = havePair ? getSlotDailyLows(itemId, b) : [];
+    const sellDays = havePair ? getSlotDailyHighs(itemId, sl) : [];
+
     return {
       itemId,
       updatedAt: profile[0]?.updated_at ?? null,
+      buyDays,
+      sellDays,
       slots: profile.map((r) => ({
         slot: r.slot,
         slotLabel: slotLabel(r.slot),

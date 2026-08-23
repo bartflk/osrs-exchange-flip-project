@@ -306,7 +306,7 @@ export function ItemDetailModal({
         />
 
         {rangeStats && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4 text-sm">
+          <div className="panel rounded-xl mt-4 text-sm grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-white/[0.06] overflow-hidden">
             <RangeStatGroup
               label="Overall"
               high={rangeStats.overallHigh}
@@ -385,9 +385,11 @@ export function ItemDetailModal({
           </div>
         )}
 
-        {/* Denser: 6 columns at sm and 8 at xl, tighter gaps. Same information, roughly half the
-            vertical space, and it now sits below the chart where it belongs. */}
-        <div className="grid grid-cols-3 sm:grid-cols-6 xl:grid-cols-8 gap-2 mb-4">
+        {/* One panel, not eleven tiles. Cells are separated by hairline dividers instead of each
+            carrying its own border and background -- direct feedback that the modal was "just a
+            div box spam". The grid keeps them aligned in columns, which a row of independent
+            boxes never quite manages once the labels differ in length. */}
+        <div className="panel rounded-xl mb-4 grid grid-cols-3 sm:grid-cols-6 xl:grid-cols-8 divide-x divide-y divide-white/[0.06] overflow-hidden">
           <Stat label="Buy at" value={formatGp(item.low)} />
           <Stat label="Sell at" value={formatGp(item.high)} />
           <Stat
@@ -475,7 +477,7 @@ export function ItemDetailModal({
         {/* DESIGN.md §10 item 7: quantity bands instead of one suggested qty, so the number
             itself communicates how sure the system is (a volatile item's bands shrink together). */}
         {sizingTiers && (
-          <div className="grid grid-cols-3 gap-3 mb-4">
+          <div className="panel rounded-xl mb-4 grid grid-cols-3 divide-x divide-white/[0.06] overflow-hidden">
             {sizingTiers.map((tier) => (
               <SizingTierCard key={tier.name} tier={tier} />
             ))}
@@ -542,7 +544,7 @@ function SizingTierCard({
   tier: { name: SizingTierName; qty: number; cost: number; projectedProfit: number };
 }) {
   return (
-    <div className="glass rounded-lg px-3 py-2">
+    <div className="px-3 py-2">
       <div
         className={`text-[10px] uppercase tracking-wide flex items-center gap-1 ${TIER_TONE[tier.name]}`}
       >
@@ -583,8 +585,8 @@ function Stat({
   explain?: ExplanationId;
 }) {
   return (
-    <div className="glass rounded-lg px-2.5 py-1.5">
-      <div className="text-[10px] uppercase tracking-wide text-gray-500 flex items-center gap-1">
+    <div className="px-2.5 py-1.5">
+      <div className="text-[10px] uppercase tracking-wide text-gray-500 flex items-center gap-1 truncate">
         {label}
         {explain && <InfoTip id={explain} />}
       </div>
@@ -615,7 +617,7 @@ function RangeStatGroup({
   lowClass: string;
 }) {
   return (
-    <div className="glass rounded-lg px-3 py-2">
+    <div className="px-3 py-2">
       <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">{label}</div>
       <div className="flex items-center justify-between">
         <span className="text-gray-500 text-xs">High</span>
@@ -634,8 +636,10 @@ function RangeStatGroup({
 // isn't the one flat-gray number in an otherwise color-coded modal.
 function VolStat({ label, buy, sell }: { label: string; buy: number | null; sell: number | null }) {
   return (
-    <div className="glass rounded-lg px-3 py-2">
-      <div className="text-[10px] uppercase tracking-wide text-gray-500">{label} (buy/sell)</div>
+    <div className="px-2.5 py-1.5">
+      <div className="text-[10px] uppercase tracking-wide text-gray-500 truncate">
+        {label} (buy/sell)
+      </div>
       <div className="font-mono text-sm">
         <span className="text-rose-400">{(buy ?? 0).toLocaleString()}</span>
         <span className="text-gray-600"> / </span>

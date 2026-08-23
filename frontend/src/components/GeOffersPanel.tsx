@@ -19,6 +19,13 @@ export function GeOffersPanel({
   setFills: (next: Fill[]) => void;
 }) {
   const [showManualEntry, setShowManualEntry] = useState(false);
+
+  // Direct feedback: "the recently filled bar is kinda there" -- it used to be a bare list with
+  // no summary, so there was nothing to glance at before scanning individual rows. A today
+  // count+value gives it actual presence as a panel instead of reading as an afterthought.
+  const todayStart = new Date().setHours(0, 0, 0, 0) / 1000;
+  const fillsToday = fills.filter((f) => f.filledAt >= todayStart);
+  const fillsTodayValue = fillsToday.reduce((sum, f) => sum + f.price * f.qty, 0);
   const [offerText, setOfferText] = useState("");
   const [offerError, setOfferError] = useState<string | null>(null);
 
@@ -43,8 +50,16 @@ export function GeOffersPanel({
 
   return (
     <div className="glass rounded-xl p-4">
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-sm font-medium text-gray-300">Recently filled</h3>
+      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+        <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
+          Recently filled
+          {fillsToday.length > 0 && (
+            <span className="text-xs font-normal text-gray-500">
+              today: <span className="text-gray-300 font-mono">{fillsToday.length}</span> ·{" "}
+              <span className="text-emerald-400 font-mono">{formatGp(fillsTodayValue)}</span>
+            </span>
+          )}
+        </h3>
         <button
           onClick={() => setShowManualEntry((v) => !v)}
           className="text-[11px] text-gray-500 hover:text-gray-300"

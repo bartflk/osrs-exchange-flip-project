@@ -20,6 +20,7 @@ import { allocateCapital } from "../capitalAllocator";
 import { NumberInput, GpInput, EmptyState, Chip, Panel, Toolbar, Field, Select } from "./ui";
 import { GeSlotBoard } from "./GeSlotBoard";
 import { SlotDetail } from "./SlotDetail";
+import { OfferOutlook } from "./OfferOutlook";
 import { buildSlotViews, countNeedsAction, type OvernightPlan } from "../geSlots";
 import { rememberPlans } from "../overnightPlans";
 import { InfoTip, LabelWithInfo } from "./InfoTip";
@@ -192,25 +193,6 @@ export function OvernightTrading({
   // hundred items, not the full ~4,650 catalogue) -- most overnight picks won't be in it. Same
   // "fetch the specific ids you actually need" pattern App.tsx already uses for watchlist/
   // holdings/alert items, rather than depending on them happening to already be loaded.
-  const [pickedItems, setPickedItems] = useState<MarketItem[]>([]);
-  useEffect(() => {
-    const ids = picksData?.picks.map((p) => p.itemId) ?? [];
-    if (ids.length === 0) return;
-    let cancelled = false;
-    fetchItems({ ids })
-      .then((res) => !cancelled && setPickedItems(res.items))
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [picksData]);
-
-  const catalogue = useMemo(() => {
-    const byId = new Map(items.map((i) => [i.id, i]));
-    for (const i of pickedItems) byId.set(i.id, i);
-    return [...byId.values()];
-  }, [items, pickedItems]);
-
   // Same live-portfolio pattern as BuySignals: real GE slots can't be double-planned into, and
   // cash already committed to open buy offers is already spent.
   const [portfolio, setPortfolio] = useState<PortfolioResponse | null>(null);
@@ -228,6 +210,34 @@ export function OvernightTrading({
       clearInterval(id);
     };
   }, []);
+
+  const [pickedItems, setPickedItems] = useState<MarketItem[]>([]);
+  useEffect(() => {
+    // Items sitting in a real GE slot are fetched too, not just ranked picks. Clicking a tile
+    // resolves the item through this catalogue, so an offer placed from another tool -- whose
+    // item is usually below the Market tab's liquidity filter and therefore absent -- silently
+    // did nothing when clicked. Found live on a Sanguinesti staff (uncharged) tile.
+    const ids = [
+      ...new Set([
+        ...(picksData?.picks.map((p) => p.itemId) ?? []),
+        ...(portfolio?.slots.map((sl) => sl.itemId) ?? []),
+      ]),
+    ];
+    if (ids.length === 0) return;
+    let cancelled = false;
+    fetchItems({ ids })
+      .then((res) => !cancelled && setPickedItems(res.items))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [picksData, portfolio]);
+
+  const catalogue = useMemo(() => {
+    const byId = new Map(items.map((i) => [i.id, i]));
+    for (const i of pickedItems) byId.set(i.id, i);
+    return [...byId.values()];
+  }, [items, pickedItems]);
 
   const occupiedSlots = portfolio?.slots.length ?? 0;
   const suggestionSlots = Math.max(0, numSlots - occupiedSlots);
@@ -568,6 +578,19 @@ export function OvernightTrading({
               // Suggested boxes show the shape they are proposing; a box already running the
               // plan shows the same shape, because "when do I sell this" is exactly the question
               // once the buy is placed.
+              // Any occupied slot without a plan still gets a picture and a fill estimate --
+              // an offer placed from another tool is not less worth understanding, it just
+              // arrived by a different route.
+              if (v.slot && v.status !== "onplan") {
+                return (
+                  <OfferOutlook
+                    itemId={v.slot.itemId}
+                    slot={liveSlot}
+                    price={v.slot.price}
+                    type={v.slot.type}
+                  />
+                );
+              }
               const id = v.suggestion?.item.id ?? (v.status === "onplan" ? v.slot?.itemId : null);
               if (id == null) return null;
               const pick = pickById.get(id) ?? picksData?.picks.find((p) => p.itemId === id);

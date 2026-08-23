@@ -57,6 +57,25 @@ export function ItemOfTheHour({
   }
 
   const isNow = effectiveSlot === liveSlot;
+  const top = data?.picks[0];
+
+  // Direct feedback: "item of the hour is hard to really take action on" -- the table is real
+  // data, not fake, but reading 12 columns and remembering two numbers to go type into the game
+  // isn't a real action. Clipboard copy is a concrete one-click affordance that doesn't touch any
+  // tracked state (unlike the old "Track this buy" flow, removed in §14.42 for conflicting with
+  // real RuneLite slot data) -- it just puts the price where you can paste it.
+  const [copiedFor, setCopiedFor] = useState<number | null>(null);
+  function copyBuyPrice(itemId: number, price: number) {
+    navigator.clipboard
+      ?.writeText(String(Math.round(price)))
+      .then(() => {
+        setCopiedFor(itemId);
+        setTimeout(() => setCopiedFor((c) => (c === itemId ? null : c)), 1500);
+      })
+      // Denied permission (e.g. page not focused) shouldn't surface as an uncaught error -- the
+      // button just silently doesn't flip to "Copied", same as any other no-op failed click.
+      .catch(() => {});
+  }
 
   return (
     <div className="glass rounded-xl p-4 mb-4">
@@ -120,6 +139,46 @@ export function ItemOfTheHour({
             />
           )}
 
+          {top && (
+            <div className="rounded-xl bg-gradient-to-r from-violet-500/10 to-sky-500/10 border border-violet-400/20 p-3 mb-3 flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                {top.icon && (
+                  <img src={iconUrl(top.icon)} alt="" className="w-7 h-7 object-contain shrink-0" />
+                )}
+                <div className="min-w-0">
+                  <div className="text-[10px] uppercase tracking-wide text-violet-300">
+                    Top pick this slot
+                  </div>
+                  <button
+                    onClick={() => open(top.itemId)}
+                    className="text-sm font-medium text-gray-100 hover:text-white hover:underline truncate"
+                  >
+                    {top.name}
+                  </button>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 text-xs">
+                <span className="text-gray-400">
+                  Buy <span className="font-mono text-gray-200">{top.buyPrice != null ? formatGpFull(top.buyPrice) : "-"}</span>
+                </span>
+                <span className="text-gray-400">
+                  Sell <span className="font-mono text-gray-200">{top.sellPrice != null ? formatGpFull(top.sellPrice) : "-"}</span>
+                </span>
+                <span className="text-emerald-400 font-mono">
+                  {top.timingEdgePct != null ? `${(top.timingEdgePct * 100).toFixed(1)}%` : "-"}
+                </span>
+                {top.buyPrice != null && (
+                  <button
+                    onClick={() => copyBuyPrice(top.itemId, top.buyPrice!)}
+                    className="px-2.5 py-1 rounded-lg text-xs bg-violet-500/15 text-violet-300 hover:bg-violet-500/25 border border-violet-500/30"
+                  >
+                    {copiedFor === top.itemId ? "Copied" : "Copy buy price"}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {data && data.picks.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -147,6 +206,7 @@ export function ItemOfTheHour({
                     <th className="pb-2 font-medium text-right">
                       <LabelWithInfo id="slotScore">Score</LabelWithInfo>
                     </th>
+                    <th className="pb-2 pl-3 font-medium text-right"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -227,6 +287,20 @@ export function ItemOfTheHour({
                         {formatGp(p.cycleProfit)}
                       </td>
                       <td className="py-2 text-right font-mono text-gray-500">{p.score}</td>
+                      <td className="py-2 pl-3 text-right">
+                        {p.buyPrice != null && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              copyBuyPrice(p.itemId, p.buyPrice!);
+                            }}
+                            title="Copy buy price to clipboard"
+                            className="px-2 py-0.5 rounded-md text-[10px] bg-white/5 text-gray-400 hover:bg-violet-500/20 hover:text-violet-300 border border-white/10"
+                          >
+                            {copiedFor === p.itemId ? "Copied" : "Copy"}
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

@@ -8,6 +8,7 @@ import {
   type PriceAlert,
 } from "./api";
 import { MarketTable } from "./components/MarketTable";
+import { Sidebar } from "./components/Sidebar";
 import { BuySignals } from "./components/BuySignals";
 import { OvernightTrading } from "./components/OvernightTrading";
 import { Portfolio } from "./components/Portfolio";
@@ -539,11 +540,11 @@ function App() {
         )}
         {tab === "signals" && (
           <>
-            <TrackRecord />
             <BuySignals
               items={items.filter((i) => !blocked[i.id])}
               onSelectItem={setSelectedItem}
             />
+            <TrackRecord />
           </>
         )}
         {tab === "overnight" && (
@@ -567,6 +568,7 @@ function App() {
             womUsername={settings.womUsername}
             holdings={holdings}
             onSelectItem={setSelectedItem}
+            onViewSignals={() => setTab("signals")}
           />
         )}
         {tab === "sets" && <Sets />}
@@ -578,6 +580,8 @@ function App() {
           </>
         )}
       </main>
+
+      <Sidebar items={items} onSelectItem={setSelectedItem} alerts={alerts} watched={watched} />
 
       {selectedItem && (
         <ItemDetailModal

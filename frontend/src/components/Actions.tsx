@@ -19,12 +19,14 @@ export function Actions({
   holdings,
   onSelectItem,
   womUsername,
+  onViewSignals,
 }: {
   items: MarketItem[];
   heldItems: MarketItem[];
   holdings: Record<number, HoldingEntry>;
   onSelectItem: (item: MarketItem) => void;
   womUsername: string;
+  onViewSignals: () => void;
 }) {
   const heldIds = useMemo(() => new Set(Object.keys(holdings).map(Number)), [holdings]);
 
@@ -63,13 +65,14 @@ export function Actions({
         if (aHeld !== bHeld) return aHeld - bHeld;
         return b.score - a.score;
       })
-      .slice(0, 12);
+      .slice(0, 5);
   }, [items, heldIds]);
 
   return (
     <div className="space-y-6">
-      <SessionPlanner username={womUsername} />
-
+      {/* Reordered per direct feedback: lead with what's most time-sensitive. You're already
+          exposed on held positions, so closing a bad one outranks opening a new one, which
+          outranks idle-time filler (Session Planner moved to the bottom). */}
       <section>
         <h3 className="text-sm font-medium text-gray-300 mb-2">Consider selling</h3>
         <p className="text-xs text-gray-500 mb-3">
@@ -148,10 +151,19 @@ export function Actions({
       </section>
 
       <section>
-        <h3 className="text-sm font-medium text-gray-300 mb-2">Fresh buy candidates</h3>
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+          <h3 className="text-sm font-medium text-gray-300">Fresh buy candidates</h3>
+          <button
+            onClick={onViewSignals}
+            className="text-xs text-violet-400 hover:text-violet-300"
+          >
+            See full Buy Signals →
+          </button>
+        </div>
         <p className="text-xs text-gray-500 mb-3">
-          Same ranking as Buy Signals. Items you already hold are flagged and sorted after ones you
-          don't, rather than hidden -- still useful to know you could add to an existing position.
+          Top 5 of the same ranking as Buy Signals. Items you already hold are flagged and sorted
+          after ones you don't, rather than hidden -- still useful to know you could add to an
+          existing position.
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
           {buyCandidates.map((item) => {
@@ -209,6 +221,8 @@ export function Actions({
           )}
         </div>
       </section>
+
+      <SessionPlanner username={womUsername} />
     </div>
   );
 }

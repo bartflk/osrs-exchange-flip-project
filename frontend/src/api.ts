@@ -1067,6 +1067,9 @@ export interface SlotProfileResponse {
   buySlot: number | null;
   sellSlot: number | null;
   paired: PairedDay[];
+  /** Raw daily readings at the requested slots, usable for any price (not just a planned pair). */
+  buyDays: number[];
+  sellDays: number[];
   pairedDays: number;
   winDays: number;
   spanDays: number;

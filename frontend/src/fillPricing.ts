@@ -24,15 +24,28 @@ export function geTax(sellPrice: number): number {
 }
 
 /**
- * Value at a given quantile, nearest-rank. Deliberately NOT interpolated: with six or seven daily
- * observations an interpolated quantile invents a price that was never observed, and the whole
- * argument for these numbers is that they are prices the market actually traded at.
+ * Value at a given quantile, linearly interpolated between the two neighbouring observations.
+ *
+ * This was originally nearest-rank, on the reasoning that an interpolated quantile "invents a
+ * price that was never observed." That reasoning was wrong here, and the slider made it obvious:
+ * with seven daily observations, eighteen slider positions collapse onto six distinct prices, so
+ * the band sat still for three or four steps and then jumped fifty gp -- reported as "the lines
+ * just jump around instead of tightening the band."
+ *
+ * The distinction the original comment missed: a price you PLACE is a decision, and any integer
+ * is available to it. A statistic you REPORT is a claim about history and should be an observed
+ * value. Bid and ask are decisions. The fill rates beside them are claims, and those stay
+ * empirical -- counted against the real observations, never interpolated.
  */
 export function quantile(values: number[], q: number): number | null {
   if (!values.length) return null;
   const sorted = [...values].sort((a, b) => a - b);
-  const idx = Math.min(sorted.length - 1, Math.max(0, Math.round(q * (sorted.length - 1))));
-  return sorted[idx];
+  if (sorted.length === 1) return sorted[0];
+  const pos = Math.min(sorted.length - 1, Math.max(0, q * (sorted.length - 1)));
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  if (lo === hi) return sorted[lo];
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
 }
 
 export interface FillPricing {
@@ -61,10 +74,14 @@ export function priceAtFill(paired: PairedDay[], target: number): FillPricing | 
   const lows = paired.map((p) => p.buy);
   const highs = paired.map((p) => p.sell);
 
-  const bid = quantile(lows, target);
+  const bidRaw = quantile(lows, target);
   // Mirrored: to sell on `target` of days you must ask at the (1 - target) point of the highs.
-  const ask = quantile(highs, 1 - target);
-  if (bid == null || ask == null) return null;
+  const askRaw = quantile(highs, 1 - target);
+  if (bidRaw == null || askRaw == null) return null;
+  // Rounded outward: a bid rounds DOWN and an ask rounds UP, so rounding never quietly makes the
+  // trade look better than the prices you would actually place.
+  const bid = Math.floor(bidRaw);
+  const ask = Math.ceil(askRaw);
 
   const buyFillRate = lows.filter((v) => v <= bid).length / lows.length;
   const sellFillRate = highs.filter((v) => v >= ask).length / highs.length;
