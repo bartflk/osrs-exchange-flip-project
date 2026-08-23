@@ -16,7 +16,7 @@ import {
   kvSet,
   type SlotProfileRow,
 } from "./db.js";
-import { geTax } from "./signals.js";
+import { NON_FLIPPABLE_IDS, geTax } from "./signals.js";
 import { median } from "./stats.js";
 
 // DESIGN.md §14.44: "best item to buy right now", by half-hour of the UTC day.
@@ -314,6 +314,11 @@ function bestPickForItem(
   maxLookaheadSlots: number,
   bankroll: number,
 ): HourlyPick | null {
+  // scoreItem() has excluded these from Market/Buy Signals/the allocator since early on, but the
+  // slot-profile ranking never shared the list -- so Old school bond was ranking #1 among the
+  // items a nearly-spent bankroll could still afford. It has a spread like anything else; what it
+  // does not have is a way to acquire one off the GE cheaply, which is what makes it not a flip.
+  if (NON_FLIPPABLE_IDS.has(r.item_id)) return null;
   if (r.days < MIN_DAYS_PER_SLOT) return null;
   if (r.volume <= 0) return null;
   if (r.buy_price == null || r.buy_price <= 0) return null;

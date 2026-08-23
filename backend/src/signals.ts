@@ -34,7 +34,7 @@ function executionNudge(price: number): number {
 // off the GE cheap and reselling. Scoring it alongside genuine flips just wastes a Buy Signals /
 // allocator slot on a "flip" no one would actually run. Excluded from scoring everywhere
 // (Market, Buy Signals, Track record, Capital allocator all share scoreItem).
-const NON_FLIPPABLE_IDS = new Set([13190]);
+export const NON_FLIPPABLE_IDS = new Set([13190]);
 
 export interface ItemRow {
   id: number;

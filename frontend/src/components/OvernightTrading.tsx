@@ -139,22 +139,6 @@ export function OvernightTrading({
 
   const [picksData, setPicksData] = useState<OvernightPicksResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    setError(null);
-    // Fetch the full pool (backend cap 20) regardless of risk preset -- the preset filters
-    // client-side, so switching it doesn't need a round trip. Bankroll matters here beyond
-    // sizing: the backend re-ranks candidates by what THIS bankroll actually earns
-    // (deployableUnits x profitPerUnit), so a stale/default bankroll silently returns the wrong
-    // candidate SET, not just the wrong quantities -- this was missed when Overnight was first
-    // built and Item of the Hour was later made bankroll-aware without it (§14.46/§14.48).
-    fetchOvernightPicks(effectiveSlot, maxHoldHours, 20, bankroll)
-      .then((d) => !cancelled && setPicksData(d))
-      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "failed"));
-    return () => {
-      cancelled = true;
-    };
-  }, [effectiveSlot, maxHoldHours, bankroll]);
 
   // The `items` prop is whatever the Market tab's own filter/limit currently returns (a few
   // hundred items, not the full ~4,650 catalogue) -- most overnight picks won't be in it. Same
@@ -201,6 +185,29 @@ export function OvernightTrading({
   const suggestionSlots = Math.max(0, numSlots - occupiedSlots);
   const committedGp = portfolio?.totals.cashInBuyOffers ?? 0;
   const availableBankroll = Math.max(0, bankroll - committedGp);
+
+  useEffect(() => {
+    let cancelled = false;
+    setError(null);
+    // Fetch the full pool (backend cap 20) regardless of risk preset -- the preset filters
+    // client-side, so switching it doesn't need a round trip.
+    //
+    // Ranked against what is still SPENDABLE, not the whole bankroll, and that distinction is
+    // the entire feature. The backend re-ranks candidates by what the given bankroll actually
+    // earns (deployableUnits x profitPerUnit), so passing the full figure returns a list sized
+    // for money that is already committed. Measured live: with 326m set and 310m of it already
+    // in three big-ticket offers, exactly ONE of the twenty returned picks cost less than the
+    // 15.8m still free -- so five empty slots sat unfillable next to idle cash, because every
+    // candidate the allocator had been handed was one the user could no longer buy.
+    //
+    // With nothing committed this is identical to the old behaviour, since available == bankroll.
+    fetchOvernightPicks(effectiveSlot, maxHoldHours, 20, availableBankroll || bankroll)
+      .then((d) => !cancelled && setPicksData(d))
+      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "failed"));
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveSlot, maxHoldHours, availableBankroll, bankroll]);
   const trackedNames = useMemo(() => {
     const names = new Set<string>();
     for (const s of portfolio?.slots ?? []) names.add(s.name.toLowerCase());
@@ -371,7 +378,11 @@ export function OvernightTrading({
                 buying at {localOf(picksData.bedtimeSlotLabel)} {localZoneLabel()} (
                 {picksData.bedtimeSlotLabel} UTC){isNow ? " · now" : ""} · up to{" "}
                 {picksData.maxHoldHours}h hold ·{" "}
-                {picksData.itemsProfiled} items profiled · sized for {formatGp(picksData.bankroll)}
+                {picksData.itemsProfiled} items profiled · sized for{" "}
+                {formatGp(picksData.bankroll)}
+                {committedGp > 0 && (
+                  <> free ({formatGp(committedGp)} already in offers)</>
+                )}
               </span>
             )}
             {needsAction > 0 && (

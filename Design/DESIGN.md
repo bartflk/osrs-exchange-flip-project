@@ -1485,6 +1485,28 @@ The first implementation read plans from the live pick list and was wrong in a w
 
 A remembered plan is overwritten whenever the item reappears in a newer pick list, so its labels track the *current* best plan for that item rather than the one acted on - buy a position at 03:00 and it may later read "buy 03:30, sell 17:30". Deliberate: the sell recommendation staying current is more useful than a frozen record of the entry, and the text reads as a plan rather than as history. If a real record of the entry is ever wanted, `recommendation_snapshots` already stores `buy_slot`/`sell_slot` per logged overnight pick (14.54).
 
+## 14.56 Status note - Picks were ranked for money already spent - 2026-08-23
+
+Reported: *"i have money left over, i did put in my correct amount. i have 15 mil still. shouldnt it do some high volume items too?"* - three big-ticket offers placed, five slots empty, ~15m sitting idle and nothing being suggested for it.
+
+### The bug
+
+`OvernightTrading` fetched picks with the **full** bankroll while the allocator ran on the **remaining** one. The backend does not merely size to the bankroll it is given, it re-ranks by what that bankroll earns (`deployableUnits x profitPerUnit`), so the figure passed decides the candidate SET, not just quantities - a fact the code comment already stated and the call site then ignored.
+
+Measured against the live board: bankroll 326.37m, `cashInBuyOffers` 310,572,564 (exactly matching the in-game GE header), leaving 15,797,436 free. Of the twenty picks returned for 326m, **one** cost less than 15.8m - and that one was Old school bond. So the allocator was handed twenty candidates, nineteen unaffordable and one it should never have been offered, and correctly filled zero slots. The empty slots were not a ranking failure; every candidate had been priced for money that was already committed.
+
+### Fixes
+
+**1.** Picks are now requested with `availableBankroll` (bankroll minus committed). With nothing committed this is identical to the old behaviour, since available equals bankroll. With 15.8m free the same query returns Blue dragon leather (20,928 traded per 30-min slot), Dragon dart tip (34,355), Shark (62,693), Blighted ancient ice sack (76,044) - the high-volume items the user expected, which only surface once the ranking knows the real constraint. Verified live: all four remaining slots filled, 9.94m of 9.94m deployed.
+
+**2.** `NON_FLIPPABLE_IDS` is now exported from `signals.ts` and applied in `bestPickForItem()`. `scoreItem()` has excluded Old school bond from Market, Buy Signals and the allocator since early on, but the slot-profile ranking never shared the list - so the bond ranked first among the items a nearly-spent bankroll could still afford. It has a spread like anything else; what it lacks is any way to acquire one off the GE cheaply, which is what makes it not a flip.
+
+**3.** The header states what the list is actually sized for: "sized for 9.94m free (316.43m already in offers)" rather than the bankroll figure, which is no longer the number that decided the list.
+
+### The general shape
+
+This is the third bug in this feature from the same family: **a number displayed or passed that does not mean what its name implies.** 14.54 had "items profiled" counting profiles the ranking could not use; 14.55 had reprice guidance judging an overnight offer against today's spread; this one had "bankroll" meaning total when every consumer downstream needed spendable. In each case the code was internally consistent and the label was the thing that lied.
+
 ## 15. Key references
 
 - [RuneScape:Real-time Prices — OSRS Wiki](https://oldschool.runescape.wiki/w/RuneScape:Real-time_Prices)
