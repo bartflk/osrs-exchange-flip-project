@@ -141,10 +141,19 @@ export function OvernightTrading({
   // anyone who never touches the dial.
   const [fillTarget, setFillTarget] = useState(() => loadNumber("overnightFillTarget", 50));
   function updateFillTarget(v: number) {
-    const clamped = Math.max(10, Math.min(95, v));
-    setFillTarget(clamped);
-    localStorage.setItem("overnightFillTarget", String(clamped));
+    setFillTarget(Math.max(10, Math.min(95, v)));
   }
+  // Persisted on a trailing timer rather than on every input event. localStorage.setItem is a
+  // synchronous write, and dragging a range input fires it on every step -- with eight slot cards
+  // re-rendering their SVGs on the same tick, that write lands right in the middle of the frame
+  // and the drag stutters. The value the user sees updates immediately; only the save waits.
+  useEffect(() => {
+    const id = setTimeout(
+      () => localStorage.setItem("overnightFillTarget", String(fillTarget)),
+      400,
+    );
+    return () => clearTimeout(id);
+  }, [fillTarget]);
   const [bedtimeSlot, setBedtimeSlot] = useState<number | null>(null);
   // §14.50: live, so "now" rolls over on its own instead of freezing at page load.
   const liveSlot = useCurrentSlot();

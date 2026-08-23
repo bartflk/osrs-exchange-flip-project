@@ -1661,6 +1661,45 @@ Replacing the reprice warning with a calm "On plan" was right for a bid delibera
 
 §14.59 measured whether the edge is real. This measures whether the trade can be entered at all, which is prior to it: an edge on a position that never opens is not a small profit, it is no trade. Backlog item 13 (execution/fill modelling) has been on the list since the competitor pass and this is the first piece of it that exists.
 
+## 14.61 Status note - Fill-target dial, and the chart stops hiding behind the numbers - 2026-08-23
+
+From a hand-drawn sketch: floor and ceiling lines on the tile, and a slider to set fill probability so the aggression of both legs can be adjusted.
+
+### The dial
+
+`fillPricing.ts` prices both legs to a target: bid at `quantile(daily lows, target)`, ask at `quantile(daily highs, 1 - target)`. Nearest-rank, never interpolated - with seven daily observations an interpolated quantile invents a price the market never traded at, and the entire argument for these numbers is that they are prices that really happened.
+
+The median the plan had been quoting was never special; it is simply the 50% point of a distribution the app already stores per day. Every other point is equally available and each is a different trade.
+
+What the dial reveals, live on Dragonstone bolts (e):
+
+| target | bid | ask | expected |
+|---|---|---|---|
+| 20% | 375 | 414 | +121.7k |
+| 50% | 382 | 398 | +35.3k |
+| 80% | 388 | 379 | **-62.8k** |
+| 95% | 407 | 374 | **-157.0k** |
+
+Past roughly 80% the **bid crosses above the ask** and the band inverts. The card says so in words rather than showing a negative number without comment. This is the honest shape of the strategy: for most items the edge exists only at a fill rate you will not enjoy waiting for.
+
+### Two bugs found while building it
+
+**The rules were being clipped.** Floor and ceiling come from daily values at two slots; the chart's paths come from 48 slot medians. An aggressive bid legitimately sits above every median on the chart, so the in-range guard silently dropped the very lines the user was adjusting. The y-scale now includes them.
+
+**Worst-day had become a tautology.** At a fixed bid and ask the per-unit profit is a constant, so "worst day" was just the expected figure repeated. Re-modelled to the real downside of a bought position - the sell leg missing - as "bought at the bid, sold into that day's actual high", counted only over days the buy would have filled. A day the buy never filled is not a losing day, it is no trade, and the denominator now says so.
+
+### Layout
+
+Direct feedback: *"before i even see the chart i see like 50 boxes."* The chart sat roughly 250 lines below the modal header, behind six stat grids, an execution-edge panel, three sizing cards, two analysis panels and a mentions list. It now renders immediately after the header, preceded only by a four-figure strip (buy, sell, margin, ROI) with no boxes around it - four more rectangles is the wrong answer to too many rectangles. Everything else moved below and the stat grid went from 6 columns to 8 with tighter padding. Measured: the chart now starts 225px down the viewport with the full detail still present underneath.
+
+### Slider smoothness
+
+`localStorage.setItem` is a synchronous write and a dragged range input fires on every step; with eight slot cards re-rendering their SVGs on the same tick, that write lands mid-frame. The displayed value updates immediately and the save is debounced 400ms.
+
+### Not built
+
+Draggable floor/ceiling lines. The request needs one decision first: the slot-shape sparkline is 232x54px, which is not a drag target, while the modal's large chart is a time series rather than the daily distribution these prices come from. Building drag on the wrong surface is real work wasted, so it is left for the answer.
+
 ## 15. Key references
 
 - [RuneScape:Real-time Prices — OSRS Wiki](https://oldschool.runescape.wiki/w/RuneScape:Real-time_Prices)

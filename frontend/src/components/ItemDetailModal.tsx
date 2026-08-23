@@ -249,6 +249,88 @@ export function ItemDetailModal({
           </div>
         </div>
 
+        {/* The chart comes FIRST. It used to sit roughly 250 lines below the header, behind six
+            stat grids, an execution-edge panel, three sizing cards, two analysis panels and a
+            mentions list -- direct feedback: "before i even see the chart i see like 50 boxes."
+            The chart is the reason this modal opens; the numbers are what you check once it has
+            told you where to look. */}
+        {/* The four numbers you need to read the chart, on one line above it. Everything else
+            moved below: a decision needs buy, sell, what it clears and what that is as a return,
+            and the other twenty fields are follow-up questions. */}
+        <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2 mb-3">
+          <KeyStat label="Buy at" value={formatGp(item.low)} tone="text-rose-300" />
+          <KeyStat label="Sell at" value={formatGp(item.high)} tone="text-emerald-300" />
+          <KeyStat
+            label="Margin"
+            value={formatGp(item.net_margin)}
+            tone={(item.net_margin ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}
+          />
+          <KeyStat
+            label="ROI"
+            value={formatPct(item.roi_pct)}
+            tone={(item.roi_pct ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}
+          />
+        </div>
+
+        <div className="flex gap-1 mb-3">
+          {LOOKBACKS.map((lb) => (
+            <button
+              key={lb.key}
+              onClick={() => setLookback(lb.key)}
+              className={`px-2.5 py-1 rounded-lg text-xs transition-colors ${
+                lookback === lb.key
+                  ? "bg-white/10 text-white"
+                  : "text-gray-400 hover:text-gray-200 hover:bg-white/5"
+              }`}
+            >
+              {lb.label}
+            </button>
+          ))}
+          {loading && <span className="text-xs text-gray-500 self-center ml-2">Loading…</span>}
+          {error && <span className="text-xs text-rose-400 self-center ml-2">{error}</span>}
+        </div>
+
+        {blended && (
+          <p className="text-[11px] text-gray-500 mb-2">
+            Full history from the item's GE release, via the OSRS Wiki's long-range archive, daily
+            blended price only (no separate buy/sell spread this far back), shown as a single line
+            below.
+          </p>
+        )}
+        <PriceChart
+          points={points}
+          blended={blended}
+          forecast={forecast}
+          events={chartEvents}
+          hourMarkers={hourMarkers}
+        />
+
+        {rangeStats && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4 text-sm">
+            <RangeStatGroup
+              label="Overall"
+              high={rangeStats.overallHigh}
+              low={rangeStats.overallLow}
+              highClass="text-gray-200"
+              lowClass="text-gray-200"
+            />
+            <RangeStatGroup
+              label="Buying (low side)"
+              high={rangeStats.buyingHigh}
+              low={rangeStats.buyingLow}
+              highClass="text-rose-400"
+              lowClass="text-rose-400"
+            />
+            <RangeStatGroup
+              label="Selling (high side)"
+              high={rangeStats.sellingHigh}
+              low={rangeStats.sellingLow}
+              highClass="text-emerald-400"
+              lowClass="text-emerald-400"
+            />
+          </div>
+        )}
+
         {watchEntry && onUpdateAlert && (
           <div className="glass rounded-lg px-3 py-2 mb-4 flex items-center gap-4 flex-wrap text-xs">
             <button
@@ -303,7 +385,9 @@ export function ItemDetailModal({
           </div>
         )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-6 gap-3 mb-4">
+        {/* Denser: 6 columns at sm and 8 at xl, tighter gaps. Same information, roughly half the
+            vertical space, and it now sits below the chart where it belongs. */}
+        <div className="grid grid-cols-3 sm:grid-cols-6 xl:grid-cols-8 gap-2 mb-4">
           <Stat label="Buy at" value={formatGp(item.low)} />
           <Stat label="Sell at" value={formatGp(item.high)} />
           <Stat
@@ -435,64 +519,6 @@ export function ItemDetailModal({
           </div>
         )}
 
-        <div className="flex gap-1 mb-3">
-          {LOOKBACKS.map((lb) => (
-            <button
-              key={lb.key}
-              onClick={() => setLookback(lb.key)}
-              className={`px-2.5 py-1 rounded-lg text-xs transition-colors ${
-                lookback === lb.key
-                  ? "bg-white/10 text-white"
-                  : "text-gray-400 hover:text-gray-200 hover:bg-white/5"
-              }`}
-            >
-              {lb.label}
-            </button>
-          ))}
-          {loading && <span className="text-xs text-gray-500 self-center ml-2">Loading…</span>}
-          {error && <span className="text-xs text-rose-400 self-center ml-2">{error}</span>}
-        </div>
-
-        {blended && (
-          <p className="text-[11px] text-gray-500 mb-2">
-            Full history from the item's GE release, via the OSRS Wiki's long-range archive, daily
-            blended price only (no separate buy/sell spread this far back), shown as a single line
-            below.
-          </p>
-        )}
-        <PriceChart
-          points={points}
-          blended={blended}
-          forecast={forecast}
-          events={chartEvents}
-          hourMarkers={hourMarkers}
-        />
-
-        {rangeStats && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4 text-sm">
-            <RangeStatGroup
-              label="Overall"
-              high={rangeStats.overallHigh}
-              low={rangeStats.overallLow}
-              highClass="text-gray-200"
-              lowClass="text-gray-200"
-            />
-            <RangeStatGroup
-              label="Buying (low side)"
-              high={rangeStats.buyingHigh}
-              low={rangeStats.buyingLow}
-              highClass="text-rose-400"
-              lowClass="text-rose-400"
-            />
-            <RangeStatGroup
-              label="Selling (high side)"
-              high={rangeStats.sellingHigh}
-              low={rangeStats.sellingLow}
-              highClass="text-emerald-400"
-              lowClass="text-emerald-400"
-            />
-          </div>
-        )}
       </div>
     </div>
   );
@@ -531,6 +557,20 @@ function SizingTierCard({
   );
 }
 
+// Bigger than a Stat and without the box: these four sit on the same line as each other, above
+// the chart, and a border around each would put four more rectangles exactly where the complaint
+// was that there are too many rectangles.
+function KeyStat({ label, value, tone }: { label: string; value: string; tone: string }) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wider text-gray-500">{label}</div>
+      <div className={`font-mono text-xl font-semibold tabular-nums leading-tight ${tone}`}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
 function Stat({
   label,
   value,
@@ -543,7 +583,7 @@ function Stat({
   explain?: ExplanationId;
 }) {
   return (
-    <div className="glass rounded-lg px-3 py-2">
+    <div className="glass rounded-lg px-2.5 py-1.5">
       <div className="text-[10px] uppercase tracking-wide text-gray-500 flex items-center gap-1">
         {label}
         {explain && <InfoTip id={explain} />}
