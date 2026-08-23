@@ -19,8 +19,7 @@ import { useCurrentSlot } from "../useCurrentSlot";
 import { allocateCapital } from "../capitalAllocator";
 import { NumberInput, GpInput, EmptyState, Chip, Panel, Toolbar, Field, Select } from "./ui";
 import { GeSlotBoard } from "./GeSlotBoard";
-import { SlotShapeChart } from "./SlotShapeChart";
-import { SlotPlanSummary } from "./SlotPlanSummary";
+import { SlotDetail } from "./SlotDetail";
 import { buildSlotViews, countNeedsAction, type OvernightPlan } from "../geSlots";
 import { rememberPlans } from "../overnightPlans";
 import { InfoTip, LabelWithInfo } from "./InfoTip";
@@ -137,6 +136,15 @@ export function OvernightTrading({
   const [allocationPct, setAllocationPct] = useState(() => loadNumber("allocationPct", 15));
   const [numSlots, setNumSlots] = useState(() => loadNumber("overnightNumSlots", 8));
   const [maxHoldHours, setMaxHoldHours] = useState(() => loadNumber("overnightHoldHours", 8));
+  // How often you want the offer to actually fill, as a share of measured days. 50% is the old
+  // fixed behaviour (the plan quoted the median), kept as the default so nothing changes for
+  // anyone who never touches the dial.
+  const [fillTarget, setFillTarget] = useState(() => loadNumber("overnightFillTarget", 50));
+  function updateFillTarget(v: number) {
+    const clamped = Math.max(10, Math.min(95, v));
+    setFillTarget(clamped);
+    localStorage.setItem("overnightFillTarget", String(clamped));
+  }
   const [bedtimeSlot, setBedtimeSlot] = useState<number | null>(null);
   // §14.50: live, so "now" rolls over on its own instead of freezing at page load.
   const liveSlot = useCurrentSlot();
@@ -479,6 +487,18 @@ export function OvernightTrading({
           <NumberInput value={maxHoldHours} onChange={updateMaxHoldHours} className="w-16" />
           <span className="text-xs text-gray-500">hours</span>
         </Field>
+        <Field label="Fill target" hint="higher = bid up, ask down, fills more often">
+          <input
+            type="range"
+            min={10}
+            max={95}
+            step={5}
+            value={fillTarget}
+            onInput={(e) => updateFillTarget(Number((e.target as HTMLInputElement).value))}
+            className="w-32 accent-blue-400 cursor-pointer"
+          />
+          <span className="font-mono text-sm text-blue-300 tabular-nums w-10">{fillTarget}%</span>
+        </Field>
         <Field label="Risk preset">
           {(Object.keys(RISK_LABEL) as RiskPreset[]).map((r) => (
             <Chip key={r} active={riskPreset === r} onClick={() => updateRiskPreset(r)}>
@@ -552,14 +572,15 @@ export function OvernightTrading({
               // wrong on both counts -- it is sized for the whole free bankroll, not for this
               // one slot's share of it.
               const units = v.slot ? v.slot.totalQuantity : (v.suggestion?.qty ?? 0);
-              const econ = economicsFor(id);
               return (
-                <>
-                  {econ && units > 0 && (
-                    <SlotPlanSummary {...econ} units={units} placed={v.slot != null} />
-                  )}
-                  <SlotShapeChart itemId={id} buySlot={buy} sellSlot={sell} />
-                </>
+                <SlotDetail
+                  itemId={id}
+                  buySlot={buy}
+                  sellSlot={sell}
+                  units={units}
+                  fillTarget={fillTarget / 100}
+                  placed={v.slot != null}
+                />
               );
             }}
           />

@@ -1,5 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
-import { fetchSlotProfile, type SlotProfileResponse } from "../api";
+import type { SlotProfileResponse } from "../api";
 import { formatGp } from "../format";
 import { slotToLocalLabel } from "../timeSlots";
 
@@ -50,40 +49,35 @@ function yOf(v: number, min: number, max: number): number {
 }
 
 export function SlotShapeChart({
-  itemId,
+  data,
   buySlot,
   sellSlot,
+  floor,
+  ceiling,
 }: {
-  itemId: number;
+  data: SlotProfileResponse;
   buySlot: number;
   sellSlot: number;
+  /** The price you would bid at the chosen fill target -- drawn as a horizontal rule. */
+  floor?: number | null;
+  /** The price you would ask. */
+  ceiling?: number | null;
 }) {
-  const [data, setData] = useState<SlotProfileResponse | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    setData(null);
-    setFailed(false);
-    fetchSlotProfile(itemId, buySlot, sellSlot)
-      .then((d) => !cancelled && setData(d))
-      .catch(() => !cancelled && setFailed(true));
-    return () => {
-      cancelled = true;
-    };
-  }, [itemId, buySlot, sellSlot]);
-
-  if (failed) return <p className="text-[10px] text-gray-600 mt-1.5">No stored shape for this item.</p>;
-  if (!data) return <div className="h-[54px] mt-1.5 rounded bg-white/[0.03] animate-pulse" />;
-
   const buys = data.slots.map((s) => s.buyPrice);
   const sells = data.slots.map((s) => s.sellPrice);
   const all = [...buys, ...sells].filter((v): v is number => v != null);
   if (all.length < 2) {
     return <p className="text-[10px] text-gray-600 mt-1.5">Not enough stored points to draw.</p>;
   }
-  const min = Math.min(...all);
-  const max = Math.max(...all);
+  // The floor and ceiling must be inside the y-range or they simply do not draw, and they are the
+  // part the reader is adjusting. They come from the DAILY values at two slots while the paths
+  // come from 48 slot medians, so at an aggressive fill target the bid can legitimately sit above
+  // every median on the chart. Range covers both.
+  const scaleValues = [...all];
+  if (floor != null) scaleValues.push(floor);
+  if (ceiling != null) scaleValues.push(ceiling);
+  const min = Math.min(...scaleValues);
+  const max = Math.max(...scaleValues);
 
   const buyPoint = data.slots[buySlot]?.buyPrice ?? null;
   const sellPoint = data.slots[sellSlot]?.sellPrice ?? null;
@@ -116,6 +110,32 @@ export function SlotShapeChart({
         {bands.map((b, i) => (
           <rect key={i} x={b.x} y={0} width={Math.max(0, b.w)} height={H} fill="rgba(139,92,246,0.10)" />
         ))}
+
+        {/* Floor and ceiling: the two prices you would actually place at the current fill target.
+            Horizontal because they are a decision, not a series -- the whole point is seeing where
+            a flat line you choose sits against a shape you do not control. */}
+        {floor != null && (
+          <line
+            x1="0"
+            x2={W}
+            y1={yOf(floor, min, max)}
+            y2={yOf(floor, min, max)}
+            stroke="rgb(96,165,250)"
+            stroke-width="1.2"
+            stroke-dasharray="3 2"
+          />
+        )}
+        {ceiling != null && (
+          <line
+            x1="0"
+            x2={W}
+            y1={yOf(ceiling, min, max)}
+            y2={yOf(ceiling, min, max)}
+            stroke="rgb(96,165,250)"
+            stroke-width="1.2"
+            stroke-dasharray="3 2"
+          />
+        )}
 
         <path d={pathFor(sells, min, max)} fill="none" stroke="rgb(52,211,153)" stroke-width="1.2" />
         <path d={pathFor(buys, min, max)} fill="none" stroke="rgb(251,113,133)" stroke-width="1.2" />
