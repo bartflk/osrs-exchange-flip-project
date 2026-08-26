@@ -201,7 +201,29 @@ export async function profileItem(
   for (const readings of byDay.values()) {
     const lows = readings.map((r) => r.low).filter((v): v is number => v != null && v > 0);
     const highs = readings.map((r) => r.high).filter((v): v is number => v != null && v > 0);
-    // A day with only a handful of readings has no meaningful mean to deviate from.
+
+    // A day with only a handful of readings has no meaningful mean to deviate from -- but that
+    // is a statement about DEVIATIONS, and it was being applied to the absolute prices too.
+    //
+    // Absolute buy/sell prices are plain medians of observed gp; they need no daily mean and are
+    // perfectly meaningful on a thin day. Gating them on the same `>= 12 readings` rule threw
+    // them away for every illiquid item: Verac's plateskirt 0 ended up with all 48 slot prices
+    // null while item_slot_daily happily held seven real readings, so its card said "not enough
+    // stored points to draw" about data it had. Collected unconditionally now; only the
+    // deviations wait for a day that can support a mean.
+    for (const r of readings) {
+      if (r.low != null && r.low > 0) {
+        const abs = buyPrices.get(r.slot) ?? [];
+        abs.push(r.low);
+        buyPrices.set(r.slot, abs);
+      }
+      if (r.high != null && r.high > 0) {
+        const abs = sellPrices.get(r.slot) ?? [];
+        abs.push(r.high);
+        sellPrices.set(r.slot, abs);
+      }
+    }
+
     if (lows.length < 12 || highs.length < 12) continue;
 
     const lowMean = lows.reduce((s, v) => s + v, 0) / lows.length;
@@ -212,17 +234,11 @@ export async function profileItem(
         const arr = buyDevs.get(r.slot) ?? [];
         arr.push((r.low - lowMean) / lowMean);
         buyDevs.set(r.slot, arr);
-        const abs = buyPrices.get(r.slot) ?? [];
-        abs.push(r.low);
-        buyPrices.set(r.slot, abs);
       }
       if (r.high != null && r.high > 0) {
         const arr = sellDevs.get(r.slot) ?? [];
         arr.push((r.high - highMean) / highMean);
         sellDevs.set(r.slot, arr);
-        const abs = sellPrices.get(r.slot) ?? [];
-        abs.push(r.high);
-        sellPrices.set(r.slot, abs);
       }
     }
   }
@@ -233,16 +249,22 @@ export async function profileItem(
   for (let slot = 0; slot < SLOTS_PER_DAY; slot++) {
     const b = buyDevs.get(slot) ?? [];
     const s = sellDevs.get(slot) ?? [];
+    const bp = buyPrices.get(slot) ?? [];
+    const sp = sellPrices.get(slot) ?? [];
     const v = volume.get(slot);
     rows.push({
       item_id: itemId,
       slot,
       buy_deviation: b.length >= MIN_DAYS_PER_SLOT ? median(b) : null,
       sell_deviation: s.length >= MIN_DAYS_PER_SLOT ? median(s) : null,
-      buy_price: b.length >= MIN_DAYS_PER_SLOT ? median(buyPrices.get(slot) ?? []) : null,
-      sell_price: s.length >= MIN_DAYS_PER_SLOT ? median(sellPrices.get(slot) ?? []) : null,
+      // Priced from their own sample size, not the deviations'. An illiquid item can have a
+      // perfectly good median price at a slot and no usable deviation for it.
+      buy_price: bp.length >= MIN_DAYS_PER_SLOT ? median(bp) : null,
+      sell_price: sp.length >= MIN_DAYS_PER_SLOT ? median(sp) : null,
       volume: v && v.n > 0 ? Math.round(v.total / v.n) : 0,
-      days: b.length,
+      // `days` drives the ranking's own gate, so it counts the days behind the PRICE -- the thing
+      // a pick is actually built from.
+      days: Math.max(b.length, bp.length),
       updated_at: now,
     });
   }
