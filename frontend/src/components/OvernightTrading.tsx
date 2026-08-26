@@ -181,15 +181,15 @@ export function OvernightTrading({
     setAllocationPct(v);
     localStorage.setItem("allocationPct", String(v));
   }
+  // No clamping here: the bounds live on the inputs and are applied on blur. Clamping on every
+  // keystroke is what made these fields fight back while typing.
   function updateNumSlots(v: number) {
-    const clamped = Math.max(1, Math.min(8, v));
-    setNumSlots(clamped);
-    localStorage.setItem("overnightNumSlots", String(clamped));
+    setNumSlots(v);
+    localStorage.setItem("overnightNumSlots", String(v));
   }
   function updateMaxHoldHours(v: number) {
-    const clamped = Math.max(2, Math.min(14, v));
-    setMaxHoldHours(clamped);
-    localStorage.setItem("overnightHoldHours", String(clamped));
+    setMaxHoldHours(v);
+    localStorage.setItem("overnightHoldHours", String(v));
   }
 
   const [picksData, setPicksData] = useState<OvernightPicksResponse | null>(null);
@@ -485,11 +485,11 @@ export function OvernightTrading({
           <GpInput value={bankroll} onChange={updateBankroll} className="w-36" />
         </Field>
         <Field label="Max per item">
-          <NumberInput value={allocationPct} onChange={updateAllocation} className="w-20" />
+          <NumberInput value={allocationPct} onChange={updateAllocation} min={1} max={100} className="w-20" />
           <span className="text-xs text-gray-500">%</span>
         </Field>
         <Field label="GE slots">
-          <NumberInput value={numSlots} onChange={updateNumSlots} className="w-16" />
+          <NumberInput value={numSlots} onChange={updateNumSlots} min={1} max={8} className="w-16" />
         </Field>
         <Field label="Buy time">
           <Select
@@ -513,7 +513,7 @@ export function OvernightTrading({
           )}
         </Field>
         <Field label="Max hold">
-          <NumberInput value={maxHoldHours} onChange={updateMaxHoldHours} className="w-16" />
+          <NumberInput value={maxHoldHours} onChange={updateMaxHoldHours} min={1} max={24} className="w-16" />
           <span className="text-xs text-gray-500">hours</span>
         </Field>
         <Field label="Fill target" hint="higher = bid up, ask down, fills more often">

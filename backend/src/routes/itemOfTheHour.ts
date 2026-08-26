@@ -15,6 +15,7 @@ import {
   slotLabel,
   slotProfileCoverage,
   refreshSlotProfiles,
+  ensureSlotProfile,
 } from "../slotProfiles.js";
 
 // DESIGN.md §14.44: "best item to buy" for a given half-hour of the UTC day.
@@ -73,10 +74,12 @@ export async function itemOfTheHourRoutes(app: FastifyInstance) {
       Number.isInteger(requestedSlot) && requestedSlot >= 0 && requestedSlot < 48
         ? requestedSlot
         : currentSlot();
-    // Clamp to a genuinely "overnight" range (2-14h) -- outside that this isn't the feature
-    // being asked for, it's just Item of the Hour with extra steps.
+    // Capped at 24h because that is the real ceiling, not a preference: the sell-slot search walks
+    // forward through a 48-slot day and wraps, so a window longer than one day would just revisit
+    // slots it had already considered. The old 14h limit was arbitrary and simply blocked anyone
+    // who wanted to hold across a full day.
     const requestedHours = Number(maxHoldHours);
-    const hours = Number.isFinite(requestedHours) ? Math.min(14, Math.max(2, requestedHours)) : 8;
+    const hours = Number.isFinite(requestedHours) ? Math.min(24, Math.max(1, requestedHours)) : 8;
     const maxHoldSlots = Math.round(hours * 2);
     const coverage = slotProfileCoverage();
 
@@ -134,6 +137,8 @@ export async function itemOfTheHourRoutes(app: FastifyInstance) {
     const itemId = Number((req.params as { id: string }).id);
     if (!Number.isInteger(itemId)) return reply.code(400).send({ error: "bad item id" });
 
+    // Build it now if the background job never covered this item -- see ensureSlotProfile.
+    await ensureSlotProfile(itemId);
     const profile = getSlotProfile(itemId);
     if (!profile.length) return reply.code(404).send({ error: "no slot profile for this item" });
 

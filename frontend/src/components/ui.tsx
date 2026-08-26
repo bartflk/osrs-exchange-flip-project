@@ -121,6 +121,8 @@ export function NumberInput({
   onChange,
   className = "",
   zeroDisplaysBlank = false,
+  min,
+  max,
   ...rest
 }: {
   value: number;
@@ -129,7 +131,18 @@ export function NumberInput({
   // means "no minimum," so the field reads as genuinely off rather than a typed zero. Clearing
   // the field also commits 0 immediately (no revert-on-blur), since blank IS the value here.
   zeroDisplaysBlank?: boolean;
-} & Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "type">) {
+  /**
+   * Bounds, applied when the field is COMMITTED rather than on every keystroke.
+   *
+   * Callers used to clamp inside their own onChange, which fights the typist: with a minimum of
+   * 2, typing "24" clamped the intermediate "2"... fine, but with a minimum of 10 the first
+   * keystroke of "24" snapped to 10 and the field then read "104". Reported as "the input fields
+   * are weird and reset every time". Range enforcement belongs at the moment the value is
+   * finished, not mid-word.
+   */
+  min?: number;
+  max?: number;
+} & Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "type" | "min" | "max">) {
   const initial = zeroDisplaysBlank && value === 0 ? "" : String(value);
   const [text, setText] = useState(initial);
 
@@ -159,8 +172,18 @@ export function NumberInput({
         if (text === "-") {
           setText(zeroDisplaysBlank ? "" : String(value));
           if (zeroDisplaysBlank) onChange(0);
-        } else if (text === "" && !zeroDisplaysBlank) {
+          return;
+        }
+        if (text === "" && !zeroDisplaysBlank) {
           setText(String(value));
+          return;
+        }
+        const n = Number(text);
+        if (!Number.isFinite(n)) return;
+        const clamped = Math.min(max ?? Infinity, Math.max(min ?? -Infinity, n));
+        if (clamped !== n) {
+          setText(String(clamped));
+          onChange(clamped);
         }
       }}
       className={className}

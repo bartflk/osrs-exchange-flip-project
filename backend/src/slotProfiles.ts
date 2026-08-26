@@ -576,3 +576,53 @@ export function slotProfileCoverage(): {
     lastRun: last ? Number(last.value) : null,
   };
 }
+
+// ---------------------------------------------------------------------------------------------
+// On-demand profiling.
+//
+// The background job profiles the 250 most liquid items plus a 120-item high-value track: 590 in
+// all, out of 4,652. That is the right budget for RANKING -- an item nobody trades has no
+// time-of-day signal worth computing -- but it is the wrong rule for EXPLAINING, because the
+// question "what does this item normally do at this hour" is asked about whatever happens to be
+// sitting in your GE slots, which is frequently outside that list.
+//
+// Reported with a board of eight live offers where only three drew a chart: Teak plank, Berserker
+// ring and Dragon warhammer were profiled, while Karil's leathertop, Verac's plateskirt,
+// Dagon'hai robes and Trident of the seas simply rendered nothing at all. Nothing was broken --
+// there was no data, and the absence was silent.
+//
+// One Wiki request, then cached like any other profile.
+
+const inFlight = new Map<number, Promise<boolean>>();
+
+/**
+ * Guarantee a slot profile exists for one item, building it if the background job never covered it.
+ * Returns false when the item has no usable timeseries (too thin to profile at all).
+ */
+export async function ensureSlotProfile(itemId: number): Promise<boolean> {
+  if (getSlotProfile(itemId).length > 0) return true;
+
+  // A page with eight slots asks for eight profiles at once, and a duplicate in-flight request
+  // would spend a second Wiki call to compute the identical answer.
+  const existing = inFlight.get(itemId);
+  if (existing) return existing;
+
+  const task = (async () => {
+    try {
+      const { profile, daily } = await profileItem(itemId);
+      if (!profile.length) return false;
+      upsertSlotProfiles(profile);
+      replaceSlotDaily(itemId, daily);
+      console.log(`[slots] profiled ${itemId} on demand`);
+      return true;
+    } catch (err) {
+      console.error(`[slots] on-demand profile failed for ${itemId}:`, err);
+      return false;
+    } finally {
+      inFlight.delete(itemId);
+    }
+  })();
+
+  inFlight.set(itemId, task);
+  return task;
+}
