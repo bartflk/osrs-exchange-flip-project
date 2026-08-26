@@ -45,3 +45,6 @@ __pycache__
 
 # Stray software installers dropped in Design/ -- ~154MB of unrelated binaries
 *.exe
+
+# Runtime cache of the wiki DPS-calc data dumps (~5MB, re-downloaded weekly by gameData.ts)
+backend/data/gamedata/
