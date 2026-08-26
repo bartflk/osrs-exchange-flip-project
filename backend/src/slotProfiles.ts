@@ -367,6 +367,10 @@ export interface HourlyPick {
   cycleProfit: number;
   /** Calendar days the paired readings span. 4 days over 51 is not a weekly rhythm -- see MAX_PAIRED_SPAN_DAYS. */
   pairedSpanDays: number;
+  /** Today's insta-sell price, so a quoted plan price can be read against the live market. */
+  livePrice: number | null;
+  /** (live - plan) / plan. Kept small by MAX_LIVE_DRIFT, and shown rather than assumed. */
+  liveDriftPct: number | null;
   // The range the median is a summary of. Returned alongside it because a position you sleep
   // through cannot be reacted to: the worst measured day is the number that decides whether the
   // size is sane, and a median on its own hides it completely. Per unit, after tax, same
@@ -403,15 +407,22 @@ function bestPickForItem(
   // does not have is a way to acquire one off the GE cheaply, which is what makes it not a flip.
   if (NON_FLIPPABLE_IDS.has(r.item_id)) return null;
   if (r.days < MIN_DAYS_PER_SLOT) return null;
-  // The market has already moved above what this plan would bid, so the buy leg cannot fill.
-  // Only applied when a live price exists -- absent data must not silently reject an item.
-  if (
-    r.low != null &&
-    r.buy_price != null &&
-    r.buy_price > 0 &&
-    (r.low - r.buy_price) / r.buy_price > MAX_LIVE_DRIFT
-  ) {
-    return null;
+  // The plan's quoted price must still describe today's market, in EITHER direction.
+  //
+  // This gate was one-sided and only caught the market running above the plan (a bid that cannot
+  // fill). The mirror case is worse and was going straight through: when the market falls BELOW
+  // the plan, the bid fills instantly and you overpay by the whole gap.
+  //
+  // Reported on Dexterous prayer scroll, which fell steadily for eight days -- 19.6m on the 19th
+  // to 17.0m on the 26th. The quoted buy price is a MEDIAN ACROSS THOSE DAYS, so it sat at 18.2m
+  // while the item traded at 17.59m, and the board recommended bidding 3.4% over market.
+  //
+  // §14.51 fixed the EDGE by pairing buy and sell within a day. It did not fix the LEVEL: a
+  // cross-day median is still the wrong absolute price to quote on anything that trends, and the
+  // edge being real per-unit does not help if the entry price has been left behind.
+  if (r.low != null && r.buy_price != null && r.buy_price > 0) {
+    const drift = (r.low - r.buy_price) / r.buy_price;
+    if (Math.abs(drift) > MAX_LIVE_DRIFT) return null;
   }
   if (r.volume <= 0) return null;
   if (r.buy_price == null || r.buy_price <= 0) return null;
@@ -530,6 +541,11 @@ function bestPickForItem(
     pairedDays: bestPairedDays,
     winDays: bestWinDays,
     pairedSpanDays: bestSpanDays,
+    livePrice: r.low,
+    liveDriftPct:
+      r.low != null && r.buy_price != null && r.buy_price > 0
+        ? (r.low - r.buy_price) / r.buy_price
+        : null,
     worstDayProfit: Math.round(bestWorstDay),
     bestDayProfit: Math.round(bestBestDay),
     holdSlots,

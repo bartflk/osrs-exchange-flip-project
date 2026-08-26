@@ -756,6 +756,7 @@ export function OvernightTrading({
                 <tr className="text-[11px] uppercase tracking-wide text-gray-500 text-left">
                   <th className="pb-2 pr-3 font-medium">Item</th>
                   <th className="pb-2 pr-3 font-medium text-right">Buy @</th>
+                  <th className="pb-2 pr-3 font-medium text-right">vs live</th>
                   <th className="pb-2 pr-3 font-medium text-right">Sell @</th>
                   <th className="pb-2 pr-3 font-medium text-right">Sell at</th>
                   <th className="pb-2 pr-3 font-medium text-right">Hold</th>
@@ -795,6 +796,27 @@ export function OvernightTrading({
                     </td>
                     <td className="py-2 pr-3 text-right font-mono text-gray-300">
                       {p.buyPrice != null ? formatGpFull(p.buyPrice) : "-"}
+                    </td>
+                    {/* The plan price is a median over roughly a week, so on anything that trends
+                        it drifts away from today's market. Shown next to it rather than trusted:
+                        a quote 3% above live fills instantly and overpays by 3%. */}
+                    <td
+                      className={`py-2 pr-3 text-right font-mono ${
+                        p.liveDriftPct == null
+                          ? "text-gray-600"
+                          : Math.abs(p.liveDriftPct) < 0.01
+                            ? "text-gray-500"
+                            : "text-amber-400"
+                      }`}
+                      title={
+                        p.livePrice != null
+                          ? `market is ${formatGpFull(p.livePrice)} right now`
+                          : "no live price"
+                      }
+                    >
+                      {p.liveDriftPct == null
+                        ? "-"
+                        : `${p.liveDriftPct >= 0 ? "+" : ""}${(p.liveDriftPct * 100).toFixed(1)}%`}
                     </td>
                     <td className="py-2 pr-3 text-right font-mono text-violet-300">
                       {p.sellPrice != null ? formatGpFull(p.sellPrice) : "-"}

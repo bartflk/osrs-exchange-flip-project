@@ -946,6 +946,10 @@ export interface HourlyPick {
   winDays: number;
   /** Calendar days those paired readings span -- 4 days over 51 is not a weekly rhythm. */
   pairedSpanDays: number;
+  /** Today's insta-sell price, so a quoted plan price can be read against the live market. */
+  livePrice: number | null;
+  /** (live - plan) / plan. */
+  liveDriftPct: number | null;
   /** Range behind the median, per unit after tax -- the worst day is what a sleeping position risks. */
   worstDayProfit: number;
   bestDayProfit: number;
