@@ -7,7 +7,7 @@ import {
 } from "../api";
 import { formatGp } from "../format";
 import { loadSettings } from "../settings";
-import { Badge, Button, EmptyState, Field, GpInput, Input, Panel, Toolbar } from "./ui";
+import { Badge, Button, EmptyState, Field, GpInput, Input, Panel, Select, Toolbar } from "./ui";
 
 // What to do with your time, priced with the same live market data as everything else.
 //
@@ -20,12 +20,47 @@ import { Badge, Button, EmptyState, Field, GpInput, Input, Panel, Toolbar } from
 // requirements (Wise Old Man), whether YOUR bankroll covers the supplies, and what the best gear
 // YOUR money can buy for the boss actually is.
 
+type SortKey = "activity" | "profit" | "supplies" | "revenue" | "skill";
+
 const RELIABILITY_NOTE: Record<MoneyMakerRow["reliability"], string> = {
   exact: "Every input and output priced.",
   floor: "An output could not be priced, so the real figure is HIGHER than shown.",
   overstated:
     "A cost line could not be priced, so this is missing an expense and the real figure is LOWER.",
 };
+
+function SortHeader({
+  label,
+  k,
+  sortKey,
+  dir,
+  onSort,
+  align,
+  className = "",
+}: {
+  label: string;
+  k: SortKey;
+  sortKey: SortKey;
+  dir: 1 | -1;
+  onSort: (k: SortKey) => void;
+  align?: "right";
+  className?: string;
+}) {
+  const active = sortKey === k;
+  return (
+    <th
+      onClick={() => onSort(k)}
+      className={`py-2 font-medium select-none cursor-pointer hover:text-gray-200 transition-colors ${
+        align === "right" ? "text-right px-3" : "px-3"
+      } ${className}`}
+    >
+      {label}{" "}
+      <span className={active ? "text-violet-400" : "text-gray-700"}>
+        {active ? (dir === 1 ? "\u2191" : "\u2193") : "\u2195"}
+      </span>
+    </th>
+  );
+}
 
 function ProfitCell({ row }: { row: MoneyMakerRow }) {
   const tone =
@@ -36,7 +71,7 @@ function ProfitCell({ row }: { row: MoneyMakerRow }) {
         : "text-rose-400";
   return (
     <span className={`font-mono font-semibold tabular-nums ${tone}`} title={RELIABILITY_NOTE[row.reliability]}>
-      {row.reliability === "floor" ? "≥" : row.reliability === "overstated" ? "≤?" : ""}
+      {row.reliability === "floor" ? "≥" : row.reliability === "overstated" ? "≤" : ""}
       {formatGp(row.profitPerHour)}
     </span>
   );
@@ -139,8 +174,24 @@ export function MoneyMakers() {
   const [username, setUsername] = useState(() => loadSettings().womUsername ?? "");
   const [search, setSearch] = useState("");
   const [onlyDoable, setOnlyDoable] = useState(false);
+  // Shown by default. These were hidden, and hiding them removed every modern boss from the
+  // list -- the Doom of Mokhaiotl computes 9.86m/hr but carries a few unpriceable supply lines
+  // (spell costs, {{Cheap food}}), and a guide is not unusable because one line of its shopping
+  // list has no GE price. The flag stays; the concealment does not.
   const [hideOverstated, setHideOverstated] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>("profit");
+  const [sortDir, setSortDir] = useState<1 | -1>(-1);
+  const [category, setCategory] = useState<string>("all");
+
+  function toggleSort(key: SortKey) {
+    if (key === sortKey) {
+      setSortDir((d) => (d === 1 ? -1 : 1));
+    } else {
+      setSortKey(key);
+      setSortDir(key === "activity" ? 1 : -1);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -157,21 +208,55 @@ export function MoneyMakers() {
     };
   }, [username, bankroll]);
 
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of rows) if (r.category) set.add(r.category);
+    return [...set].sort();
+  }, [rows]);
+
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return rows.filter((r) => {
+    const filtered = rows.filter((r) => {
       if (needle && !r.activity.toLowerCase().includes(needle)) return false;
-      // "Overstated" means a cost line is missing, so the profit is inflated by an unknown amount.
-      // Hidden by default rather than mixed in: a number that is wrong in a known direction should
-      // not sit in a sorted list pretending to be comparable.
-      if (hideOverstated && r.reliability === "overstated") return false;
+      if (category !== "all" && r.category !== category) return false;
+      // Only guides with NO counted cost are hidden by default, not everything flagged. Hiding
+      // all flagged rows removed every modern boss; hiding none let pure-revenue rows (147m/hr
+      // with a zero cost side) sit at the top of a sorted list as if comparable.
+      if (hideOverstated && r.costsUnknown) return false;
       if (onlyDoable) {
         if (r.requirementsMet === false) return false;
         if (r.affordable === false) return false;
       }
       return true;
     });
-  }, [rows, search, onlyDoable, hideOverstated]);
+
+    const value = (r: MoneyMakerRow): number | string => {
+      switch (sortKey) {
+        case "activity":
+          return r.activity.toLowerCase();
+        case "profit":
+          return r.profitPerHour;
+        case "supplies":
+          return r.inputCost;
+        case "revenue":
+          return r.outputRevenue;
+        case "skill":
+          // Sorted by the HIGHEST level the activity demands -- the one that actually gates it.
+          // An average would rank a guide needing 99 Slayer and 1 Cooking below one needing 60 of
+          // each, which is backwards for "can I do this yet".
+          return r.requirements.reduce((max, q) => Math.max(max, q.level), 0);
+      }
+    };
+
+    return [...filtered].sort((a, b) => {
+      const av = value(a);
+      const bv = value(b);
+      if (typeof av === "string" || typeof bv === "string") {
+        return String(av) < String(bv) ? -sortDir : String(av) > String(bv) ? sortDir : 0;
+      }
+      return (av - bv) * sortDir;
+    });
+  }, [rows, search, onlyDoable, hideOverstated, category, sortKey, sortDir]);
 
   return (
     <div>
@@ -209,12 +294,22 @@ export function MoneyMakers() {
             className="w-44"
           />
         </Field>
+        <Field label="Category">
+          <Select value={category} onChange={(e) => setCategory((e.target as HTMLSelectElement).value)}>
+            <option value="all">All categories</option>
+            {categories.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </Select>
+        </Field>
         <Field label="Filters">
           <Button size="sm" active={onlyDoable} onClick={() => setOnlyDoable((v) => !v)}>
             I can do this
           </Button>
           <Button size="sm" active={hideOverstated} onClick={() => setHideOverstated((v) => !v)}>
-            Hide unpriced costs
+            Hide zero-cost
           </Button>
         </Field>
       </Toolbar>
@@ -241,15 +336,15 @@ export function MoneyMakers() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-[10px] uppercase tracking-wider text-gray-500 text-left border-b border-white/8">
-                  <th className="px-4 py-2 font-medium">Activity</th>
-                  <th className="px-3 py-2 font-medium text-right">Profit/hr</th>
-                  <th className="px-3 py-2 font-medium text-right">Supplies/hr</th>
-                  <th className="px-3 py-2 font-medium text-right">Per hour</th>
-                  <th className="px-3 py-2 font-medium">Requirements</th>
+                  <SortHeader label="Activity" k="activity" sortKey={sortKey} dir={sortDir} onSort={toggleSort} className="px-4" />
+                  <SortHeader label="Profit/hr" k="profit" sortKey={sortKey} dir={sortDir} onSort={toggleSort} align="right" />
+                  <SortHeader label="Supplies/hr" k="supplies" sortKey={sortKey} dir={sortDir} onSort={toggleSort} align="right" />
+                  <SortHeader label="Income/hr" k="revenue" sortKey={sortKey} dir={sortDir} onSort={toggleSort} align="right" />
+                  <SortHeader label="Skills" k="skill" sortKey={sortKey} dir={sortDir} onSort={toggleSort} />
                 </tr>
               </thead>
               <tbody>
-                {visible.slice(0, 120).map((r) => {
+                {visible.slice(0, 300).map((r) => {
                   const open = expanded === r.title;
                   return (
                     <>
@@ -279,16 +374,29 @@ export function MoneyMakers() {
                           {formatGp(r.outputRevenue)}
                         </td>
                         <td className="px-3 py-2">
-                          {r.requirementsMet === null ? (
-                            <span className="text-[10px] text-gray-600">unknown</span>
-                          ) : r.requirementsMet ? (
-                            <Badge tone="success">met</Badge>
+                          {r.requirements.length === 0 ? (
+                            <span className="text-[10px] text-gray-600">none</span>
                           ) : (
-                            <span className="text-[10px] text-amber-300">
-                              {r.missingRequirements
-                                .map((m) => `${m.skill} ${m.have}/${m.needed}`)
-                                .join(", ")}
-                            </span>
+                            <div className="flex flex-wrap gap-1">
+                              {r.requirements.slice(0, 5).map((q) => {
+                                const miss = r.missingRequirements.find((m) => m.skill === q.skill);
+                                return (
+                                  <span
+                                    key={q.skill + q.level}
+                                    title={miss ? `you have ${miss.have}` : undefined}
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-mono border ${
+                                      miss
+                                        ? "border-amber-400/40 bg-amber-500/10 text-amber-300"
+                                        : r.requirementsMet
+                                          ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-300"
+                                          : "border-white/10 bg-white/5 text-gray-400"
+                                    }`}
+                                  >
+                                    {q.skill.slice(0, 4)} {q.level}
+                                  </span>
+                                );
+                              })}
+                            </div>
                           )}
                         </td>
                       </tr>

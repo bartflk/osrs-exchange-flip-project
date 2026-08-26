@@ -1116,6 +1116,8 @@ export interface MoneyMakerRow {
   unpricedLines: number;
   /** exact | floor (real figure is higher) | overstated (a cost is missing). */
   reliability: "exact" | "floor" | "overstated";
+  /** No cost counted at all -- the figure is pure revenue and not comparable. */
+  costsUnknown: boolean;
   requirementsMet: boolean | null;
   missingRequirements: { skill: string; needed: number; have: number }[];
   affordable: boolean | null;

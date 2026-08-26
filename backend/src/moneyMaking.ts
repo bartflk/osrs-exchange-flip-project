@@ -1,6 +1,6 @@
 import { db } from "./db.js";
 import { geTax } from "./signals.js";
-import { parseQuantity } from "./wikiExpr.js";
+import { extractVarDefines, parseQuantity } from "./wikiExpr.js";
 
 // The OSRS Wiki's money-making guides, re-priced against this app's own live market data.
 //
@@ -259,9 +259,12 @@ function parseGuide(title: string, wikitext: string): MoneyMaker | null {
   const body = extractTemplate(wikitext, "Mmgtable");
   if (!body) return null;
   const p = splitParams(body);
+  // Page-scoped variables must be read from the WHOLE page, not the template body -- the
+  // {{#vardefine:}} block sits outside {{Mmgtable}} on every guide that uses them.
+  const vars = extractVarDefines(wikitext);
 
   const activity = flattenWikitext(p.get("Activity") ?? "") || title.replace(PREFIX, "");
-  const kph = parseQuantity(p.get("kph"));
+  const kph = parseQuantity(p.get("kph"), vars);
 
   // `isperkill = y` means the quantities on this guide are stated PER KILL, not per hour, and
   // must be scaled by `kph`. Missing this made every boss look worthless: Vorkath drops 2
@@ -278,7 +281,7 @@ function parseGuide(title: string, wikitext: string): MoneyMaker | null {
     for (let i = 1; i <= 60; i++) {
       const rawName = p.get(`${kind}${i}`);
       if (!rawName) continue;
-      const rawQty = parseQuantity(p.get(`${kind}${i}num`));
+      const rawQty = parseQuantity(p.get(`${kind}${i}num`), vars);
       const lineIsPerHour = /^(y|yes|true)$/i.test((p.get(`${kind}${i}isph`) ?? "").trim());
       // Scaling needs a kph to scale by. Without one the quantity cannot be converted, so the
       // line is dropped rather than silently left at its per-kill value.
@@ -457,6 +460,17 @@ export interface PricedMoneyMaker {
    *                LOWER. Not safe to rank on, and never shown as a headline.
    */
   reliability: "exact" | "floor" | "overstated";
+  /**
+   * No cost was counted AT ALL, despite the guide listing inputs.
+   *
+   * A stronger claim than "overstated", and worth separating. The Doom of Mokhaiotl is overstated
+   * because two of its nine supply lines are spell costs with no GE price -- 580k of real supplies
+   * still got counted, and the number is usable with that caveat. "Dismantling bracelets of
+   * ethereum" states no quantity for its ONLY input, so its entire cost side is zero and it books
+   * pure revenue at 147m/hr. The first belongs in the list with a flag; the second is not a
+   * comparable number at all.
+   */
+  costsUnknown: boolean;
   updatedAt: number;
 }
 
@@ -523,6 +537,9 @@ export function getPricedMoneyMakers(): PricedMoneyMaker[] {
           : r.missing_outputs > 0 || unpriced > 0
             ? "floor"
             : "exact",
+      costsUnknown:
+        (r.missing_inputs > 0 || unpricedInputs > 0) && Math.round(inputCost) === 0 &&
+        (inputs.length > 0 || r.missing_inputs > 0),
       updatedAt: r.updated_at,
     };
   });

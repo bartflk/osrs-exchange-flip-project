@@ -120,11 +120,114 @@ export function evalWikiExpr(raw: string): number | null {
  * A quantity field, which may be a bare number or an `{{#expr:}}`.
  * Returns null when it cannot be read exactly -- never a guess.
  */
-export function parseQuantity(raw: string | undefined): number | null {
+export function parseQuantity(
+  raw: string | undefined,
+  vars: Map<string, string> = new Map(),
+): number | null {
   if (!raw) return null;
-  const text = raw.trim();
-  const expr = text.match(/^\{\{\s*#expr:\s*([^}]*)\}\}$/i);
-  if (expr) return evalWikiExpr(expr[1]);
-  const plain = Number(text.replace(/,/g, ""));
-  return Number.isFinite(plain) ? plain : null;
+  const text = stripComments(raw).trim().replace(/,/g, "");
+  if (!text) return null;
+  // A plain number first, then the full resolver. Guides write quantities three ways -- "100",
+  // "1/4" as bare arithmetic, and a wrapped {{#expr:}} -- and only the first was handled, so a
+  // bare fraction became NaN and its line was dropped.
+  const plain = Number(text);
+  if (Number.isFinite(plain)) return plain;
+  return resolveExpression(text, vars);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Page variables.
+//
+// Newer guides -- every recent boss, including the Doom of Mokhaiotl -- express drop rates through
+// MediaWiki variables rather than literals:
+//
+//   {{#vardefine:unique4|1/450}}
+//   {{#vardefine:common2|{{#expr:1-{{#var:unique2}}}}}}
+//   |Output1num = {{#expr:({{#var:unique4}} + ...)}}
+//
+// Without resolving these, every quantity on those pages fails to parse and the guide is dropped
+// or half-read. The Doom guides came through with 7 missing inputs and 25 missing outputs, which
+// classified them "overstated" and hid them from the list entirely -- reported as "i don't see
+// killing doom in my current list".
+//
+// Values are resolved iteratively because they reference each other; `common2` is defined in terms
+// of `unique2`. A fixed number of passes rather than recursion, so a page that defines a variable
+// in terms of itself terminates instead of hanging.
+
+const MAX_RESOLVE_PASSES = 8;
+
+/** HTML comments appear inline in quantity fields: `num=17 <!--ex. 6 larvae per...-->`. */
+export function stripComments(text: string): string {
+  return text.replace(/<!--[\s\S]*?-->/g, "");
+}
+
+/** Every `{{#vardefine:name|value}}` on a page, values left unresolved. */
+export function extractVarDefines(wikitext: string): Map<string, string> {
+  const vars = new Map<string, string>();
+  const re = /\{\{\s*#vardefine\s*:\s*([^|}]+?)\s*\|/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(wikitext))) {
+    // Read the value by brace depth rather than to the next "}}" -- the value itself frequently
+    // contains a nested {{#expr:}}, and a lazy match would cut it in half.
+    let depth = 1;
+    let i = re.lastIndex;
+    let value = "";
+    while (i < wikitext.length && depth > 0) {
+      if (wikitext.slice(i, i + 2) === "{{") {
+        depth++;
+        value += "{{";
+        i += 2;
+        continue;
+      }
+      if (wikitext.slice(i, i + 2) === "}}") {
+        depth--;
+        if (depth === 0) break;
+        value += "}}";
+        i += 2;
+        continue;
+      }
+      value += wikitext[i];
+      i++;
+    }
+    vars.set(m[1].trim(), value.trim());
+  }
+  return vars;
+}
+
+/**
+ * Resolve `{{#var:}}` references and evaluate every `{{#expr:}}`, innermost first, until a plain
+ * number remains. Returns null the moment anything cannot be resolved exactly.
+ */
+export function resolveExpression(raw: string, vars: Map<string, string>): number | null {
+  let text = stripComments(raw).trim();
+  if (!text) return null;
+
+  for (let pass = 0; pass < MAX_RESOLVE_PASSES; pass++) {
+    // Substitute variables. An undefined variable is fatal rather than treated as zero: a drop
+    // rate silently becoming 0 would understate a boss without any sign that it had happened.
+    text = text.replace(/\{\{\s*#var:\s*([^|}]+?)\s*(?:\|[^}]*)?\}\}/g, (_all, name: string) => {
+      const v = vars.get(name.trim());
+      return v == null ? "\u0000UNDEF\u0000" : `(${v})`;
+    });
+    if (text.includes("\u0000UNDEF\u0000")) return null;
+
+    // Evaluate the innermost {{#expr:}} -- one with no further braces inside it.
+    const innermost = text.match(/\{\{\s*#expr:\s*([^{}]*)\}\}/i);
+    if (innermost) {
+      const value = evalWikiExpr(innermost[1]);
+      if (value == null) return null;
+      text = text.replace(innermost[0], `(${value})`);
+      continue;
+    }
+
+    if (text.includes("{{")) {
+      // A template that is neither #var nor #expr ({{Cheap food}}, a drop-table transclusion).
+      // Not a number, and not guessable.
+      return null;
+    }
+    break;
+  }
+
+  if (text.includes("{{")) return null;
+  return evalWikiExpr(text);
 }
