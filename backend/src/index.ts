@@ -17,6 +17,7 @@ import { indicatorsRoutes } from "./routes/indicators.js";
 import { ledgerRoutes } from "./routes/ledger.js";
 import { tradingHoursRoutes } from "./routes/tradingHours.js";
 import { itemOfTheHourRoutes } from "./routes/itemOfTheHour.js";
+import { bossingRoutes } from "./routes/bossing.js";
 import { startPolling } from "./poller.js";
 import { closeWarehouse } from "./warehouse.js";
 
@@ -42,6 +43,7 @@ await app.register(indicatorsRoutes);
 await app.register(ledgerRoutes);
 await app.register(tradingHoursRoutes);
 await app.register(itemOfTheHourRoutes);
+await app.register(bossingRoutes);
 
 startPolling();
 

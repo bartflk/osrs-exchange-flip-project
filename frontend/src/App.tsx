@@ -37,6 +37,7 @@ import { type BlockEntry, loadBlocklist, saveBlocklist, removeFromBlocklist } fr
 import { type HoldingEntry, loadHoldings, saveHoldings } from "./bankHoldings";
 import { type Settings, loadSettings, saveSettings } from "./settings";
 import type { BankValueItem } from "./api";
+import { MoneyMakers } from "./components/MoneyMakers";
 import {
   Button,
   Chip,
@@ -52,6 +53,7 @@ type Tab =
   | "market"
   | "signals"
   | "overnight"
+  | "moneymakers"
   | "portfolio"
   | "flips"
   | "bank"
@@ -68,6 +70,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "market", label: "Market" },
   { key: "signals", label: "Signals" },
   { key: "overnight", label: "Overnight" },
+  { key: "moneymakers", label: "Money makers" },
   { key: "portfolio", label: "Portfolio" },
   { key: "flips", label: "Flips" },
   { key: "bank", label: "Bank" },
@@ -553,6 +556,7 @@ function App() {
             onSelectItem={setSelectedItem}
           />
         )}
+        {tab === "moneymakers" && <MoneyMakers />}
         {tab === "portfolio" && <Portfolio items={items} onSelectItem={setSelectedItem} />}
         {tab === "flips" && <Flips items={items} onSelectItem={setSelectedItem} />}
         {tab === "bank" && (

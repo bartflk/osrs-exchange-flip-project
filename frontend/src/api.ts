@@ -1088,3 +1088,114 @@ export async function fetchSlotProfile(
   if (!res.ok) throw new Error(`slot profile failed: ${res.status}`);
   return res.json();
 }
+
+// ---------------------------------------------------------------------------- money makers & gear
+
+export interface MmgLine {
+  name: string;
+  itemId: number | null;
+  qtyPerHour: number;
+  unitPrice: number | null;
+  value: number;
+}
+
+export interface MoneyMakerRow {
+  title: string;
+  activity: string;
+  category: string | null;
+  members: boolean;
+  kph: number | null;
+  requirements: { skill: string; level: number }[];
+  gear: string[];
+  inputs: MmgLine[];
+  outputs: MmgLine[];
+  inputCost: number;
+  outputRevenue: number;
+  profitPerHour: number;
+  complete: boolean;
+  unpricedLines: number;
+  /** exact | floor (real figure is higher) | overstated (a cost is missing). */
+  reliability: "exact" | "floor" | "overstated";
+  requirementsMet: boolean | null;
+  missingRequirements: { skill: string; needed: number; have: number }[];
+  affordable: boolean | null;
+  updatedAt: number;
+}
+
+export interface MoneyMakerResponse {
+  guides: MoneyMakerRow[];
+  player: string | null;
+  levelsKnown: boolean;
+  total: number;
+  stored: number;
+}
+
+export async function fetchMoneyMakers(opts: {
+  username?: string;
+  bankroll?: number;
+}): Promise<MoneyMakerResponse> {
+  const q = new URLSearchParams();
+  if (opts.username) q.set("username", opts.username);
+  if (opts.bankroll != null) q.set("bankroll", String(opts.bankroll));
+  const res = await fetch(`/api/money-makers?${q}`);
+  if (!res.ok) throw new Error(`money makers failed: ${res.status}`);
+  return res.json();
+}
+
+export interface GearPiece {
+  slot: string;
+  itemId: number;
+  name: string;
+  price: number;
+  image: string;
+}
+
+export interface Loadout {
+  style: "melee" | "ranged" | "magic";
+  items: GearPiece[];
+  totalCost: number;
+  budget: number;
+  emptySlots: string[];
+  dps: {
+    dps: number;
+    maxHit: number;
+    accuracy: number;
+    attackSpeedTicks: number;
+    timeToKill: number;
+    attackType: string;
+    effects: string[];
+  };
+}
+
+export interface GearResponse {
+  monster: {
+    id: number;
+    name: string;
+    version: string;
+    level: number;
+    hp: number;
+    defence: number;
+    attributes: string[];
+  };
+  player: string | null;
+  levelsKnown: boolean;
+  skills: Record<string, number>;
+  budget: number;
+  assumedPrayers: string;
+  loadouts: Loadout[];
+}
+
+export async function fetchBestGear(opts: {
+  monster: string;
+  bankroll: number;
+  username?: string;
+}): Promise<GearResponse> {
+  const q = new URLSearchParams({ monster: opts.monster, bankroll: String(opts.bankroll) });
+  if (opts.username) q.set("username", opts.username);
+  const res = await fetch(`/api/gear/best?${q}`);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `gear lookup failed: ${res.status}`);
+  }
+  return res.json();
+}
