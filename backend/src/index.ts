@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import websocket from "@fastify/websocket";
 import { itemsRoutes } from "./routes/items.js";
 import { bankRoutes } from "./routes/bank.js";
 import { alertsRoutes } from "./routes/alerts.js";
@@ -19,12 +20,15 @@ import { tradingHoursRoutes } from "./routes/tradingHours.js";
 import { itemOfTheHourRoutes } from "./routes/itemOfTheHour.js";
 import { startPolling } from "./poller.js";
 import { closeWarehouse } from "./warehouse.js";
+import { runeliteWebsocket } from "./runeliteWebsocket.js";
 
 // Default 1MB body limit is too small for a base64-encoded GE screenshot upload (vision.ts) --
 // a full-window PNG easily runs several MB once base64-inflated (~33% larger than the raw file).
 const app = Fastify({ logger: true, bodyLimit: 20 * 1024 * 1024 });
 
 await app.register(cors, { origin: true });
+await app.register(websocket);
+await app.register(runeliteWebsocket);
 await app.register(itemsRoutes);
 await app.register(bankRoutes);
 await app.register(alertsRoutes);

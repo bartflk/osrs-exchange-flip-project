@@ -8,7 +8,7 @@ REM from a .bat is what makes this genuinely one click, without changing any mac
 REM
 REM The actual logic lives in the project folder (start.ps1) so it stays version-controlled.
 
-set "PROJECT=%USERPROFILE%\Desktop\osrs exchange flip project"
+set "PROJECT=%~dp0"
 
 if not exist "%PROJECT%\start.ps1" (
     echo.

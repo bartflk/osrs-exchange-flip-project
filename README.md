@@ -124,6 +124,41 @@ Backend listens on `http://127.0.0.1:3001` and starts polling the Wiki API immed
 mapping once at boot + daily refresh, prices every 60s). Frontend dev server runs on
 `http://localhost:5173` (or the next free port) and proxies `/api/*` to the backend.
 
+### RuneLite WebSocket
+
+The local backend also exposes `ws://127.0.0.1:3001/ws/runelite` for the companion RuneLite
+plugin. It is read-only for now: the plugin can request market information, but order placement is
+intentionally not part of this protocol yet.
+
+Messages are JSON. Every request may include a `requestId`, which is echoed in its response:
+
+```json
+{ "type": "status", "requestId": "1" }
+{ "type": "items", "requestId": "2", "limit": 20, "minScore": 50 }
+{ "type": "buy_recommendation", "requestId": "3" }
+{ "type": "item", "requestId": "4", "itemId": 4151 }
+{ "type": "item_analysis", "requestId": "5", "itemId": 4151 }
+{ "type": "portfolio", "requestId": "6" }
+{ "type": "history", "requestId": "7", "itemId": 4151, "limit": 200 }
+{ "type": "snapshot", "requestId": "8", "itemId": 4151 }
+{ "type": "subscribe", "requestId": "9", "intervalMs": 60000 }
+{ "type": "unsubscribe", "requestId": "10" }
+```
+
+The server sends a `hello` message immediately after connection. `status`, `items`, and `item`
+return `{ "type": "response", "requestId", "ok", "data" }`. `item_analysis` adds prediction,
+recommendation, profit calculations, and history for one item. `portfolio` provides positions,
+live GE slots, buy-limit usage, totals, session data, and capture metadata. `history` provides
+local price history, transactions, and item flips. `snapshot` delivers all Flashwave-owned data in
+one response with these sections: `market`, `scoring`, `recommendations`, `portfolio`, `history`,
+and optional `itemAnalysis`. A subscription sends an immediate `market_update` followed by ranked
+market and recommendation updates at the requested interval, clamped to 5 seconds through 5
+minutes. `buy_recommendation` returns one item with `action`, `itemId`, `itemName`, `quantity`,
+`offerPrice`, `expectedSellPrice`, `expectedProfitEach`, `expectedProfitTotal`, `roiPct`, `score`,
+`buyLimit`, and `marketUpdatedAt`, or `data: null` when no profitable opportunity is available.
+Item payloads use the same scored shape as `GET /api/items`, including execution prices,
+net margin, ROI, liquidity, and score.
+
 Give the backend a minute after first boot — tables only have data once the first poll cycle
 completes.
 
@@ -194,6 +229,7 @@ and §10 for what's still on the backlog. Highlights as of the latest pass:
 backend/
   src/
     index.ts, poller.ts        # Fastify server, polling loop
+    runeliteWebsocket.ts       # read-only RuneLite WebSocket protocol
     db.ts, warehouse.ts        # SQLite (operational) + DuckDB (analytical rollups)
     signals.ts, volatility.ts, forecast.ts   # scoring, volatility, IQR forecast bands
     alerts.ts, trends.ts, substitutions.ts   # crash/spike alerts, leaderboards, lag flags
