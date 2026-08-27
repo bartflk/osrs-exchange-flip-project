@@ -11,6 +11,7 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $BackendPort = 3001
 $FrontendPort = 5173
+$WsPort = 8080
 $FrontendUrl = "http://localhost:$FrontendPort"
 
 function Write-Step($msg) { Write-Host "  $msg" -ForegroundColor Cyan }
@@ -120,6 +121,19 @@ if (Test-PortListening $FrontendPort) {
     )
 }
 
+# --- WebSocket / HTTP server.js ---------------------------------------------------------------
+
+if (Test-PortListening $WsPort) {
+    Write-Ok "WebSocket server already running on port $WsPort"
+} else {
+    Write-Step "Starting WebSocket server (server.js)..."
+    Start-Process -FilePath "powershell.exe" -ArgumentList @(
+        "-NoExit", "-Command",
+        "`$host.UI.RawUI.WindowTitle='Flashwave WebSocket'; Set-Location '$ProjectRoot'; node server.js"
+    )
+}
+
+
 # --- Wait, then open --------------------------------------------------------------------------
 # Poll rather than sleeping a fixed amount: a warm start is ready in a couple of seconds, a cold
 # one can take fifteen, and opening the browser too early just shows a connection error.
@@ -141,10 +155,10 @@ if ($ready) {
     Write-Host ""
     Write-Host "  Opening $FrontendUrl" -ForegroundColor White
     Write-Host "  Prices need one 60s poll before the Market tab fills up." -ForegroundColor DarkGray
-    Write-Host "  To stop: close the two 'Flashwave backend'/'Flashwave frontend' windows." -ForegroundColor DarkGray
+    Write-Host "  To stop: close the three 'Flashwave backend'/'Flashwave frontend'/'Flashwave WebSocket' windows." -ForegroundColor DarkGray
 } else {
     Write-Err "Servers didn't come up within 45 seconds."
-    Write-Host "  Check the two server windows that opened - the error will be in one of them." -ForegroundColor Gray
+    Write-Host "  Check the three server windows that opened - the error will be in one of them." -ForegroundColor Gray
 }
 
 Write-Host ""
