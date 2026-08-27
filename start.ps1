@@ -23,6 +23,21 @@ function Test-PortListening($port) {
     return $null -ne $conn
 }
 
+function Test-FlashwaveWebSocket {
+    try {
+        $request = [System.Net.WebRequest]::Create("http://127.0.0.1:$BackendPort/ws/runelite")
+        $request.Timeout = 2000
+        $response = $request.GetResponse()
+        $response.Close()
+        return $false
+    } catch [System.Net.WebException] {
+        # A normal HTTP request is rejected because this route requires a WebSocket upgrade.
+        return $_.Exception.Response -and $_.Exception.Response.StatusCode -eq 404
+    } catch {
+        return $false
+    }
+}
+
 Write-Host ""
 Write-Host "  Project Flashwave" -ForegroundColor White
 Write-Host "  ----------------------------------------" -ForegroundColor DarkGray
@@ -101,9 +116,9 @@ if (Test-Path $copilotDir) {
 # Each server gets its own visible window so a crash or stack trace is readable rather than
 # swallowed by a background process.
 if (Test-PortListening $BackendPort) {
-    Write-Ok "Backend already running on port $BackendPort"
+    Write-Ok "Backend + WebSocket already running on port $BackendPort"
 } else {
-    Write-Step "Starting backend..."
+    Write-Step "Starting backend + WebSocket..."
     Start-Process -FilePath "powershell.exe" -ArgumentList @(
         "-NoExit", "-Command",
         "`$host.UI.RawUI.WindowTitle='Flashwave backend'; Set-Location '$ProjectRoot\backend'; npm run dev"
@@ -128,7 +143,7 @@ Write-Step "Waiting for servers..."
 $ready = $false
 for ($i = 0; $i -lt 45; $i++) {
     Start-Sleep -Seconds 1
-    if ((Test-PortListening $BackendPort) -and (Test-PortListening $FrontendPort)) {
+    if ((Test-PortListening $BackendPort) -and (Test-FlashwaveWebSocket) -and (Test-PortListening $FrontendPort)) {
         $ready = $true
         break
     }
@@ -137,12 +152,13 @@ for ($i = 0; $i -lt 45; $i++) {
 Write-Host ""
 if ($ready) {
     Write-Ok "Backend  http://127.0.0.1:$BackendPort"
+    Write-Ok "WebSocket ws://127.0.0.1:$BackendPort/ws/runelite"
     Write-Ok "Frontend $FrontendUrl"
     Start-Process $FrontendUrl
     Write-Host ""
     Write-Host "  Opening $FrontendUrl" -ForegroundColor White
     Write-Host "  Prices need one 60s poll before the Market tab fills up." -ForegroundColor DarkGray
-    Write-Host "  To stop: close the three 'Flashwave backend'/'Flashwave frontend'/'Flashwave WebSocket' windows." -ForegroundColor DarkGray
+    Write-Host "  To stop: close the 'Flashwave backend' and 'Flashwave frontend' windows." -ForegroundColor DarkGray
 } else {
     Write-Err "Servers didn't come up within 45 seconds."
     Write-Host "  Check the three server windows that opened - the error will be in one of them." -ForegroundColor Gray
