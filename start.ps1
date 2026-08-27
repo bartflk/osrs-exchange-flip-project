@@ -11,7 +11,6 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $BackendPort = 3001
 $FrontendPort = 5173
-$WsPort = 8080
 $FrontendUrl = "http://localhost:$FrontendPort"
 
 function Write-Step($msg) { Write-Host "  $msg" -ForegroundColor Cyan }
@@ -118,18 +117,6 @@ if (Test-PortListening $FrontendPort) {
     Start-Process -FilePath "powershell.exe" -ArgumentList @(
         "-NoExit", "-Command",
         "`$host.UI.RawUI.WindowTitle='Flashwave frontend'; Set-Location '$ProjectRoot\frontend'; npm run dev -- --port $FrontendPort"
-    )
-}
-
-# --- WebSocket / HTTP server.js ---------------------------------------------------------------
-
-if (Test-PortListening $WsPort) {
-    Write-Ok "WebSocket server already running on port $WsPort"
-} else {
-    Write-Step "Starting WebSocket server (server.js)..."
-    Start-Process -FilePath "powershell.exe" -ArgumentList @(
-        "-NoExit", "-Command",
-        "`$host.UI.RawUI.WindowTitle='Flashwave WebSocket'; Set-Location '$ProjectRoot'; node server.js"
     )
 }
 
