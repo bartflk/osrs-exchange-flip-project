@@ -66,17 +66,17 @@ function ItemChip({
   const url = itemImage(item);
   return (
     <span
-      title={sub ? `${item.name} — ${sub}` : item.name}
+      title={sub ? `${item.name}: ${sub}` : item.name}
       className={`inline-flex items-center gap-1 px-1.5 py-1 rounded border border-white/10 bg-white/5 ${tone}`}
     >
       {url ? (
-        <img src={url} alt="" width={20} height={20} className="shrink-0 object-contain" loading="lazy" />
+        <img src={url} alt="" width={22} height={22} className="shrink-0 object-contain" loading="lazy" />
       ) : (
         // The name, truncated, rather than a "?" -- a question mark says only that something is
         // missing, while three letters at least say WHICH thing.
         <span className="text-[9px] text-gray-500 px-0.5 max-w-[3.5rem] truncate">{item.name}</span>
       )}
-      {sub && <span className="text-[10px] font-mono text-gray-400 tabular-nums">{sub}</span>}
+      {sub && <span className="text-[11px] font-mono text-gray-400 tabular-nums">{sub}</span>}
     </span>
   );
 }
@@ -224,39 +224,43 @@ function GuideDetail({ row }: { row: MoneyMakerRow }) {
       : n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* The wiki's real loadout comes first when there is one: it supersedes the guide's prose
-          gear list, which says things like "Food and potions". Renders nothing for the ~90% of
-          activities that are not bosses with a Strategies page. */}
-      <StrategySetupPanel activity={row.activity} onResolved={setHasSetup} />
+    // Two columns, not five stacked full-width bands. Every block used to span the whole table
+    // width, so a 300px equipment grid sat alone on a 1900px row and the reader scanned a long
+    // way down past mostly empty space. The loadout is a fixed-size object, so it takes a
+    // fixed-size column and the money lines take the rest.
+    <div className="flex flex-wrap items-start gap-x-8 gap-y-4">
+      <div className="flex flex-col gap-4">
+        {/* The wiki's real loadout comes first when there is one: it supersedes the guide's prose
+            gear list, which says things like "Food and potions". Renders nothing for the ~90% of
+            activities that are not bosses with a Strategies page. */}
+        <StrategySetupPanel activity={row.activity} onResolved={setHasSetup} />
 
-      {row.gear.length > 0 && !hasSetup && (
-        <div>
-          <DetailHeading
-            label="Gear the guide names"
-            note={
-              row.gearPricedCount > 0
-                ? `${formatGp(row.gearCost)} for the ${row.gearPricedCount} of ${row.gear.length} pieces that are GE items, a floor since untradeables and set names carry no price`
-                : "none of these resolved to a tradeable GE item"
-            }
-          />
-          <div className="flex flex-wrap gap-1">
-            {row.gear.map((g) => (
-              <ItemChip
-                key={g.name}
-                item={g}
-                sub={g.price == null ? undefined : formatGp(g.price)}
-              />
-            ))}
+        {row.gear.length > 0 && !hasSetup && (
+          <div className="max-w-[36rem]">
+            <DetailHeading
+              label="Gear the guide names"
+              note={
+                row.gearPricedCount > 0
+                  ? `${formatGp(row.gearCost)} for the ${row.gearPricedCount} of ${row.gear.length} that are GE items, a floor`
+                  : "none of these resolved to a tradeable GE item"
+              }
+            />
+            <div className="flex flex-wrap gap-1">
+              {row.gear.map((g) => (
+                <ItemChip
+                  key={g.name}
+                  item={g}
+                  sub={g.price == null ? undefined : formatGp(g.price)}
+                />
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div>
+        <div className="max-w-[36rem]">
           <DetailHeading
             label="Supplies per hour"
-            note={`${formatGp(row.inputCost)} total, this is the inventory you pack`}
+            note={`${formatGp(row.inputCost)} total, this is what you pack`}
           />
           {row.inputs.length === 0 ? (
             <div className="text-[11px] text-gray-600">none</div>
@@ -278,46 +282,53 @@ function GuideDetail({ row }: { row: MoneyMakerRow }) {
             </p>
           )}
         </div>
-
-        <div>
-          <DetailHeading label="Income per hour" note="after GE tax, biggest first" />
-          {common.slice(0, 8).map((o) => (
-            <LineRow key={o.name} line={o} qty={qty} />
-          ))}
-          {common.length > 8 && (
-            <div className="text-[10px] text-gray-600 mt-0.5">
-              +{common.length - 8} smaller lines
-            </div>
-          )}
-        </div>
       </div>
 
-      {rare.length > 0 && (
-        <div>
-          <DetailHeading
-            label="Rare drops"
-            note={`expected less than once an hour, holding ${Math.round((row.rareShare ?? 0) * 100)}% of gross income you will usually not see in a session`}
-          />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
+      {/* Capped rather than free-flowing. These are label/value pairs, and a value pushed to the
+          far end of a 1900px row is no longer next to the thing it describes -- on the Doom of
+          Mokhaiotl the drop names and their gp sat almost a full screen apart. */}
+      <div className="flex flex-col gap-4 min-w-[20rem] max-w-[30rem] flex-1">
+        {/* Hidden when empty rather than left as a heading over nothing, which is what happened on
+            every boss whose income is entirely rare drops. */}
+        {common.length > 0 && (
+          <div>
+            <DetailHeading label="Income per hour" note="after GE tax, biggest first" />
+            {common.slice(0, 8).map((o) => (
+              <LineRow key={o.name} line={o} qty={qty} />
+            ))}
+            {common.length > 8 && (
+              <div className="text-[10px] text-gray-600 mt-0.5">
+                +{common.length - 8} smaller lines
+              </div>
+            )}
+          </div>
+        )}
+
+        {rare.length > 0 && (
+          <div>
+            <DetailHeading
+              label="Rare drops"
+              note={`under one an hour, ${Math.round((row.rareShare ?? 0) * 100)}% of gross income you will usually not see in a session`}
+            />
             {rare.map((o) => (
               <LineRow key={o.name} line={o} qty={qty} rate />
             ))}
           </div>
-        </div>
-      )}
+        )}
 
-      <p className="text-[10px] text-gray-600">
-        {row.headlineSource === "wiki"
-          ? "Headline is the wiki's own figure. The breakdown here is this app's live recomputation, which is why the two can differ."
-          : `Not in the wiki's overview table, so the headline is this app's own figure. ${RELIABILITY_NOTE[row.reliability]}`}
-      </p>
+        <p className="text-[10px] text-gray-600">
+          {row.headlineSource === "wiki"
+            ? "Headline is the wiki's own figure. The breakdown here is this app's live recomputation, which is why the two can differ."
+            : `Not in the wiki's overview table, so the headline is this app's own figure. ${RELIABILITY_NOTE[row.reliability]}`}
+        </p>
+      </div>
     </div>
   );
 }
 
 function DetailHeading({ label, note }: { label: string; note?: string }) {
   return (
-    <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-1.5">
+    <div className="text-[11px] uppercase tracking-wider text-gray-500 mb-1.5">
       {label}
       {note && <span className="normal-case tracking-normal text-gray-600"> &middot; {note}</span>}
     </div>
@@ -340,7 +351,7 @@ function LineRow({
   // whether they count as income, and it is invisible in the rate alone.
   const hours = rate && line.qtyPerHour > 0 ? 1 / line.qtyPerHour : null;
   return (
-    <div className="flex items-center justify-between gap-2 text-[11px] py-0.5">
+    <div className="flex items-center justify-between gap-2 text-xs py-1">
       <span className="flex items-center gap-1.5 min-w-0">
         <ItemChip item={line} />
         <span className="text-gray-400 truncate">{line.name}</span>
@@ -395,7 +406,10 @@ function GearPanel({ monster, bankroll, username }: { monster: string; bankroll:
   if (!data) return <div className="h-24 mt-2 rounded-lg bg-white/[0.03] animate-pulse" />;
 
   return (
-    <div className="mt-3">
+    // Capped. Three narrow cards of slot/price pairs stretched across the full table width put
+    // each item name and its price at opposite ends of the screen, which is the one place they
+    // should not be.
+    <div className="mt-3 max-w-[68rem]">
       <div className="flex items-baseline gap-2 flex-wrap mb-2">
         <span className="text-xs text-gray-300 font-medium">
           Best gear for {data.monster.name} on {formatGp(data.budget)}
@@ -407,7 +421,7 @@ function GearPanel({ monster, bankroll, username }: { monster: string; bankroll:
         {!data.levelsKnown && <Badge tone="warning">assuming 99s</Badge>}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
         {data.loadouts.map((lo, idx) => (
           <div
             key={lo.style}
