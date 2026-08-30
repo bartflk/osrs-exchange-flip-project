@@ -1319,9 +1319,25 @@ export interface UpgradeSuggestion {
   gpPerDps: number;
 }
 
+export interface BuildStep {
+  slot: string;
+  fromName: string | null;
+  toName: string;
+  extraCost: number;
+  dpsAfter: number;
+}
+
 export interface SetupAnalysis {
   variant: string;
   style: "melee" | "ranged" | "magic";
+  /** Why there is no DPS figure, when there is none. */
+  dpsUnavailable: string | null;
+  /** The affordable build, applied greedily from the wiki setup. */
+  build: BuildStep[];
+  buildDps: number | null;
+  buildSpend: number;
+  /** DPS against each form, when the boss fights in more than one. */
+  perForm: { form: string; dps: number }[];
   dps: {
     dps: number;
     maxHit: number;
@@ -1338,7 +1354,7 @@ export interface StrategySetupsResponse {
   /** The wiki page these came from, so the claim is checkable. Null when none was found. */
   page: string | null;
   setups: StrategySetup[];
-  monster?: { name: string; hp: number; defence: number };
+  monster?: { name: string; hp: number; defence: number; forms: number };
   levelsKnown?: boolean;
   /** DPS and upgrade suggestions per variant. Absent when no monster was matched. */
   analysis?: SetupAnalysis[];

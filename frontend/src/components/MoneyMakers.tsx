@@ -1,14 +1,12 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import {
-  fetchBestGear,
   fetchMoneyMakers,
-  type GearResponse,
   type MoneyMakerRow,
 } from "../api";
 import { formatGp } from "../format";
 import { loadSettings } from "../settings";
 import { StrategySetupPanel } from "./StrategySetup";
-import { Badge, Button, EmptyState, Field, GpInput, Input, Panel, Select, Toolbar } from "./ui";
+import { Button, EmptyState, Field, GpInput, Input, Panel, Select, Toolbar } from "./ui";
 
 // What to do with your time, with the wiki's own hourly profit as the headline and this app's
 // live recomputation beside it.
@@ -26,8 +24,16 @@ import { Badge, Button, EmptyState, Field, GpInput, Input, Panel, Select, Toolba
 // lot, the row is telling you not to trust it, and that is worth seeing rather than hiding.
 //
 // Three things are then layered on that only this app can answer: whether YOUR levels meet the
-// requirements (Wise Old Man), whether YOUR bankroll covers the supplies, and what the best gear
-// YOUR money can buy for the boss actually is.
+// requirements (Wise Old Man), whether YOUR bankroll covers the supplies, and what your money buys
+// on top of the wiki's own loadout.
+//
+// The free-search gear optimiser that used to sit at the bottom of each expanded row is gone. It
+// searched all 2,160 priced items for the highest-DPS combination against a stationary dummy and
+// produced a Webweaver bow for the Doom of Mokhaiotl, an Elder maul melee build for a boss people
+// range, and a "magic" build around a Kodai wand -- which is not a build, because the model has no
+// spell. Its replacement starts from the loadout the wiki names and asks only what this model can
+// actually answer: which armour and jewellery to put around that weapon for the money available.
+// /api/gear/best still exists for anything else that wants the unconstrained search.
 
 type SortKey = "activity" | "profit" | "supplies" | "revenue" | "skill" | "session";
 
@@ -396,97 +402,6 @@ function monsterNameFrom(activity: string): string {
     .trim();
 }
 
-function GearPanel({ monster, bankroll, username }: { monster: string; bankroll: number; username?: string }) {
-  const [data, setData] = useState<GearResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setData(null);
-    setError(null);
-    fetchBestGear({ monster, bankroll, username })
-      .then((d) => !cancelled && setData(d))
-      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "failed"));
-    return () => {
-      cancelled = true;
-    };
-  }, [monster, bankroll, username]);
-
-  // Silent on failure. This panel is a bonus -- the wiki's own setup is shown above it and is the
-  // better answer -- so an unmatched monster name is a reason to show nothing, not to print
-  // "No gear data: no monster named ..." underneath a perfectly good loadout, which is what the
-  // Doom of Mokhaiotl row was doing.
-  if (error) return null;
-  if (!data) return <div className="h-24 mt-2 rounded-lg bg-white/[0.03] animate-pulse" />;
-
-  return (
-    // Capped. Three narrow cards of slot/price pairs stretched across the full table width put
-    // each item name and its price at opposite ends of the screen, which is the one place they
-    // should not be.
-    <div className="mt-3 max-w-[68rem]">
-      <div className="flex items-baseline gap-2 flex-wrap mb-2">
-        <span className="text-xs text-gray-300 font-medium">
-          Best gear for {data.monster.name} on {formatGp(data.budget)}
-        </span>
-        <span className="text-[10px] text-gray-500">
-          {data.monster.hp} hp · {data.monster.defence} def
-          {data.monster.attributes.length > 0 && ` · ${data.monster.attributes.join(", ")}`}
-        </span>
-        {!data.levelsKnown && <Badge tone="warning">assuming 99s</Badge>}
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
-        {data.loadouts.map((lo, idx) => (
-          <div
-            key={lo.style}
-            className={`rounded-lg border p-2.5 ${
-              idx === 0 ? "border-emerald-400/40 bg-emerald-500/[0.06]" : "border-white/8 bg-black/20"
-            }`}
-          >
-            <div className="flex items-baseline justify-between mb-1">
-              <span className="text-[11px] uppercase tracking-wider font-semibold text-gray-200">
-                {lo.style}
-              </span>
-              <span className="font-mono text-sm font-semibold text-gray-100 tabular-nums">
-                {lo.dps.dps.toFixed(2)} dps
-              </span>
-            </div>
-            <div className="text-[10px] text-gray-500 mb-1.5">
-              max {lo.dps.maxHit} · {(lo.dps.accuracy * 100).toFixed(0)}% acc ·{" "}
-              {Number.isFinite(lo.dps.timeToKill) ? `${lo.dps.timeToKill.toFixed(0)}s kill` : "—"} ·{" "}
-              {formatGp(lo.totalCost)}
-            </div>
-            {lo.dps.effects.map((e) => (
-              <div key={e} className="text-[10px] text-violet-300">
-                {e}
-              </div>
-            ))}
-            <div className="mt-1.5 space-y-0.5">
-              {lo.items.map((i) => (
-                <div key={i.slot} className="flex justify-between gap-2 text-[10px]">
-                  <span className="text-gray-400 truncate">{i.name}</span>
-                  <span className="font-mono text-gray-600 shrink-0">{formatGp(i.price)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Stated on screen, not just in the code. The wiki's own calculator spends 100KB on the
-          special cases this model skips, and a DPS figure that looks authoritative while ignoring
-          special attacks and gear passives is exactly the kind of confident wrong number this app
-          keeps having to dig out. */}
-      <p className="text-[10px] text-gray-600 mt-2 leading-relaxed">
-        Estimate. Models effective levels, the accuracy roll, max hit, attack speed, and the gear
-        effects that change the answer (dragon-hunter weapons, salve, void, slayer helm). Does not
-        model special attacks, defence reduction, multi-phase fights, or supplies. {data.assumedPrayers}.
-        Ranged setups that rely on ammunition are currently under-ranked.
-      </p>
-    </div>
-  );
-}
-
 export function MoneyMakers() {
   const [rows, setRows] = useState<MoneyMakerRow[]>([]);
   const [player, setPlayer] = useState<string | null>(null);
@@ -797,18 +712,6 @@ export function MoneyMakers() {
                           <td colSpan={6} className="px-4 py-3">
                             <GuideDetail row={r} bankroll={bankroll} username={username || undefined} />
 
-                            {/* Gear is only asked for on activities that name a monster -- there is
-                                nothing to optimise a loadout against for a farming run. The
-                                parenthetical scope has to come off too: "The Doom of Mokhaiotl
-                                (Delve 1-16)" is not a monster name, and looking it up as one is
-                                how that row ended up reporting a failure. */}
-                            {/^(Killing|Fighting) /i.test(r.activity) && (
-                              <GearPanel
-                                monster={monsterNameFrom(r.activity)}
-                                bankroll={bankroll}
-                                username={username || undefined}
-                              />
-                            )}
                           </td>
                         </tr>
                       )}

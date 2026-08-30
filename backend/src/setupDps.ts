@@ -31,13 +31,24 @@ const SLOT_ALIASES: Record<string, string> = {
 };
 
 /**
- * Item versions to prefer when a name resolves to several.
+ * Versions that are the item in a NON-working state.
  *
- * Void and Ava's come in Broken/Locked/Normal, charged items in Charged/Uncharged, arrows in four
- * poison grades. The wiki setups name the base item and mean the working one, so anything else
- * would silently score a broken void set or an uncharged quiver.
+ * Written as a deny-list rather than a list of good versions, which is the second attempt. An
+ * allow-list of "Normal, Charged, Unpoisoned" looked complete and silently failed on crystal gear,
+ * which the data versions as Active/Inactive: neither was allowed, the code fell through to
+ * whichever entry came first, and Zulrah's ranged setup scored 1.06 dps wearing an inactive
+ * crystal helm and body. A deny-list fails the safe way, since a version name nobody has seen yet
+ * is far more likely to be a working variant than a broken one.
  */
-const PREFERRED_VERSIONS = ["Normal", "Charged", "Unpoisoned", ""];
+const DEGRADED_VERSIONS = new Set([
+  "broken",
+  "locked",
+  "inactive",
+  "uncharged",
+  "damaged",
+  "deactivated",
+  "empty",
+]);
 
 const pricedStmt = db.prepare(`SELECT item_id, high FROM latest_snapshot WHERE high IS NOT NULL`);
 
@@ -64,12 +75,12 @@ function priceMap(): Map<number, number> {
   );
 }
 
+function isWorking(item: EquipmentItem): boolean {
+  return !DEGRADED_VERSIONS.has((item.version ?? "").toLowerCase());
+}
+
 function pickVersion(candidates: EquipmentItem[]): EquipmentItem {
-  for (const wanted of PREFERRED_VERSIONS) {
-    const hit = candidates.find((c) => (c.version ?? "") === wanted);
-    if (hit) return hit;
-  }
-  return candidates[0];
+  return candidates.find(isWorking) ?? candidates[0];
 }
 
 async function equipmentByName(): Promise<Map<string, EquipmentItem[]>> {
@@ -202,11 +213,80 @@ export interface UpgradeSuggestion {
   gpPerDps: number;
 }
 
+/**
+ * DPS across every form of the boss, not against one of them.
+ *
+ * Weighted the only way that is actually correct for a fight you must finish: the time spent on a
+ * form is its hitpoints divided by your DPS against it, so the DPS for the whole fight is total
+ * hitpoints over total time. A flat mean would flatter a setup that melts two forms and stalls on
+ * the third, which is precisely the Zulrah case -- Magma carries 300 ranged defence, Tanzanite 0.
+ *
+ * Reduces to the plain figure for the overwhelming majority of bosses, which have one form.
+ */
+function effectiveDps(
+  loadout: EquipmentItem[],
+  forms: Monster[],
+  skills: PlayerSkills,
+  style: CombatStyle,
+): { dps: DpsResult; perForm: { form: string; dps: number }[] } {
+  const results = forms.map((form) => ({
+    form: form.version || form.name,
+    hp: form.skills.hp,
+    result: computeDps(loadout, form, skills, style, PRAYERS),
+  }));
+
+  const totalHp = results.reduce((acc, r) => acc + r.hp, 0);
+  const totalTime = results.reduce(
+    (acc, r) => acc + (r.result.dps > 0 ? r.hp / r.result.dps : Infinity),
+    0,
+  );
+  const combined = Number.isFinite(totalTime) && totalTime > 0 ? totalHp / totalTime : 0;
+
+  // The reported max hit and accuracy come from the form the fight spends longest on, since a
+  // weighted average of a max hit is not a number that means anything.
+  const slowest = results.reduce((worst, r) =>
+    (r.result.dps > 0 ? r.hp / r.result.dps : Infinity) >
+    (worst.result.dps > 0 ? worst.hp / worst.result.dps : Infinity)
+      ? r
+      : worst,
+  );
+
+  return {
+    dps: { ...slowest.result, dps: combined, timeToKill: combined > 0 ? totalHp / combined : Infinity },
+    perForm: results.map((r) => ({ form: r.form, dps: r.result.dps })),
+  };
+}
+
+export interface BuildStep {
+  slot: string;
+  fromName: string | null;
+  toName: string;
+  extraCost: number;
+  dpsAfter: number;
+}
+
 export interface SetupDpsResult {
   style: CombatStyle;
   dps: DpsResult | null;
   unresolved: string[];
   upgrades: UpgradeSuggestion[];
+  /**
+   * Why no DPS figure is given, when there is none. Null when the number is sound.
+   *
+   * Magic is the case this exists for. The model has no spell: a staff's damage is taken from its
+   * magic damage BONUS, which is exactly backwards for the staves people actually use. Tumeken's
+   * shadow and the Sanguinesti staff carry a bonus of 0 because their damage comes from a built-in
+   * spell, while a Kodai wand carries 150 because it amplifies a spell you cast yourself. Scoring
+   * on the bonus alone therefore ranks the wand above the shadow, which is not a small error to
+   * caveat, it is the wrong answer. A missing number beats a confidently wrong one.
+   */
+  dpsUnavailable: string | null;
+  /** The affordable build, applied greedily from the wiki setup. Empty when nothing fits. */
+  build: BuildStep[];
+  buildDps: number | null;
+  buildSpend: number;
+  /** DPS against each form, when the boss has more than one. */
+  perForm: { form: string; dps: number }[];
 }
 
 /**
@@ -246,20 +326,32 @@ const UPGRADE_SLOTS = [
  */
 export async function computeSetupDps(
   setup: StrategySetup,
-  monster: Monster,
+  forms: Monster[],
   skills: PlayerSkills,
   spare: number,
 ): Promise<SetupDpsResult> {
   const resolved = await resolveSetupLoadout(setup);
   const base = legalise(resolved.items, resolved.style);
   if (base.length === 0) {
-    return { style: resolved.style, dps: null, unresolved: resolved.unresolved, upgrades: [] };
+    return {
+      style: resolved.style,
+      dps: null,
+      unresolved: resolved.unresolved,
+      upgrades: [],
+      dpsUnavailable: "This setup lists no worn equipment, only an inventory.",
+      build: [],
+      buildDps: null,
+      buildSpend: 0,
+      perForm: [],
+    };
   }
 
   // The same prayer assumption the gear optimiser uses (Piety / Rigour equivalent), so the two
   // panels on the same row are directly comparable. Two DPS figures side by side under different
   // assumptions would be worse than showing one.
-  const dps = computeDps(base, monster, skills, resolved.style, PRAYERS);
+  const dpsUnavailable = magicUnsupported(base, resolved.style);
+  const scored = effectiveDps(base, forms, skills, resolved.style);
+  const dps = scored.dps;
 
   const prices = priceMap();
   const equipment = await getEquipment();
@@ -279,9 +371,7 @@ export async function computeSetupDps(
       // Untradeable pieces are skipped rather than treated as free: this list is a shopping list,
       // and an item you cannot buy does not belong on one.
       if (price == null || price > ceiling) continue;
-      if ((candidate.version ?? "") !== "" && !PREFERRED_VERSIONS.includes(candidate.version)) {
-        continue;
-      }
+      if (!isWorking(candidate)) continue;
 
       // An enchanted bolt is never "upgraded" to a plain one. Ruby and diamond bolts (e) proc for
       // damage the model cannot see, so on raw stats a plain runite bolt looks better -- it was
@@ -294,7 +384,7 @@ export async function computeSetupDps(
       );
       // A swap that disarms the loadout (a crossbow leaving arrows equipped) scores zero rather
       // than throwing, and is filtered out by the gain check below.
-      const result = computeDps(swapped, monster, skills, resolved.style, PRAYERS);
+      const result = effectiveDps(swapped, forms, skills, resolved.style).dps;
       const gain = result.dps - dps.dps;
       if (gain <= dps.dps * MIN_GAIN_FRACTION) continue;
 
@@ -326,5 +416,130 @@ export async function computeSetupDps(
   // one costing ten times as much.
   upgrades.sort((a, b) => b.dpsGain - a.dpsGain);
 
-  return { style: resolved.style, dps, unresolved: resolved.unresolved, upgrades };
+  if (dpsUnavailable) {
+    return {
+      style: resolved.style,
+      dps: null,
+      unresolved: resolved.unresolved,
+      upgrades: [],
+      dpsUnavailable,
+      build: [],
+      buildDps: null,
+      buildSpend: 0,
+      perForm: [],
+    };
+  }
+
+  const build = planBuild(base, forms, skills, resolved.style, prices, equipment, spare, dps.dps);
+
+  return {
+    style: resolved.style,
+    dps,
+    unresolved: resolved.unresolved,
+    upgrades,
+    dpsUnavailable: null,
+    build: build.steps,
+    buildDps: build.steps.length > 0 ? build.dps : null,
+    buildSpend: build.spend,
+    perForm: scored.perForm.length > 1 ? scored.perForm : [],
+  };
+}
+
+/**
+ * Whether this loadout is one the magic model cannot score.
+ *
+ * Everything except a powered staff, which is the only magic weapon whose damage does not depend
+ * on a spell the player chooses and this model does not track. The data distinguishes them
+ * cleanly: "Powered Staff" for Tumeken's shadow, the Sanguinesti staff and the tridents, "Staff"
+ * for a Kodai wand.
+ *
+ * Powered staves are not scored either, for now: their max hit comes from the built-in spell and
+ * this model has no table of those. Reporting the category honestly is better than guessing at
+ * numbers, and the gap is narrow and clearly stated rather than silently wrong across the board.
+ */
+function magicUnsupported(loadout: EquipmentItem[], style: CombatStyle): string | null {
+  if (style !== "magic") return null;
+  const weapon = loadout.find((i) => i.slot === "weapon");
+  const cat = (weapon?.category ?? "").toLowerCase();
+  if (cat === "powered staff") {
+    return "Powered staves deal damage through a built-in spell, and this model has no table of those max hits.";
+  }
+  return "Magic damage depends on the spell cast, which this model does not track. A staff's magic damage bonus alone would rank a Kodai wand above Tumeken's shadow.";
+}
+
+/**
+ * The best build you can actually afford, starting from the wiki's setup.
+ *
+ * Greedy, one slot at a time, always taking the biggest remaining gain that still fits. This
+ * replaces a free search over all 2,160 items, which was the source of every nonsense
+ * recommendation on this page: it proposed a Webweaver bow for the Doom of Mokhaiotl, an Elder
+ * maul melee build for a boss people range, and a Kodai wand "magic" build that is not a build at
+ * all. Starting from the wiki's loadout keeps the weapon and the style that the fight actually
+ * calls for, and asks only the question this model can answer -- which armour and jewellery to
+ * put around it for the money available.
+ */
+function planBuild(
+  base: EquipmentItem[],
+  forms: Monster[],
+  skills: PlayerSkills,
+  style: CombatStyle,
+  prices: Map<number, number>,
+  equipment: EquipmentItem[],
+  spare: number,
+  startingDps: number,
+): { steps: BuildStep[]; dps: number; spend: number } {
+  let current = [...base];
+  let currentDps = startingDps;
+  let remaining = spare;
+  const steps: BuildStep[] = [];
+  const done = new Set<string>();
+
+  // Bounded rather than while(true): one improvement per slot is the most this can honestly
+  // claim, and an unbounded loop on a greedy search over live prices is how a request hangs.
+  for (let pass = 0; pass < UPGRADE_SLOTS.length; pass++) {
+    let best: { step: BuildStep; items: EquipmentItem[]; dps: number } | null = null;
+
+    for (const slot of UPGRADE_SLOTS) {
+      if (done.has(slot)) continue;
+      const worn = current.find((i) => i.slot === slot) ?? null;
+      const wornPrice = worn ? (prices.get(worn.id) ?? 0) : 0;
+      const ceiling = remaining + wornPrice;
+
+      for (const candidate of equipment) {
+        if (candidate.slot !== slot) continue;
+        if (worn && candidate.id === worn.id) continue;
+        const price = prices.get(candidate.id);
+        if (price == null || price > ceiling) continue;
+        if (!isWorking(candidate)) continue;
+        if (/\(e\)$/i.test(worn?.name ?? "") && !/\(e\)$/i.test(candidate.name)) continue;
+
+        const swapped = legalise([...current.filter((i) => i.slot !== slot), candidate], style);
+        const result = effectiveDps(swapped, forms, skills, style).dps;
+        const gain = result.dps - currentDps;
+        if (gain <= currentDps * MIN_GAIN_FRACTION) continue;
+        if (best && result.dps <= best.dps) continue;
+
+        best = {
+          step: {
+            slot,
+            fromName: worn?.name ?? null,
+            toName: candidate.name,
+            extraCost: Math.max(0, price - wornPrice),
+            dpsAfter: result.dps,
+          },
+          items: swapped,
+          dps: result.dps,
+        };
+      }
+    }
+
+    if (!best) break;
+    steps.push(best.step);
+    current = best.items;
+    currentDps = best.dps;
+    remaining -= best.step.extraCost;
+    done.add(best.step.slot);
+  }
+
+  return { steps, dps: currentDps, spend: spare - remaining };
 }

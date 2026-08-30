@@ -166,6 +166,20 @@ export async function findMonster(name: string): Promise<Monster | null> {
   return matches.reduce((best, m) => (m.skills.hp > best.skills.hp ? m : best));
 }
 
+/**
+ * Every form a boss fights in, not just the biggest one.
+ *
+ * findMonster() picks a single entry, which is right for a lookup and wrong for scoring a fight.
+ * Zulrah is the case that proves it: three forms, all 300 defence, but Magma has 300 RANGED
+ * defence while Tanzanite has 0 and Serpentine 50. All three tie on hitpoints, so the
+ * highest-hp rule picked Magma, and a ranged setup scored 1.06 dps against a boss people range.
+ */
+export async function getMonsterForms(name: string): Promise<Monster[]> {
+  const monsters = await getMonsters();
+  const target = name.trim().toLowerCase();
+  return monsters.filter((m) => m.name.toLowerCase() === target);
+}
+
 export function gameDataCacheState(): { kind: string; entries: number | null; ageHours: number | null }[] {
   return (Object.keys(SOURCES) as (keyof typeof SOURCES)[]).map((kind) => {
     const file = cachePath(kind);

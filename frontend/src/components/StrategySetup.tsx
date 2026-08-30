@@ -295,8 +295,20 @@ function DpsBlock({
   analysis: SetupAnalysis;
   levelsKnown: boolean;
 }) {
-  if (!analysis.dps) return null;
-  const { dps, upgrades } = analysis;
+  const { dps, upgrades, build } = analysis;
+
+  // A stated reason, not a blank space. Magic is the case: the model has no spell, so a staff is
+  // scored on its magic damage BONUS -- which is 0 on Tumeken's shadow and 150 on a Kodai wand,
+  // exactly backwards for the staves people use. Saying so is more useful than a number that
+  // ranks the wand above the shadow.
+  if (!dps) {
+    return analysis.dpsUnavailable ? (
+      <div className="mt-3 text-[11px] text-gray-500 max-w-[34rem]">
+        <span className="uppercase tracking-wider text-gray-600">No DPS estimate</span>{" "}
+        {analysis.dpsUnavailable}
+      </div>
+    ) : null;
+  }
   return (
     <div className="mt-3 flex flex-wrap items-start gap-x-8 gap-y-3">
       <div>
@@ -309,17 +321,62 @@ function DpsBlock({
         </div>
         <div className="text-[10.5px] text-gray-500">
           max {dps.maxHit} &middot; {(dps.accuracy * 100).toFixed(0)}% acc
-          {Number.isFinite(dps.timeToKill) && ` · ${dps.timeToKill.toFixed(0)}s kill`}
+          {/* "kill" is only right for a single-form boss. Across forms the figure is the whole
+              fight, since it divides the sum of every form's hitpoints by the combined rate. */}
+          {Number.isFinite(dps.timeToKill) &&
+            ` · ${dps.timeToKill.toFixed(0)}s ${analysis.perForm.length > 1 ? "all forms" : "kill"}`}
         </div>
         {dps.effects.map((e) => (
           <div key={e} className="text-[10.5px] text-violet-300">
             {e}
           </div>
         ))}
+        {analysis.perForm.length > 1 && (
+          <div
+            className="text-[10.5px] text-gray-500 mt-1"
+            title="Weighted by time: the seconds spent on a form are its hitpoints over your DPS against it, so the headline is total hitpoints over total time."
+          >
+            {analysis.perForm.slice(0, 4).map((f) => (
+              <div key={f.form}>
+                {f.form} <span className="font-mono text-gray-400">{f.dps.toFixed(1)}</span>
+              </div>
+            ))}
+            {analysis.perForm.length > 4 && (
+              <div className="text-gray-600">+{analysis.perForm.length - 4} more forms</div>
+            )}
+          </div>
+        )}
         {!levelsKnown && (
           <div className="text-[10px] text-amber-400/80 mt-0.5">assuming 99s</div>
         )}
       </div>
+
+      {build.length > 0 && analysis.buildDps != null && (
+        <div className="min-w-[17rem]">
+          <div className="text-[11px] uppercase tracking-wider text-gray-500 mb-1">
+            What your money buys
+            <span className="normal-case tracking-normal text-gray-600">
+              {" "}
+              {formatGp(analysis.buildSpend)} spent
+            </span>
+          </div>
+          <div className="font-mono text-lg text-emerald-400 tabular-nums leading-tight">
+            {analysis.buildDps.toFixed(2)} <span className="text-xs text-gray-500">dps</span>
+          </div>
+          <div className="text-[10.5px] text-gray-500 mb-1">
+            up from {dps.dps.toFixed(2)}, keeping the weapon
+          </div>
+          {build.map((b) => (
+            <div key={b.slot} className="text-[11px] text-gray-400 leading-snug">
+              <span className="text-[10px] uppercase text-gray-600">{b.slot}</span>{" "}
+              <span className="text-gray-200">{b.toName}</span>{" "}
+              <span className="font-mono text-gray-600">
+                {b.extraCost <= 0 ? "free" : formatGp(b.extraCost)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="min-w-[19rem] max-w-[30rem] flex-1">
         <div className="text-[11px] uppercase tracking-wider text-gray-500 mb-1">

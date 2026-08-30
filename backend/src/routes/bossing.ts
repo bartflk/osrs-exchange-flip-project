@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { findMonster, gameDataCacheState, getMonsters } from "../gameData.js";
+import { findMonster, gameDataCacheState, getMonsterForms, getMonsters } from "../gameData.js";
 import { bestLoadoutAllStyles } from "../gearOptimizer.js";
 import type { PlayerSkills } from "../dps.js";
 import {
@@ -72,7 +72,11 @@ export async function bossingRoutes(app: FastifyInstance) {
     // item in the game. The optimiser's answer at the Doom of Mokhaiotl was a Webweaver bow, which
     // nobody takes there -- raw DPS against a stationary dummy is not what picks a loadout for a
     // fight with phases and a melee punish, and the wiki's setups already encode that judgement.
-    const target = monster ? await findMonster(monster) : null;
+    // Every form, not the biggest one. Zulrah fights as Magma, Serpentine and Tanzanite, and
+    // scoring one of them answered a question about a third of the fight: Magma carries 300
+    // ranged defence, so a ranged setup measured against it alone read 1.06 dps.
+    const forms = monster ? await getMonsterForms(monster) : [];
+    const target = forms.length > 0 ? forms.reduce((a, b) => (b.skills.hp > a.skills.hp ? b : a)) : null;
     if (!target) return result;
 
     let skills = DEFAULT_SKILLS;
@@ -106,7 +110,7 @@ export async function bossingRoutes(app: FastifyInstance) {
       try {
         analysis.push({
           variant: setup.variant,
-          ...(await computeSetupDps(setup, target, skills, spare)),
+          ...(await computeSetupDps(setup, forms, skills, spare)),
         });
       } catch (err) {
         req.log.warn({ err, variant: setup.variant }, "setup dps failed");
@@ -115,7 +119,12 @@ export async function bossingRoutes(app: FastifyInstance) {
 
     return {
       ...result,
-      monster: { name: target.name, hp: target.skills.hp, defence: target.skills.def },
+      monster: {
+        name: target.name,
+        hp: target.skills.hp,
+        defence: target.skills.def,
+        forms: forms.length,
+      },
       levelsKnown,
       analysis,
     };
