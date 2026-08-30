@@ -484,7 +484,7 @@ export function MarketTable({
                         showToast(
                           isBlocked
                             ? `${item.name} unblocked`
-                            : `${item.name} blocked, won't appear in Buy Signals`,
+                            : `${item.name} blocked, won't appear in Active flipping`,
                           isBlocked ? "neutral" : "danger",
                         );
                       }}

@@ -13,14 +13,16 @@
 // OSRS only -- r/runescape is the RS3 community, a separate game with its own economy and its own
 // updates, so its posts are noise against this app's price data rather than signal.
 //
-// r/2007scape alone was measured and found close to useless for trading: of 126 ingested posts,
-// 10 linked to any item, and the one that did was a meme about copper ore. Its top-of-day is
-// achievement posts, memes and drama, because it is the general community sub. The two
-// flipping-specific subs are added for the signal r/2007scape structurally cannot carry.
+// r/2007scape is GONE, not merely deprioritised. It was measured twice and failed both times: of
+// 126 ingested posts, 10 linked to any item, and the one that did was a meme about copper ore.
+// It is the general community sub, so its top-of-day is achievements, memes and drama. Worse, it
+// was drowning the feed it shared -- at removal the events table held 195 r/2007scape rows against
+// 25 from r/GrandExchangeBets and 24 from r/OSRSflipping, so a 50-row news query was ~80% noise by
+// construction and the two subs that carry actual trading signal were pushed off the page.
 //
-// Each feed names its own sort. This is not cosmetic: r/2007scape's top-of-day is a firehose,
-// while r/OSRSflipping returned exactly ONE post for top-of-day when probed live -- a "top today"
-// feed on a low-traffic sub is mostly empty, so those read `new` instead and catch everything.
+// Each feed names its own sort. This is not cosmetic: r/OSRSflipping returned exactly ONE post for
+// top-of-day when probed live -- a "top today" feed on a low-traffic sub is mostly empty, so these
+// read `new` instead and catch everything.
 //
 // HOW TO READ THESE, and it matters: the flipping subs are best treated as an ATTENTION and
 // MANIPULATION signal, not a buy list. They are small enough that a "buy X" post can be the pump
@@ -34,17 +36,25 @@ interface SubredditFeed {
 }
 
 const SUBREDDIT_FEEDS: SubredditFeed[] = [
-  { subreddit: "2007scape", path: "top/.rss?t=day&limit=15" },
   // 43k members. Confirmed reachable live (HTTP 200 on the RSS feed).
   { subreddit: "OSRSflipping", path: "new/.rss?limit=25" },
-  // 30k members. NOT confirmed reachable -- probing it returned 429, but so did r/2007scape on
-  // the same burst, so that is this IP's rate-limit cooldown rather than evidence the feed is
-  // missing. Left in: a failing feed logs loudly below and drops nothing else, which is the
-  // right way to carry an unverified source.
+  // 30k members. Since confirmed live by its own data: 25 real posts sit in the events table
+  // spanning 2026-08-13 to 2026-08-25, so the 429 seen when it was first probed was this IP's
+  // rate-limit cooldown, as suspected at the time, and not a missing feed.
   { subreddit: "GrandExchangeBets", path: "new/.rss?limit=25" },
 ];
 
-// Reddit rate-limits bursts hard. The previous version fired every subreddit at once through
+/**
+ * Subreddits this app used to ingest and no longer wants to SEE. Removing a feed above stops new
+ * rows arriving; it does nothing about the ones already stored, and r/2007scape left 195 of them
+ * behind. Those are filtered out on read (see db.ts) rather than deleted, because `events` rows
+ * are also what draw the markers on price charts and feed updateSensitivity.ts -- deleting them
+ * would quietly rewrite chart history to remove a source, which is a much bigger action than the
+ * one being asked for. Drop a name from this list and its archive reappears.
+ */
+export const RETIRED_SUBREDDIT_TAGS = ["r/2007scape"];
+
+// Reddit rate-limits bursts hard. An earlier version fired every subreddit at once through
 // Promise.allSettled, which was fine at one subreddit and would 429 at three -- confirmed live,
 // five rapid requests earned a cooldown that rejected even feeds known to work. Requests are now
 // serialised with real spacing; this job runs hourly and has no deadline.
@@ -120,7 +130,7 @@ export async function fetchRedditPosts(): Promise<RedditPost[]> {
       // A single subreddit failing (rate limit, transient error, sub renamed) must not drop the
       // others -- same "additive, not load-bearing" principle as the sidecar's collectors.
       //
-      // ...but it must not fail SILENTLY. Found live: r/2007scape had zero rows in the events
+      // ...but it must not fail SILENTLY. Found live: a subreddit had zero rows in the events
       // table while r/runescape had 18, because its fetch was rejecting inside a Promise.allSettled
       // and nobody ever saw it. A swallowed rejection looks identical to "the subreddit had no
       // posts today," which is exactly the wrong thing to be ambiguous about.

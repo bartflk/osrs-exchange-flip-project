@@ -4,7 +4,11 @@ import { computeUpdateSensitivity } from "../updateSensitivity.js";
 
 export async function newsRoutes(app: FastifyInstance) {
   app.get("/api/news", async () => {
-    const events = getRecentEvents(50);
+    // 150, not 50. The tab splits these into a Game news section and a Reddit section, and the
+    // two sources arrive at very different rates -- a single chronological cut of 50 is mostly
+    // the faster one, which would leave the official section near-empty however many patch notes
+    // are actually stored.
+    const events = getRecentEvents(150);
     return {
       events: events.map((e) => ({
         id: e.id,

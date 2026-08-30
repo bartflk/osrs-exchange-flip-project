@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
@@ -430,5 +430,89 @@ export function PanelHeader({
       </h3>
       {right}
     </div>
+  );
+}
+
+/**
+ * Header nav category dropdown -- direct request, modeled on FlipSmart's "Analytics ▾"/"Flipping
+ * Tools ▾" style grouping, to stop the flat tab row from growing every time a new page is added.
+ * Trigger button + an absolutely-positioned panel of links; closes on outside click or Escape.
+ * No portal-to-body (unlike InfoTip) since the header isn't inside a clipping/overflow container.
+ */
+export function NavDropdown({
+  label,
+  active,
+  badge,
+  children,
+}: {
+  label: string;
+  active?: boolean;
+  badge?: ReactNode;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={`relative px-3 py-1.5 rounded-lg text-sm 2xl:text-base font-medium transition-colors border inline-flex items-center gap-1 ${
+          active || open
+            ? "bg-gradient-to-r from-violet-500/20 to-sky-500/10 text-white border-violet-400/30"
+            : "text-gray-400 hover:text-gray-200 hover:bg-white/5 border-transparent"
+        }`}
+      >
+        {label}
+        <span className={`text-[10px] transition-transform ${open ? "rotate-180" : ""}`}>▾</span>
+        {badge}
+      </button>
+      {open && (
+        <div
+          className="absolute left-0 top-full mt-1.5 min-w-[180px] rounded-xl border border-white/10 bg-[#14161d]/95 backdrop-blur-xl shadow-2xl shadow-black/50 p-1.5 z-30"
+          onClick={() => setOpen(false)}
+        >
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One link row inside a NavDropdown panel. */
+export function NavDropdownItem({
+  active,
+  onClick,
+  children,
+}: {
+  active?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors ${
+        active ? "bg-white/10 text-white" : "text-gray-300 hover:bg-white/5 hover:text-white"
+      }`}
+    >
+      {children}
+    </button>
   );
 }

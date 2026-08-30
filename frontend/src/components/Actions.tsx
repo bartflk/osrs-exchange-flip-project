@@ -157,13 +157,13 @@ export function Actions({
             onClick={onViewSignals}
             className="text-xs text-violet-400 hover:text-violet-300"
           >
-            See full Buy Signals →
+            Open Active flipping →
           </button>
         </div>
         <p className="text-xs text-gray-500 mb-3">
-          Top 5 of the same ranking as Buy Signals. Items you already hold are flagged and sorted
-          after ones you don't, rather than hidden -- still useful to know you could add to an
-          existing position.
+          Top 5 of the same ranking as Active flipping. Items you already hold are flagged and
+          sorted after ones you don't, rather than hidden -- still useful to know you could add
+          to an existing position.
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
           {buyCandidates.map((item) => {

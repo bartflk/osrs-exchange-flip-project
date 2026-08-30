@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import {
   fetchTimeseries,
   fetchForecast,
@@ -16,6 +16,13 @@ import { TradingHoursPanel } from "./TradingHoursPanel";
 import { fetchTradingHours, type TradingHours } from "../api";
 import type { HoldingEntry } from "../bankHoldings";
 import type { WatchEntry } from "../watchlist";
+import {
+  type ItemList,
+  loadLists,
+  createList,
+  addItemToList,
+  removeItemFromList,
+} from "../lists";
 import { computeSizingTiers, type SizingTierName } from "../positionSizing";
 import { MarketIntelligencePanel } from "./MarketIntelligencePanel";
 import { TechnicalIndicatorsPanel } from "./TechnicalIndicatorsPanel";
@@ -63,6 +70,36 @@ export function ItemDetailModal({
   onClose: () => void;
 }) {
   const [showAlertInputs, setShowAlertInputs] = useState(false);
+  const [lists, setLists] = useState<ItemList[]>(() => loadLists());
+  const [showListMenu, setShowListMenu] = useState(false);
+  const [newListDraft, setNewListDraft] = useState("");
+
+  function toggleListMembership(listId: string, memberIds: number[]) {
+    setLists(
+      memberIds.includes(item.id)
+        ? removeItemFromList(lists, listId, item.id)
+        : addItemToList(lists, listId, item.id),
+    );
+  }
+
+  function handleCreateListWithItem() {
+    const name = newListDraft.trim();
+    if (!name) return;
+    setLists(createList(lists, name, [item.id]));
+    setNewListDraft("");
+  }
+
+  const listMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showListMenu) return;
+    function onDocClick(e: MouseEvent) {
+      if (listMenuRef.current && !listMenuRef.current.contains(e.target as Node)) {
+        setShowListMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [showListMenu]);
   const [lookback, setLookback] = useState<Lookback>("24h");
   const [points, setPoints] = useState<TimeseriesPoint[]>([]);
   const [blended, setBlended] = useState(false);
@@ -243,6 +280,54 @@ export function ItemDetailModal({
                 ★
               </button>
             )}
+            <div className="relative" ref={listMenuRef}>
+              <button
+                onClick={() => setShowListMenu((v) => !v)}
+                title="Add to a list"
+                className={`text-xs px-2 py-1 rounded-lg border transition-colors ${
+                  lists.some((l) => l.itemIds.includes(item.id))
+                    ? "text-violet-300 border-violet-500/30 bg-violet-500/10"
+                    : "text-gray-500 border-white/10 hover:text-gray-200 hover:bg-white/5"
+                }`}
+              >
+                + List
+              </button>
+              {showListMenu && (
+                <div className="absolute right-0 top-full mt-1.5 w-56 rounded-xl border border-white/10 bg-[#14161d]/95 backdrop-blur-xl shadow-2xl shadow-black/50 p-1.5 z-10">
+                  {lists.length === 0 && (
+                    <p className="text-[11px] text-gray-600 px-2 py-1.5">No lists yet.</p>
+                  )}
+                  {lists.map((l) => {
+                    const inList = l.itemIds.includes(item.id);
+                    return (
+                      <button
+                        key={l.id}
+                        onClick={() => toggleListMembership(l.id, l.itemIds)}
+                        className="w-full flex items-center justify-between gap-2 text-left px-2 py-1.5 rounded-lg text-sm text-gray-200 hover:bg-white/5"
+                      >
+                        <span className="truncate">{l.name}</span>
+                        {inList && <span className="text-violet-400 text-xs shrink-0">✓</span>}
+                      </button>
+                    );
+                  })}
+                  <div className="flex items-center gap-1.5 border-t border-white/10 mt-1.5 pt-1.5">
+                    <input
+                      value={newListDraft}
+                      onInput={(e) => setNewListDraft((e.target as HTMLInputElement).value)}
+                      onKeyDown={(e) => e.key === "Enter" && handleCreateListWithItem()}
+                      placeholder="New list…"
+                      className="flex-1 min-w-0 bg-white/5 rounded-lg px-2 py-1 text-xs text-gray-100 placeholder:text-gray-600 outline-none"
+                    />
+                    <button
+                      onClick={handleCreateListWithItem}
+                      className="text-xs text-violet-300 hover:text-violet-200 px-1.5"
+                    >
+                      Add
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
             <button onClick={onClose} className="text-gray-500 hover:text-white text-lg leading-none">
               ✕
             </button>
@@ -305,91 +390,41 @@ export function ItemDetailModal({
           hourMarkers={hourMarkers}
         />
 
-        {rangeStats && (
-          <div className="panel rounded-xl mt-4 text-sm grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-white/[0.06] overflow-hidden">
-            <RangeStatGroup
-              label="Overall"
-              high={rangeStats.overallHigh}
-              low={rangeStats.overallLow}
-              highClass="text-gray-200"
-              lowClass="text-gray-200"
-            />
-            <RangeStatGroup
-              label="Buying (low side)"
-              high={rangeStats.buyingHigh}
-              low={rangeStats.buyingLow}
-              highClass="text-rose-400"
-              lowClass="text-rose-400"
-            />
-            <RangeStatGroup
-              label="Selling (high side)"
-              high={rangeStats.sellingHigh}
-              low={rangeStats.sellingLow}
-              highClass="text-emerald-400"
-              lowClass="text-emerald-400"
-            />
-          </div>
-        )}
+        {/* Direct feedback (twice now): stop rendering this as separate boxes with gaps between
+            them -- one panel, hairline dividers between sub-sections instead of each carrying its
+            own background/border/margin. Range stats, the main stat grid, execution edge and the
+            sizing tiers are all the same kind of thing (a row of numbers about this item), so they
+            share one container; Market intelligence/Technical indicators/Best times to trade below
+            stay as their own cards since those have real headers and distinct content, not just
+            more stat rows. */}
+        <div className="panel rounded-xl mb-4 divide-y divide-white/[0.06] overflow-hidden">
+          {rangeStats && (
+            <div className="text-sm grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-white/[0.06]">
+              <RangeStatGroup
+                label="Overall"
+                high={rangeStats.overallHigh}
+                low={rangeStats.overallLow}
+                highClass="text-gray-200"
+                lowClass="text-gray-200"
+              />
+              <RangeStatGroup
+                label="Buying (low side)"
+                high={rangeStats.buyingHigh}
+                low={rangeStats.buyingLow}
+                highClass="text-rose-400"
+                lowClass="text-rose-400"
+              />
+              <RangeStatGroup
+                label="Selling (high side)"
+                high={rangeStats.sellingHigh}
+                low={rangeStats.sellingLow}
+                highClass="text-emerald-400"
+                lowClass="text-emerald-400"
+              />
+            </div>
+          )}
 
-        {watchEntry && onUpdateAlert && (
-          <div className="glass rounded-lg px-3 py-2 mb-4 flex items-center gap-4 flex-wrap text-xs">
-            <button
-              onClick={() => setShowAlertInputs((v) => !v)}
-              className="text-gray-400 hover:text-gray-200 font-medium"
-            >
-              🔔 Price alerts {showAlertInputs ? "▲" : "▼"}
-            </button>
-            {!showAlertInputs && (watchEntry.alertAbove || watchEntry.alertBelow) && (
-              <span className="text-gray-500">
-                {watchEntry.alertAbove && `above ${formatGp(watchEntry.alertAbove)}gp`}
-                {watchEntry.alertAbove && watchEntry.alertBelow && " · "}
-                {watchEntry.alertBelow && `below ${formatGp(watchEntry.alertBelow)}gp`}
-              </span>
-            )}
-            {showAlertInputs && (
-              <>
-                <label className="flex items-center gap-1.5 text-gray-500">
-                  Notify above
-                  <input
-                    type="number"
-                    defaultValue={watchEntry.alertAbove ?? ""}
-                    placeholder="gp"
-                    onBlur={(e) =>
-                      onUpdateAlert({
-                        alertAbove: (e.target as HTMLInputElement).value
-                          ? Number((e.target as HTMLInputElement).value)
-                          : null,
-                      })
-                    }
-                    className="glass rounded-md px-2 py-1 w-28 outline-none text-gray-200"
-                  />
-                </label>
-                <label className="flex items-center gap-1.5 text-gray-500">
-                  Notify below
-                  <input
-                    type="number"
-                    defaultValue={watchEntry.alertBelow ?? ""}
-                    placeholder="gp"
-                    onBlur={(e) =>
-                      onUpdateAlert({
-                        alertBelow: (e.target as HTMLInputElement).value
-                          ? Number((e.target as HTMLInputElement).value)
-                          : null,
-                      })
-                    }
-                    className="glass rounded-md px-2 py-1 w-28 outline-none text-gray-200"
-                  />
-                </label>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* One panel, not eleven tiles. Cells are separated by hairline dividers instead of each
-            carrying its own border and background -- direct feedback that the modal was "just a
-            div box spam". The grid keeps them aligned in columns, which a row of independent
-            boxes never quite manages once the labels differ in length. */}
-        <div className="panel rounded-xl mb-4 grid grid-cols-3 sm:grid-cols-6 xl:grid-cols-8 divide-x divide-y divide-white/[0.06] overflow-hidden">
+        <div className="grid grid-cols-3 sm:grid-cols-6 xl:grid-cols-8 divide-x divide-y divide-white/[0.06]">
           <Stat label="Buy at" value={formatGp(item.low)} />
           <Stat label="Sell at" value={formatGp(item.high)} />
           <Stat
@@ -448,7 +483,7 @@ export function ItemDetailModal({
             optimistic -- this is a more realistic offer pair (nudged to jump the fill queue) and
             what you'd actually clear after tax at those prices. */}
         {item.execution_buy_price != null && item.execution_sell_price != null && (
-          <div className="glass rounded-xl p-4 mb-4">
+          <div className="p-4">
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs uppercase tracking-wide text-gray-500 inline-flex items-center gap-1">
                 Execution edge
@@ -476,11 +511,66 @@ export function ItemDetailModal({
 
         {/* DESIGN.md §10 item 7: quantity bands instead of one suggested qty, so the number
             itself communicates how sure the system is (a volatile item's bands shrink together). */}
-        {sizingTiers && (
-          <div className="panel rounded-xl mb-4 grid grid-cols-3 divide-x divide-white/[0.06] overflow-hidden">
-            {sizingTiers.map((tier) => (
-              <SizingTierCard key={tier.name} tier={tier} />
-            ))}
+          {sizingTiers && (
+            <div className="grid grid-cols-3 divide-x divide-white/[0.06]">
+              {sizingTiers.map((tier) => (
+                <SizingTierCard key={tier.name} tier={tier} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {watchEntry && onUpdateAlert && (
+          <div className="glass rounded-lg px-3 py-2 mb-4 flex items-center gap-4 flex-wrap text-xs">
+            <button
+              onClick={() => setShowAlertInputs((v) => !v)}
+              className="text-gray-400 hover:text-gray-200 font-medium"
+            >
+              🔔 Price alerts {showAlertInputs ? "▲" : "▼"}
+            </button>
+            {!showAlertInputs && (watchEntry.alertAbove || watchEntry.alertBelow) && (
+              <span className="text-gray-500">
+                {watchEntry.alertAbove && `above ${formatGp(watchEntry.alertAbove)}gp`}
+                {watchEntry.alertAbove && watchEntry.alertBelow && " · "}
+                {watchEntry.alertBelow && `below ${formatGp(watchEntry.alertBelow)}gp`}
+              </span>
+            )}
+            {showAlertInputs && (
+              <>
+                <label className="flex items-center gap-1.5 text-gray-500">
+                  Notify above
+                  <input
+                    type="number"
+                    defaultValue={watchEntry.alertAbove ?? ""}
+                    placeholder="gp"
+                    onBlur={(e) =>
+                      onUpdateAlert({
+                        alertAbove: (e.target as HTMLInputElement).value
+                          ? Number((e.target as HTMLInputElement).value)
+                          : null,
+                      })
+                    }
+                    className="glass rounded-md px-2 py-1 w-28 outline-none text-gray-200"
+                  />
+                </label>
+                <label className="flex items-center gap-1.5 text-gray-500">
+                  Notify below
+                  <input
+                    type="number"
+                    defaultValue={watchEntry.alertBelow ?? ""}
+                    placeholder="gp"
+                    onBlur={(e) =>
+                      onUpdateAlert({
+                        alertBelow: (e.target as HTMLInputElement).value
+                          ? Number((e.target as HTMLInputElement).value)
+                          : null,
+                      })
+                    }
+                    className="glass rounded-md px-2 py-1 w-28 outline-none text-gray-200"
+                  />
+                </label>
+              </>
+            )}
           </div>
         )}
 

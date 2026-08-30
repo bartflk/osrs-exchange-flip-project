@@ -321,6 +321,8 @@ export interface ItemMention {
   summary: string;
   source: string;
   link: string | null;
+  /** Subreddit ("r/OSRSflipping") for reddit rows, RSS category for official ones. */
+  tags: string | null;
 }
 
 export async function fetchItemMentions(itemId: number): Promise<{ events: ItemMention[] }> {
@@ -1044,7 +1046,6 @@ export async function fetchBankHistory(): Promise<BankHistoryResponse> {
   return res.json();
 }
 
-
 // The stored shape behind one pick: the item's whole 48-slot day plus the day-by-day outcomes of
 // a specific buy->sell pair. Served straight from SQLite (no Wiki request), so fetching one per
 // visible slot card is cheap.
@@ -1203,5 +1204,44 @@ export async function fetchBestGear(opts: {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error ?? `gear lookup failed: ${res.status}`);
   }
+  return res.json();
+}
+
+// Market Highlights: curated leaderboards under the Market table (backend highlights.ts).
+// Computed server-side over every tracked item, not the Market tab's filtered top 300.
+export type HighlightMetric = "change" | "profit" | "margin" | "price";
+
+// Only the gainers/losers cards vary with this -- the rest of the panel is a snapshot of the
+// current book, which has no "over 7 days" reading (see backend highlights.ts).
+export type HighlightWindow = "1d" | "7d" | "30d";
+
+export interface HighlightEntry {
+  itemId: number;
+  name: string;
+  icon: string;
+  price: number | null;
+  value: number | null;
+  changePct?: number;
+}
+
+export interface HighlightList {
+  key: string;
+  title: string;
+  valueLabel: string | null;
+  metric: HighlightMetric;
+  hint: string;
+  entries: HighlightEntry[];
+}
+
+export interface HighlightsResponse {
+  generatedAt: number;
+  window: HighlightWindow;
+  tradedValue24h: number;
+  lists: HighlightList[];
+}
+
+export async function fetchHighlights(window: HighlightWindow): Promise<HighlightsResponse> {
+  const res = await fetch(`/api/highlights?window=${window}`);
+  if (!res.ok) throw new Error(`Failed to fetch highlights: ${res.status}`);
   return res.json();
 }

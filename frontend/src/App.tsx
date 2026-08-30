@@ -23,21 +23,27 @@ import { NewsFeed } from "./components/NewsFeed";
 import { UpdateSensitivity } from "./components/UpdateSensitivity";
 import { ResearchReport } from "./components/ResearchReport";
 import { Sets } from "./components/Sets";
-import { TrendLeaderboard } from "./components/TrendLeaderboard";
-import { SubstitutionFlags } from "./components/SubstitutionFlags";
-import { SectorIndices } from "./components/SectorIndices";
+import { MarketHighlights } from "./components/MarketHighlights";
 import { UpdateCycleBadge } from "./components/UpdateCycleBadge";
 import { MarketTemperatureGauge } from "./components/MarketTemperatureGauge";
 import { SettingsModal } from "./components/SettingsModal";
 import { ToastHost } from "./components/ToastHost";
 import { showToast } from "./toast";
 import { formatAgo, formatGp } from "./format";
-import { type WatchEntry, loadWatchlist, saveWatchlist, toggleWatch, updateWatchAlert } from "./watchlist";
+import {
+  type WatchEntry,
+  loadWatchlist,
+  saveWatchlist,
+  toggleWatch,
+  updateWatchAlert,
+} from "./watchlist";
 import { type BlockEntry, loadBlocklist, saveBlocklist, removeFromBlocklist } from "./blocklist";
 import { type HoldingEntry, loadHoldings, saveHoldings } from "./bankHoldings";
 import { type Settings, loadSettings, saveSettings } from "./settings";
 import type { BankValueItem } from "./api";
 import { MoneyMakers } from "./components/MoneyMakers";
+import { Lists } from "./components/Lists";
+import { loadLists, createList, type ItemList } from "./lists";
 import {
   Button,
   Chip,
@@ -45,8 +51,9 @@ import {
   IconButton,
   Input,
   NumberInput,
-  StatCard,
   Toolbar,
+  NavDropdown,
+  NavDropdownItem,
 } from "./components/ui";
 
 type Tab =
@@ -54,6 +61,7 @@ type Tab =
   | "signals"
   | "overnight"
   | "moneymakers"
+  | "lists"
   | "portfolio"
   | "flips"
   | "bank"
@@ -61,23 +69,80 @@ type Tab =
   | "sets"
   | "news";
 
-// Ordered to follow the actual workflow: browse (Market) -> decide what to buy (Signals) ->
-// plan overnight holds (Overnight) -> track what you're holding/have open (Portfolio) -> value
-// your bank (Bank) -> act on it (Actions) -> specialized arbitrage tool (Sets) -> background
-// context (News). Labels standardized to single words to match Market/Bank/Actions/Sets rather
-// than mixing verbose phrases in with them.
-const TABS: { key: Tab; label: string }[] = [
-  { key: "market", label: "Market" },
-  { key: "signals", label: "Signals" },
-  { key: "overnight", label: "Overnight" },
-  { key: "moneymakers", label: "Money makers" },
-  { key: "portfolio", label: "Portfolio" },
-  { key: "flips", label: "Flips" },
-  { key: "bank", label: "Bank" },
-  { key: "actions", label: "Actions" },
-  { key: "sets", label: "Sets" },
-  { key: "news", label: "News" },
+// The tab KEY stays "signals" even though the label is now "Active flipping": it is persisted in
+// localStorage and deep-linked from other tabs, so renaming it would silently drop everyone back
+// to Market on their next load. The label is what the user reads; the key is plumbing.
+const TAB_LABELS: Record<Tab, string> = {
+  market: "Market",
+  signals: "Active flipping",
+  overnight: "Overnight",
+  moneymakers: "Money makers",
+  lists: "Lists",
+  portfolio: "Portfolio",
+  flips: "Flips",
+  bank: "Bank",
+  actions: "Actions",
+  sets: "Sets",
+  news: "News",
+};
+
+// Direct request: the flat tab row was growing every time a page was added (10 tabs before
+// "Lists"), so grouped into dropdown categories the same way FlipSmart's header does
+// (Dashboard / Analytics ▾ / Flipping Tools ▾ / Resources ▾). "Market" stays a plain link since
+// it's the default landing page; everything else groups by what it's actually for: finding/
+// acting on a flip right now, reviewing your own holdings, or background reading.
+const NAV_GROUPS: { label: string; tabs: Tab[] }[] = [
+  { label: "Flipping Tools", tabs: ["signals", "overnight", "moneymakers", "actions", "sets", "lists"] },
+  { label: "Analytics", tabs: ["portfolio", "flips", "bank"] },
+  { label: "Resources", tabs: ["news"] },
 ];
+
+const LISTS_SEEDED_KEY = "itemLists_seeded_v1";
+
+// Direct request: "make some good ones as a start." Computed from real, currently-loaded data
+// (not hardcoded ids, which would go stale the moment prices moved) the first time real items
+// exist and no lists have been created yet. Mirrors settings.ts's one-time-migration pattern
+// (MIN_LIQ_MIGRATION_KEY) so this only ever runs once, not on every load.
+function seedStarterLists(items: MarketItem[]): ItemList[] {
+  const positive = items.filter((i) => (i.net_margin ?? 0) > 0);
+  const topBy = (pool: MarketItem[], key: (i: MarketItem) => number, n: number) =>
+    [...pool].sort((a, b) => key(b) - key(a)).slice(0, n).map((i) => i.id);
+
+  let lists: ItemList[] = [];
+  lists = createList(
+    lists,
+    "High Volume Flips",
+    topBy(positive, (i) => i.liquidity, 20),
+  );
+  lists = createList(
+    lists,
+    "Passive Flips (10m+)",
+    topBy(
+      positive.filter((i) => (i.low ?? 0) >= 10_000_000),
+      (i) => i.net_margin ?? 0,
+      20,
+    ),
+  );
+  lists = createList(
+    lists,
+    "Tax-Free Flips",
+    topBy(
+      positive.filter((i) => (i.tax ?? 0) === 0),
+      (i) => i.net_margin ?? 0,
+      20,
+    ),
+  );
+  lists = createList(
+    lists,
+    "High-Value PvM Gear",
+    topBy(
+      positive.filter((i) => i.liquidity >= 1 && i.liquidity <= 50 && (i.low ?? 0) >= 1_000_000),
+      (i) => i.net_margin ?? 0,
+      20,
+    ),
+  );
+  return lists;
+}
 
 function App() {
   const [tab, setTab] = useState<Tab>("market");
@@ -141,14 +206,6 @@ function App() {
     if (watchedOnly && !watched[i.id]) return false;
     return true;
   });
-
-  const marketStats = {
-    count: marketItems.length,
-    avgMargin: marketItems.length
-      ? marketItems.reduce((sum, i) => sum + (i.net_margin ?? 0), 0) / marketItems.length
-      : 0,
-    profitable: marketItems.filter((i) => (i.net_margin ?? 0) > 0).length,
-  };
 
   function setWatched(next: Record<number, WatchEntry>) {
     setWatchedRaw(next);
@@ -285,6 +342,17 @@ function App() {
     }
   }, []);
 
+  useEffect(() => {
+    if (items.length === 0) return;
+    if (localStorage.getItem(LISTS_SEEDED_KEY)) return;
+    if (loadLists().length > 0) {
+      localStorage.setItem(LISTS_SEEDED_KEY, "1");
+      return;
+    }
+    seedStarterLists(items);
+    localStorage.setItem(LISTS_SEEDED_KEY, "1");
+  }, [items]);
+
   // DESIGN.md §14.21/§14.22: manual refresh button. A self-rescheduling setTimeout (not
   // setInterval) so a manual refresh can clear and restart the cycle cleanly -- with a plain
   // setInterval, clicking refresh wouldn't push back the *next* auto-fire, so you'd sometimes
@@ -339,23 +407,40 @@ function App() {
             Project Flashwave
           </h1>
           <nav className="flex gap-1">
-            {TABS.map((t) => (
-              <button
-                key={t.key}
-                onClick={() => setTab(t.key)}
-                className={`relative px-3 py-1.5 rounded-lg text-sm 2xl:text-base font-medium transition-colors border ${
-                  tab === t.key
-                    ? "bg-gradient-to-r from-violet-500/20 to-sky-500/10 text-white border-violet-400/30"
-                    : "text-gray-400 hover:text-gray-200 hover:bg-white/5 border-transparent"
-                }`}
+            <button
+              onClick={() => setTab("market")}
+              className={`px-3 py-1.5 rounded-lg text-sm 2xl:text-base font-medium transition-colors border ${
+                tab === "market"
+                  ? "bg-gradient-to-r from-violet-500/20 to-sky-500/10 text-white border-violet-400/30"
+                  : "text-gray-400 hover:text-gray-200 hover:bg-white/5 border-transparent"
+              }`}
+            >
+              Dashboard
+            </button>
+            {NAV_GROUPS.map((group) => (
+              <NavDropdown
+                key={group.label}
+                label={group.label}
+                active={group.tabs.includes(tab)}
+                badge={
+                  group.tabs.includes("actions") && Object.keys(holdings).length > 0 ? (
+                    <span className="inline-flex items-center justify-center min-w-[1.1rem] h-[1.1rem] px-1 rounded-full text-[10px] font-semibold bg-violet-500/20 text-violet-300">
+                      {Object.keys(holdings).length}
+                    </span>
+                  ) : undefined
+                }
               >
-                {t.label}
-                {t.key === "actions" && Object.keys(holdings).length > 0 && (
-                  <span className="ml-1.5 inline-flex items-center justify-center min-w-[1.1rem] h-[1.1rem] px-1 rounded-full text-[10px] font-semibold bg-violet-500/20 text-violet-300">
-                    {Object.keys(holdings).length}
-                  </span>
-                )}
-              </button>
+                {group.tabs.map((key) => (
+                  <NavDropdownItem key={key} active={tab === key} onClick={() => setTab(key)}>
+                    {TAB_LABELS[key]}
+                    {key === "actions" && Object.keys(holdings).length > 0 && (
+                      <span className="ml-1.5 text-[10px] text-violet-300 font-semibold">
+                        {Object.keys(holdings).length}
+                      </span>
+                    )}
+                  </NavDropdownItem>
+                ))}
+              </NavDropdown>
             ))}
           </nav>
         </div>
@@ -402,31 +487,6 @@ function App() {
             <div className="mb-3">
               <MarketTemperatureGauge />
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-5">
-              <StatCard label="Items shown" value={marketStats.count.toLocaleString()} />
-              <StatCard
-                label="Profitable"
-                value={marketStats.profitable.toLocaleString()}
-                tone={marketStats.profitable > 0 ? "success" : "neutral"}
-                hint={
-                  marketStats.count
-                    ? `${Math.round((marketStats.profitable / marketStats.count) * 100)}% of shown`
-                    : undefined
-                }
-              />
-              <StatCard
-                label="Avg net margin"
-                value={formatGp(marketStats.avgMargin)}
-                tone={marketStats.avgMargin >= 0 ? "success" : "danger"}
-              />
-              <StatCard
-                label="Data freshness"
-                value={status ? formatAgo(status.lastUpdate) : "-"}
-                hint={status ? `${status.itemCount.toLocaleString()} tracked items` : undefined}
-              />
-              <UpdateCycleBadge />
-            </div>
-
             <Toolbar>
               <Field label="Search">
                 <div className="relative">
@@ -532,12 +592,10 @@ function App() {
             />
 
             {/* Secondary/browsing panels sit below the primary table, not above it -- the price
-                table is what you're here for; leaderboards/indices/substitution flags are for
-                when you're curious, not the first thing that should compete for attention. */}
-            <div className="mt-6 space-y-4">
-              <TrendLeaderboard items={items} onSelectItem={setSelectedItem} />
-              <SectorIndices />
-              <SubstitutionFlags items={items} onSelectItem={setSelectedItem} />
+                table is what you're here for; the highlight leaderboards are for when you're
+                curious, not the first thing that should compete for attention. */}
+            <div className="mt-8">
+              <MarketHighlights items={items} onSelectItem={setSelectedItem} />
             </div>
           </>
         )}
@@ -557,6 +615,7 @@ function App() {
           />
         )}
         {tab === "moneymakers" && <MoneyMakers />}
+        {tab === "lists" && <Lists items={items} onSelectItem={setSelectedItem} />}
         {tab === "portfolio" && <Portfolio items={items} onSelectItem={setSelectedItem} />}
         {tab === "flips" && <Flips items={items} onSelectItem={setSelectedItem} />}
         {tab === "bank" && (
@@ -578,6 +637,7 @@ function App() {
         {tab === "sets" && <Sets />}
         {tab === "news" && (
           <>
+            <UpdateCycleBadge />
             <ResearchReport />
             <UpdateSensitivity />
             <NewsFeed />

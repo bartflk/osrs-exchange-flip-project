@@ -7,8 +7,14 @@ import { fetchItemMentions, type ItemMention } from "../api";
 // on every single item modal would be pure noise, unlike the other panels here which always have
 // something real to say.
 
-function sourceLabel(source: string): string {
-  return source === "official" ? "Official news" : source === "reddit" ? "r/2007scape" : source;
+// Reddit rows carry their own subreddit in `tags`, so use it. This used to hardcode "r/2007scape"
+// for every reddit row, which was merely redundant when that was the only sub and became an
+// outright lie once r/OSRSflipping and r/GrandExchangeBets were added -- their posts were shown
+// under another sub's name.
+function sourceLabel(m: { source: string; tags: string | null }): string {
+  if (m.source === "official") return "Official news";
+  if (m.source === "reddit") return m.tags ?? "Reddit";
+  return m.source;
 }
 
 export function ItemMentions({ itemId }: { itemId: number }) {
@@ -51,7 +57,7 @@ export function ItemMentions({ itemId }: { itemId: number }) {
             </a>
             <span className="text-gray-600">
               {" "}
-             , {sourceLabel(m.source)} · {m.eventDate}
+             , {sourceLabel(m)} · {m.eventDate}
             </span>
           </li>
         ))}

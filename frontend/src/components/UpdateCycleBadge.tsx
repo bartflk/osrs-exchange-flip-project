@@ -1,6 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
 import { fetchNews } from "../api";
-import { StatCard } from "./ui";
 
 // DESIGN.md §10 item 3: update-cycle calendar awareness. OSRS updates release weekly
 // (Wednesdays ~11:30 UTC) -- a "days since/until update" indicator contextualizes whether
@@ -65,11 +64,16 @@ export function UpdateCycleBadge() {
       )
     : "-";
 
+  // Lives on the News tab rather than the Market tab's stat row: it is calendar context for
+  // patch notes, not a market number, and it was the only card in that row still earning its
+  // space once the rest were removed.
   return (
-    <StatCard
-      label="Update cycle"
-      value={untilLabel}
-      hint={`Last patch ${sinceLabel} · weekly, Wed ~11:30 UTC`}
-    />
+    <div className="glass rounded-xl px-4 py-3 mb-4 flex items-baseline gap-3 flex-wrap">
+      <span className="text-[10px] uppercase tracking-wide text-gray-500">Update cycle</span>
+      <span className="text-sm font-medium text-gray-100">Next patch {untilLabel}</span>
+      <span className="text-xs text-gray-500">
+        Last patch {sinceLabel} · weekly, Wed ~11:30 UTC
+      </span>
+    </div>
   );
 }

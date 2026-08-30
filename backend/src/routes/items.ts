@@ -129,6 +129,7 @@ export async function itemsRoutes(app: FastifyInstance) {
         summary: e.summary,
         source: e.source,
         link: e.link,
+        tags: e.tags,
       })),
     };
   });

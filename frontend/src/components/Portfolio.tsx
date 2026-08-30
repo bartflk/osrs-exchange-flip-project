@@ -249,8 +249,8 @@ export function Portfolio({
       </div>
 
       {/* DESIGN.md §14.42: the GE slots table that used to sit here is gone. It duplicated the
-          live slot board on the Signals tab, and the whole point of that board is to be the ONE
-          place you watch while trading ("i want this interface in 1 spot so i can actually
+          live slot board on the Active flipping tab, and the whole point of that board is to be the
+          ONE place you watch while trading ("i want this interface in 1 spot so i can actually
           monitor and not switch between tabs constantly"). Portfolio keeps what the board isn't:
           what you're holding, net worth over time, and session performance. */}
       <div className="glass rounded-xl p-4">

@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { RETIRED_SUBREDDIT_TAGS } from "./redditFeed.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dbPath = path.join(__dirname, "..", "data.sqlite");
@@ -501,13 +502,26 @@ export function insertNewEvents(rows: EventRow[]): number {
   return inserted;
 }
 
+// Retired sources are excluded HERE rather than at the callers, so a source dropped from
+// redditFeed.ts disappears from the news tab, the item modal's mentions panel and anything else
+// reading events at once. Filtered in JS instead of a NOT IN clause because the list is a
+// TypeScript constant, and threading a variable-length IN list through a prepared statement to
+// exclude one string is more machinery than a low-hundreds-of-rows table justifies.
+//
+// The limit is applied AFTER the filter, which is the whole point: with r/2007scape holding 195 of
+// 220 reddit rows, filtering a pre-limited 50 would have returned about 10 usable posts.
 const recentEventsStmt = db.prepare(`
   SELECT id, event_date, title, summary, source, link, tags
-  FROM events ORDER BY event_date DESC, id DESC LIMIT ?
+  FROM events ORDER BY event_date DESC, id DESC
 `);
 
+function isRetired(e: EventRecord): boolean {
+  return e.tags != null && RETIRED_SUBREDDIT_TAGS.includes(e.tags);
+}
+
 export function getRecentEvents(limit: number): EventRecord[] {
-  return recentEventsStmt.all(limit) as unknown as EventRecord[];
+  const rows = recentEventsStmt.all() as unknown as EventRecord[];
+  return rows.filter((e) => !isRetired(e)).slice(0, limit);
 }
 
 // DESIGN.md §10 item 57: item-linking for already-collected events (Reddit posts have been live
@@ -558,7 +572,7 @@ export function getEventsForItem(itemId: number, limit: number): EventRecord[] {
       return false;
     }
   });
-  return matches.slice(0, limit);
+  return matches.filter((r) => !isRetired(r)).slice(0, limit);
 }
 
 // Durable key/value cache -- survives `tsx watch` restarts, unlike the in-memory Maps these

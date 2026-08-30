@@ -47,7 +47,7 @@ export function TrackRecord() {
   const [expanded, setExpanded] = useState(false);
   // Diagnostic/backtest view of the signal engine, not something to act on -- collapsed by
   // default now that a compact live version lives in the sidebar (Sidebar.tsx). Full detail is
-  // one click away, it just isn't the first thing the Signals tab shows anymore.
+  // one click away, it just isn't the first thing the Active flipping tab shows anymore.
   const [panelOpen, setPanelOpen] = useState(false);
 
   useEffect(() => {

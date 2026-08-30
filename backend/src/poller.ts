@@ -207,7 +207,7 @@ async function runNewsPoll() {
 }
 
 // DESIGN.md §14.35: Reddit via public RSS (no OAuth/PRAW needed) -- top-of-day posts from
-// r/2007scape, same events table as official news, tagged `source: "reddit"`.
+// The flipping subreddits, same events table as official news, tagged `source: "reddit"`.
 // Polled hourly (community discussion moves faster than weekly patch notes, but top-of-day
 // rankings don't change meaningfully minute to minute).
 async function runRedditPoll() {
