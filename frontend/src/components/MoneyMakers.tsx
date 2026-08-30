@@ -414,12 +414,18 @@ export function MoneyMakers() {
   });
   const [username, setUsername] = useState(() => loadSettings().womUsername ?? "");
   const [search, setSearch] = useState("");
-  const [onlyDoable, setOnlyDoable] = useState(false);
-  // Shown by default. These were hidden, and hiding them removed every modern boss from the
-  // list -- the Doom of Mokhaiotl computes 9.86m/hr but carries a few unpriceable supply lines
-  // (spell costs, {{Cheap food}}), and a guide is not unusable because one line of its shopping
-  // list has no GE price. The flag stays; the concealment does not.
-  const [hideOverstated, setHideOverstated] = useState(true);
+  // On by default. The list is 639 guides long and most of it is out of reach at any given moment,
+  // so the useful first view is what this account can actually go and do right now: levels met,
+  // supplies affordable. Everything else is one click away.
+  //
+  // It degrades safely when no Wise Old Man name is set. Unknown levels read as null rather than
+  // false, so nothing is filtered on a requirement that was never checked, and the filter falls
+  // back to affordability alone.
+  const [onlyDoable, setOnlyDoable] = useState(true);
+  // Off by default now, having swapped places with the filter above. It only ever hid rows whose
+  // headline came from this app's own recomputation AND had no cost counted, which since the wiki
+  // figure became the headline is a small and shrinking set. Still available, still worth having.
+  const [hideOverstated, setHideOverstated] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("profit");
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
