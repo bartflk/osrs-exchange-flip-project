@@ -84,11 +84,13 @@ function Cell({ item, slot }: { item: SetupItem | null | undefined; slot?: strin
       title={`${item.name}${item.price != null ? `: ${formatGp(item.price)}` : ": not tradeable, no GE price"}`}
     >
       {url && !failed ? (
+        // Sized as a box that contains the sprite, so every cell in the grid is identical
+        // regardless of whether the item is a tall robe or a wide platebody.
         <img
           src={url}
           alt=""
           loading="lazy"
-          className="max-w-[30px] max-h-[30px]"
+          className="w-[30px] h-[30px] object-contain"
           onError={() => setFailed(true)}
         />
       ) : (

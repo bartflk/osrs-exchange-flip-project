@@ -76,7 +76,16 @@ function ItemChip({
       className={`inline-flex items-center gap-1 px-1.5 py-1 rounded border border-white/10 bg-white/5 ${tone}`}
     >
       {url ? (
-        <img src={url} alt="" width={22} height={22} className="shrink-0 object-contain" loading="lazy" />
+        // A fixed square box, set in CLASSES rather than width/height attributes. Tailwind's
+        // preflight applies `img { height: auto }`, which overrides the height attribute and lets
+        // each sprite pick its own height from its aspect ratio -- so a tall item like a robe
+        // rendered visibly taller than the chips beside it and pushed the whole row out of line.
+        <img
+          src={url}
+          alt=""
+          loading="lazy"
+          className="shrink-0 w-[22px] h-[22px] object-contain"
+        />
       ) : (
         // The name, truncated, rather than a "?" -- a question mark says only that something is
         // missing, while three letters at least say WHICH thing.
@@ -84,6 +93,21 @@ function ItemChip({
       )}
       {sub && <span className="text-[11px] font-mono text-gray-400 tabular-nums">{sub}</span>}
     </span>
+  );
+}
+
+/**
+ * Requirements with the UNMET ones first, so a capped list never hides the reason.
+ *
+ * Ordering matters more than it sounds. The chips used to render in guide order and cut off at
+ * five, and Nex (Duo) lists prayer 84 sixth -- so an account with 80 prayer saw five grey chips
+ * for requirements it comfortably met and no sign of the one it did not. The chip that explains
+ * the row is the chip that has to survive the cut.
+ */
+function sortedRequirements(row: MoneyMakerRow): MoneyMakerRow["requirements"] {
+  const missing = new Set(row.missingRequirements.map((m) => m.skill));
+  return [...row.requirements].sort(
+    (a, b) => Number(missing.has(b.skill)) - Number(missing.has(a.skill)),
   );
 }
 
@@ -672,13 +696,19 @@ export function MoneyMakers() {
                         <td className="px-3 py-2">
                           {/* The gear the guide names, as icons. Six is where the row stops being
                               a row; the rest are in the expanded panel. */}
-                          <div className="flex items-center gap-0.5 flex-wrap">
-                            {r.gear.slice(0, 6).map((g) => (
+                          {/* One line, never wrapped. Six chips spilling onto a second row made
+                              the table row twice as tall as its neighbours for no extra
+                              information, and the overflow count already says what is hidden. */}
+                          <div className="flex items-center gap-0.5 flex-nowrap">
+                            {r.gear.slice(0, 5).map((g) => (
                               <ItemChip key={g.name} item={g} />
                             ))}
-                            {r.gear.length > 6 && (
-                              <span className="text-[10px] text-gray-600 ml-0.5">
-                                +{r.gear.length - 6}
+                            {r.gear.length > 5 && (
+                              <span
+                                className="text-[10px] text-gray-600 ml-0.5 shrink-0"
+                                title={r.gear.slice(5).map((g) => g.name).join(", ")}
+                              >
+                                +{r.gear.length - 5}
                               </span>
                             )}
                             {r.gear.length === 0 && (
@@ -690,14 +720,26 @@ export function MoneyMakers() {
                           {r.requirements.length === 0 ? (
                             <span className="text-[10px] text-gray-600">none</span>
                           ) : (
-                            <div className="flex flex-wrap gap-1">
-                              {r.requirements.slice(0, 5).map((q) => {
+                            <div className="flex flex-nowrap gap-1">
+                              {/* Every requirement, and the unmet ones FIRST.
+                                  This used to slice to five in guide order, which quietly hid the
+                                  only chip that explained anything: Nex (Duo) lists prayer 84
+                                  sixth, so with 80 prayer the row showed five grey chips for
+                                  requirements that were all met and no sign of the one that
+                                  wasn't. The chip that says why is the chip that must survive. */}
+                              {sortedRequirements(r)
+                                .slice(0, 4)
+                                .map((q) => {
                                 const miss = r.missingRequirements.find((m) => m.skill === q.skill);
                                 return (
                                   <span
                                     key={q.skill + q.level}
-                                    title={miss ? `you have ${miss.have}` : undefined}
-                                    className={`px-1.5 py-0.5 rounded text-[10px] font-mono border ${
+                                    title={
+                                      miss
+                                        ? `${q.skill} ${q.level} needed, you have ${miss.have}`
+                                        : `${q.skill} ${q.level} needed`
+                                    }
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-mono border shrink-0 whitespace-nowrap ${
                                       miss
                                         ? "border-amber-400/40 bg-amber-500/10 text-amber-300"
                                         : r.requirementsMet
@@ -706,9 +748,23 @@ export function MoneyMakers() {
                                     }`}
                                   >
                                     {q.skill.slice(0, 4)} {q.level}
+                                    {miss && (
+                                      <span className="text-amber-200/70"> (you {miss.have})</span>
+                                    )}
                                   </span>
                                 );
                               })}
+                              {r.requirements.length > 4 && (
+                                <span
+                                  className="text-[10px] text-gray-600 self-center shrink-0"
+                                  title={sortedRequirements(r)
+                                    .slice(4)
+                                    .map((q) => `${q.skill} ${q.level}`)
+                                    .join(", ")}
+                                >
+                                  +{r.requirements.length - 4}
+                                </span>
+                              )}
                             </div>
                           )}
                         </td>
