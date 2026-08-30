@@ -35,18 +35,19 @@ function wikiImage(file: string): string {
 }
 
 /**
- * The icon to try for an item, preferring the GE catalogue's filename and falling back to the
- * wiki's own naming convention.
+ * The image to show for an item: the GE catalogue's icon, else the wiki thumbnail the backend
+ * resolved, else nothing and the name shows through.
  *
- * The fallback carries most of these setups. Half the pieces in a real loadout are untradeable --
- * infernal cape, ferocious gloves, void, Rada's blessing -- so they are absent from the GE item
- * catalogue and have no icon recorded there, which left the most recognisable items in the grid
- * rendering as truncated text. The wiki hosts an image for them anyway, at "Item name.png", so
- * that is tried second and the text is kept only for the ones where even that 404s.
+ * The second of those carries most of these setups. Half the pieces in a real loadout are
+ * untradeable -- Darklight, an infernal cape, void, Rada's blessing -- so the GE catalogue has no
+ * icon for them. Guessing a filename from the item name was tried first and mostly 404'd, because
+ * the wiki's files carry dose and charge suffixes the guides do not ("Saradomin brew" is stored at
+ * "Saradomin brew(4) detail.png"). The backend now asks the wiki's API instead, which resolves
+ * redirects and normalisation on the way.
  */
-function iconUrl(item: SetupItem): string {
+function iconUrl(item: SetupItem): string | null {
   if (item.icon) return wikiImage(item.icon);
-  return wikiImage(`${item.name.charAt(0).toUpperCase()}${item.name.slice(1)}.png`);
+  return item.imageUrl;
 }
 
 function Cell({ item, slot }: { item: SetupItem | null | undefined; slot?: string }) {
@@ -58,6 +59,7 @@ function Cell({ item, slot }: { item: SetupItem | null | undefined; slot?: strin
       />
     );
   }
+  const url = iconUrl(item);
   return (
     <div
       // Untradeables are the norm in these setups, not an error, so they get a neutral border
@@ -70,15 +72,17 @@ function Cell({ item, slot }: { item: SetupItem | null | undefined; slot?: strin
       </span>
       {/* Sits ON TOP of the name, so a 404 reveals the text underneath with no state to manage
           and no flash of a broken-image glyph. */}
-      <img
-        src={iconUrl(item)}
-        alt=""
-        loading="lazy"
-        className="relative max-w-[30px] max-h-[30px]"
-        onError={(e) => {
-          (e.currentTarget as HTMLImageElement).style.display = "none";
-        }}
-      />
+      {url && (
+        <img
+          src={url}
+          alt=""
+          loading="lazy"
+          className="relative max-w-[30px] max-h-[30px]"
+          onError={(e) => {
+            (e.currentTarget as HTMLImageElement).style.display = "none";
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -150,7 +154,14 @@ function SetupView({ setup }: { setup: StrategySetup }) {
   );
 }
 
-export function StrategySetupPanel({ activity }: { activity: string }) {
+export function StrategySetupPanel({
+  activity,
+  onResolved,
+}: {
+  activity: string;
+  /** Whether a real loadout was found, so the caller can drop its own weaker gear list. */
+  onResolved?: (found: boolean) => void;
+}) {
   const [data, setData] = useState<{ page: string | null; setups: StrategySetup[] } | null>(null);
   const [failed, setFailed] = useState(false);
   const [variant, setVariant] = useState(0);
@@ -161,11 +172,22 @@ export function StrategySetupPanel({ activity }: { activity: string }) {
     setFailed(false);
     setVariant(0);
     fetchStrategySetups(activity)
-      .then((d) => !cancelled && setData(d))
-      .catch(() => !cancelled && setFailed(true));
+      .then((d) => {
+        if (cancelled) return;
+        setData(d);
+        onResolved?.(d.setups.length > 0);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setFailed(true);
+        onResolved?.(false);
+      });
     return () => {
       cancelled = true;
     };
+    // onResolved deliberately excluded: callers pass an inline closure, so including it would
+    // refetch the wiki on every parent render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activity]);
 
   if (failed) return null;

@@ -1,6 +1,7 @@
 import { db } from "./db.js";
 import { geTax } from "./signals.js";
-import { extractVarDefines, parseQuantity } from "./wikiExpr.js";
+import { extractVarDefines, parseQuantity, stripComments } from "./wikiExpr.js";
+import { resolveWikiImages } from "./wikiImages.js";
 
 // The OSRS Wiki's money-making guides, re-priced against this app's own live market data.
 //
@@ -367,7 +368,14 @@ function decodeEntities(s: string): string {
     .replace(/&amp;/g, "&");
 }
 
-function parseGuide(title: string, wikitext: string): MoneyMaker | null {
+function parseGuide(title: string, rawWikitext: string): MoneyMaker | null {
+  // Comments are stripped from the WHOLE page before anything reads it. MediaWiki ignores them
+  // entirely, but this parser was not, and a commented-out block inside an `Item` or `Output`
+  // parameter was being read as though it were an item name -- 10+ guides, including Sarachnis
+  // and the whole Desert Treasure II set, carried an "item" whose name was a slab of `<!-- -->`
+  // markup. Harmless-looking until it reached the wiki image lookup, where the pipes inside it
+  // split the batched request and cost 49 other items their icons.
+  const wikitext = stripComments(rawWikitext);
   const body = extractTemplate(wikitext, "Mmgtable");
   if (!body) return null;
   const p = splitParams(body);
@@ -697,8 +705,10 @@ export interface PricedLine extends MmgItem {
   value: number;
   /** Wiki filename for the item icon, when the line resolved to a real GE item. */
   icon: string | null;
+  /** Wiki thumbnail URL, filled in for lines the GE catalogue cannot illustrate. */
+  imageUrl: string | null;
   /**
-   * A rare drop: stated at under one per RARE_DROP_RATE kills.
+   * A drop you see less than once an hour: a jackpot rather than income.
    *
    * Only meaningful on per-kill guides, where the quantity is a drop rate rather than a count.
    */
@@ -709,20 +719,26 @@ export interface GearPiece {
   name: string;
   itemId: number | null;
   icon: string | null;
+  imageUrl: string | null;
   price: number | null;
 }
 
 /**
- * A drop stated at under 1-in-100 per kill is treated as a jackpot rather than income.
+ * A drop expected less than ONCE PER HOUR is treated as a jackpot rather than as income.
  *
- * The threshold is a judgement call and is deliberately generous. The point is not to draw a
- * precise line between "common" and "rare" -- it is that an hourly average silently promises you
- * a share of a drop you will usually not see. At 30 kills/hr, a 1/1000 drop is one every 33 hours,
- * yet it is folded into "gp/hr" as though it arrived in even slices. For a player deciding what to
- * do for the next two hours, the figure WITHOUT those drops is the honest one, and the gap between
- * the two is how much of the advertised rate is a lottery ticket.
+ * Measured per hour, not per kill, and the difference is not cosmetic. The first version used a
+ * per-kill rate of 1-in-100, which quietly assumed every activity kills at a similar pace. It does
+ * not: the Doom of Mokhaiotl (Delve 1-16) runs at 2.5 an hour, so its Avernic treads at 0.05 per
+ * kill sailed past a 1-in-100 filter while actually landing once every EIGHT hours. That guide's
+ * three biggest income lines -- 12.7m of its 14.4m -- were all jackpots being counted as income,
+ * and its "no uniques" figure came out identical to its headline, which is precisely the claim the
+ * column exists to contradict.
+ *
+ * Per hour, the rule states itself: if you will not see one in an hour, it is not hourly income.
+ * At 30 kills/hr a 1/1000 drop is 0.03/hr and rare; superior dragon bones at 2 per kill are 60/hr
+ * and are not. Processing guides, whose quantities are yields in the thousands, are untouched.
  */
-const RARE_DROP_RATE = 1 / 100;
+const RARE_PER_HOUR = 1;
 
 export interface PricedMoneyMaker {
   title: string;
@@ -803,6 +819,34 @@ export interface PricedMoneyMaker {
   updatedAt: number;
 }
 
+/**
+ * Fill in wiki thumbnails across the whole list, for everything the GE catalogue cannot
+ * illustrate.
+ *
+ * One batched pass over all 639 guides at once rather than per guide. Untradeable supplies and
+ * set names ("Elite Void Knight equipment", "Cheap food") are common enough across the list that
+ * doing this per row would be hundreds of requests for the same handful of names; done here the
+ * cache fills once and every later render is free.
+ */
+export async function attachMoneyMakerImages(guides: PricedMoneyMaker[]): Promise<void> {
+  const wanted = new Set<string>();
+  for (const g of guides) {
+    for (const line of [...g.inputs, ...g.outputs]) if (!line.icon) wanted.add(line.name);
+    for (const piece of g.gear) if (!piece.icon) wanted.add(piece.name);
+  }
+  if (wanted.size === 0) return;
+
+  const images = await resolveWikiImages([...wanted]);
+  for (const g of guides) {
+    for (const line of [...g.inputs, ...g.outputs]) {
+      if (!line.icon) line.imageUrl = images.get(line.name) ?? null;
+    }
+    for (const piece of g.gear) {
+      if (!piece.icon) piece.imageUrl = images.get(piece.name) ?? null;
+    }
+  }
+}
+
 export function getPricedMoneyMakers(): PricedMoneyMaker[] {
   const rows = allStmt.all() as unknown as StoredRow[];
   return rows.map((r) => {
@@ -854,6 +898,7 @@ export function getPricedMoneyMakers(): PricedMoneyMaker[] {
         unitPrice: unit,
         value: unit == null ? 0 : unit * it.qtyPerHour,
         icon: iconFor(it.itemId),
+        imageUrl: null,
         rare: false,
       };
     });
@@ -872,7 +917,8 @@ export function getPricedMoneyMakers(): PricedMoneyMaker[] {
         unitPrice: unit,
         value: net,
         icon: iconFor(it.itemId),
-        rare: it.perAction != null && it.perAction > 0 && it.perAction < RARE_DROP_RATE,
+        imageUrl: null,
+        rare: it.perAction != null && it.qtyPerHour > 0 && it.qtyPerHour < RARE_PER_HOUR,
       };
     });
 
@@ -894,6 +940,7 @@ export function getPricedMoneyMakers(): PricedMoneyMaker[] {
         name,
         itemId: meta?.id ?? null,
         icon: meta?.icon ?? null,
+        imageUrl: null,
         // Gear is BOUGHT, so it costs the insta-buy price, same convention as inputs.
         price: meta?.high ?? meta?.low ?? null,
       };

@@ -3,6 +3,7 @@ import { findMonster, gameDataCacheState, getMonsters } from "../gameData.js";
 import { bestLoadoutAllStyles } from "../gearOptimizer.js";
 import type { PlayerSkills } from "../dps.js";
 import {
+  attachMoneyMakerImages,
   getPricedMoneyMakers,
   moneyMakerCount,
   refreshMoneyMakers,
@@ -82,7 +83,15 @@ export async function bossingRoutes(app: FastifyInstance) {
     }
 
     const budget = Number(bankroll);
-    const guides = getPricedMoneyMakers()
+    const priced = getPricedMoneyMakers();
+    // Icons are decoration, so a wiki hiccup must not cost the caller its data. Failing here
+    // would turn a missing picture into a missing money-maker list.
+    try {
+      await attachMoneyMakerImages(priced);
+    } catch (err) {
+      req.log.warn({ err }, "wiki image resolution failed, rendering without icons");
+    }
+    const guides = priced
       .filter((g) => (membersOnly === "false" ? !g.members : true))
       .map((g) => {
         const req = evaluateRequirements(g, levels);
@@ -95,7 +104,9 @@ export async function bossingRoutes(app: FastifyInstance) {
           affordable: Number.isFinite(budget) ? g.inputCost <= budget : null,
         };
       })
-      .sort((a, b) => b.profitPerHour - a.profitPerHour);
+      // Sorted on the HEADLINE, which is the wiki's figure where one exists, so the API's order
+      // matches the number the UI displays.
+      .sort((a, b) => b.headlineProfitPerHour - a.headlineProfitPerHour);
 
     return {
       guides,

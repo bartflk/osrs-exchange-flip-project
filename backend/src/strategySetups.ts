@@ -1,4 +1,5 @@
 import { db } from "./db.js";
+import { resolveWikiImages } from "./wikiImages.js";
 
 // The wiki's own "Inventory setups" from a boss's Strategies page, rendered as the real equipment
 // silhouette and a 28-slot inventory rather than as a list of names.
@@ -44,7 +45,13 @@ export type EquipmentSlot = (typeof EQUIPMENT_SLOTS)[number];
 export interface SetupItem {
   name: string;
   itemId: number | null;
+  /** GE catalogue icon filename, for the tradeable pieces. */
   icon: string | null;
+  /**
+   * Full wiki thumbnail URL, resolved through the wiki API for anything the GE catalogue does not
+   * carry. Roughly half a real loadout is untradeable, so without this most of the grid was text.
+   */
+  imageUrl: string | null;
   price: number | null;
 }
 
@@ -263,6 +270,7 @@ function lookupItem(rawName: string): SetupItem | null {
     name,
     itemId: row?.id ?? null,
     icon: row?.icon ?? null,
+    imageUrl: null,
     // Gear is bought, so the insta-buy price is the honest one, matching every other cost in
     // this app.
     price: row?.high ?? row?.low ?? null,
@@ -385,8 +393,9 @@ export async function getStrategySetups(activity: string): Promise<StrategySetup
   // entire point of this app. Serving a week-old cost would be the wiki's own staleness problem
   // reintroduced in the one place this app is supposed to beat it.
   if (cached && now - cached.fetched_at < CACHE_TTL_SECONDS) {
-    const setups = JSON.parse(cached.setups_json) as StrategySetup[];
-    return { page: cached.page, setups: setups.map(reprice) };
+    const setups = (JSON.parse(cached.setups_json) as StrategySetup[]).map(reprice);
+    await attachImages(setups);
+    return { page: cached.page, setups };
   }
 
   const page = await resolveStrategyPage(strategyPageCandidates(activity));
@@ -406,7 +415,37 @@ export async function getStrategySetups(activity: string): Promise<StrategySetup
   const setups = collectSetupGroups(wikitext);
 
   putCacheStmt.run(key, page, JSON.stringify(setups), now);
+  await attachImages(setups);
   return { page, setups };
+}
+
+/**
+ * Fill in wiki thumbnails for every piece the GE catalogue could not illustrate.
+ *
+ * Done once for the whole result rather than per item, so a boss with three variants and 39 pieces
+ * each costs a single batched request instead of 117.
+ */
+async function attachImages(setups: StrategySetup[]): Promise<void> {
+  const wanted = new Set<string>();
+  const visit = (item: SetupItem | null | undefined) => {
+    if (item && !item.icon) wanted.add(item.name);
+  };
+  for (const setup of setups) {
+    for (const item of Object.values(setup.equipment)) visit(item);
+    for (const item of setup.inventory) visit(item);
+    for (const item of setup.runePouch) visit(item);
+  }
+  if (wanted.size === 0) return;
+
+  const images = await resolveWikiImages([...wanted]);
+  const apply = (item: SetupItem | null | undefined) => {
+    if (item && !item.icon) item.imageUrl = images.get(item.name) ?? null;
+  };
+  for (const setup of setups) {
+    for (const item of Object.values(setup.equipment)) apply(item);
+    for (const item of setup.inventory) apply(item);
+    for (const item of setup.runePouch) apply(item);
+  }
 }
 
 /** Re-look-up every item's live price, keeping the cached item LIST. */

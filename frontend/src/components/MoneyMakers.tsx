@@ -38,33 +38,43 @@ const INTENSITY_TONE: Record<string, string> = {
   "very high": "border-rose-400/50 bg-rose-500/20 text-rose-200",
 };
 
-function itemIconUrl(icon: string | null): string | null {
-  if (!icon) return null;
-  return `https://oldschool.runescape.wiki/images/${encodeURIComponent(icon.replace(/ /g, "_"))}`;
+/**
+ * The image for an item: the GE catalogue's icon, else the wiki thumbnail the backend resolved.
+ *
+ * The fallback matters more than it sounds. Untradeables and set names ("Elite Void Knight
+ * equipment", "Cheap food", "Mokhaiotl cloth") have no GE icon at all, and every one of them was
+ * rendering as a bare "?" -- the Doom of Mokhaiotl showed seven question marks in its gear row and
+ * three more against its biggest income lines.
+ */
+function itemImage(item: { icon: string | null; imageUrl?: string | null }): string | null {
+  if (item.icon) {
+    return `https://oldschool.runescape.wiki/images/${encodeURIComponent(item.icon.replace(/ /g, "_"))}`;
+  }
+  return item.imageUrl ?? null;
 }
 
-/** Item icon with its name as the tooltip, falling back to a text chip when there is no icon. */
+/** Item icon with its name as the tooltip, falling back to a short label when there is no image. */
 function ItemChip({
-  name,
-  icon,
+  item,
   sub,
   tone = "",
 }: {
-  name: string;
-  icon: string | null;
+  item: { name: string; icon: string | null; imageUrl?: string | null };
   sub?: string;
   tone?: string;
 }) {
-  const url = itemIconUrl(icon);
+  const url = itemImage(item);
   return (
     <span
-      title={sub ? `${name} — ${sub}` : name}
+      title={sub ? `${item.name} — ${sub}` : item.name}
       className={`inline-flex items-center gap-1 px-1.5 py-1 rounded border border-white/10 bg-white/5 ${tone}`}
     >
       {url ? (
-        <img src={url} alt="" width={20} height={20} className="shrink-0" loading="lazy" />
+        <img src={url} alt="" width={20} height={20} className="shrink-0 object-contain" loading="lazy" />
       ) : (
-        <span className="text-[10px] text-gray-500 px-0.5">?</span>
+        // The name, truncated, rather than a "?" -- a question mark says only that something is
+        // missing, while three letters at least say WHICH thing.
+        <span className="text-[9px] text-gray-500 px-0.5 max-w-[3.5rem] truncate">{item.name}</span>
       )}
       {sub && <span className="text-[10px] font-mono text-gray-400 tabular-nums">{sub}</span>}
     </span>
@@ -175,14 +185,14 @@ function SessionCell({ row }: { row: MoneyMakerRow }) {
     <div className="leading-tight">
       <div
         className={`font-mono tabular-nums ${row.profitPerHourNoUniques >= 0 ? "text-gray-300" : "text-rose-400"}`}
-        title="Hourly profit with every drop rarer than 1-in-100 removed. This is what a short session pays if you do not hit the jackpot."
+        title="Hourly profit with every drop you expect less than once an hour removed. This is what a short session pays if you do not hit the jackpot."
       >
         {formatGp(row.profitPerHourNoUniques)}
       </div>
       {share > 0.05 && (
         <div
           className="text-[10px] text-violet-400 tabular-nums"
-          title={`${Math.round(share * 100)}% of this activity's gross income comes from drops rarer than 1-in-100.`}
+          title={`${Math.round(share * 100)}% of this activity's gross income comes from drops you expect less than once an hour.`}
         >
           {Math.round(share * 100)}% uniques
         </div>
@@ -200,6 +210,11 @@ function SessionCell({ row }: { row: MoneyMakerRow }) {
  * spreadsheet.
  */
 function GuideDetail({ row }: { row: MoneyMakerRow }) {
+  // The guide's `Item` list is prose ("Food and potions", "Elite Void Knight equipment"), so when
+  // the wiki has a real loadout for this boss the list is strictly worse information sitting
+  // directly beneath a strictly better version of it. On the Doom of Mokhaiotl it rendered as
+  // seven unresolvable chips and a 1.76b total covering 2 of its 9 entries.
+  const [hasSetup, setHasSetup] = useState(false);
   const outputs = [...row.outputs].sort((a, b) => b.value - a.value);
   const common = outputs.filter((o) => !o.rare);
   const rare = outputs.filter((o) => o.rare);
@@ -213,9 +228,9 @@ function GuideDetail({ row }: { row: MoneyMakerRow }) {
       {/* The wiki's real loadout comes first when there is one: it supersedes the guide's prose
           gear list, which says things like "Food and potions". Renders nothing for the ~90% of
           activities that are not bosses with a Strategies page. */}
-      <StrategySetupPanel activity={row.activity} />
+      <StrategySetupPanel activity={row.activity} onResolved={setHasSetup} />
 
-      {row.gear.length > 0 && (
+      {row.gear.length > 0 && !hasSetup && (
         <div>
           <DetailHeading
             label="Gear the guide names"
@@ -229,8 +244,7 @@ function GuideDetail({ row }: { row: MoneyMakerRow }) {
             {row.gear.map((g) => (
               <ItemChip
                 key={g.name}
-                name={g.name}
-                icon={g.icon}
+                item={g}
                 sub={g.price == null ? undefined : formatGp(g.price)}
               />
             ))}
@@ -251,8 +265,7 @@ function GuideDetail({ row }: { row: MoneyMakerRow }) {
               {row.inputs.map((i) => (
                 <ItemChip
                   key={i.name}
-                  name={i.name}
-                  icon={i.icon}
+                  item={i}
                   sub={qty(i.qtyPerHour)}
                   tone={i.unitPrice == null ? "border-amber-400/40" : ""}
                 />
@@ -283,7 +296,7 @@ function GuideDetail({ row }: { row: MoneyMakerRow }) {
         <div>
           <DetailHeading
             label="Rare drops"
-            note={`rarer than 1-in-100, holding ${Math.round((row.rareShare ?? 0) * 100)}% of gross income you will usually not see in a session`}
+            note={`expected less than once an hour, holding ${Math.round((row.rareShare ?? 0) * 100)}% of gross income you will usually not see in a session`}
           />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
             {rare.map((o) => (
@@ -322,13 +335,23 @@ function LineRow({
 }) {
   // A drop rate reads far better as "1 in 1,000" than as the 0.001-per-kill the guide stores.
   const oneIn = rate && line.perAction ? Math.round(1 / line.perAction) : null;
+  // "1/20" alone hides how long that actually takes. The Doom of Mokhaiotl runs at 2.5 kills an
+  // hour, so its 1-in-20 drops are one every NINETEEN hours -- which is the fact that decides
+  // whether they count as income, and it is invisible in the rate alone.
+  const hours = rate && line.qtyPerHour > 0 ? 1 / line.qtyPerHour : null;
   return (
     <div className="flex items-center justify-between gap-2 text-[11px] py-0.5">
       <span className="flex items-center gap-1.5 min-w-0">
-        <ItemChip name={line.name} icon={line.icon} />
+        <ItemChip item={line} />
         <span className="text-gray-400 truncate">{line.name}</span>
         <span className="text-gray-600 shrink-0">
           {oneIn ? `1/${oneIn.toLocaleString()}` : `\u00d7${qty(line.qtyPerHour)}`}
+          {hours != null && (
+            <span className="text-gray-700">
+              {" "}
+              &middot; ~{hours >= 1 ? `${Math.round(hours)}h` : `${Math.round(hours * 60)}min`} each
+            </span>
+          )}
         </span>
       </span>
       <span className="font-mono shrink-0 text-emerald-300 tabular-nums">
@@ -336,6 +359,16 @@ function LineRow({
       </span>
     </div>
   );
+}
+
+/** The monster a "Killing X ..." activity is about, with method and scope suffixes removed. */
+function monsterNameFrom(activity: string): string {
+  return activity
+    .replace(/^(Killing|Fighting)\s+/i, "")
+    .split(/ using | with |,/)[0]
+    .replace(/\s*\([^)]*\)\s*$/, "")
+    .replace(/^The\s+/i, "")
+    .trim();
 }
 
 function GearPanel({ monster, bankroll, username }: { monster: string; bankroll: number; username?: string }) {
@@ -354,7 +387,11 @@ function GearPanel({ monster, bankroll, username }: { monster: string; bankroll:
     };
   }, [monster, bankroll, username]);
 
-  if (error) return <p className="text-xs text-gray-500 mt-2">No gear data: {error}</p>;
+  // Silent on failure. This panel is a bonus -- the wiki's own setup is shown above it and is the
+  // better answer -- so an unmatched monster name is a reason to show nothing, not to print
+  // "No gear data: no monster named ..." underneath a perfectly good loadout, which is what the
+  // Doom of Mokhaiotl row was doing.
+  if (error) return null;
   if (!data) return <div className="h-24 mt-2 rounded-lg bg-white/[0.03] animate-pulse" />;
 
   return (
@@ -543,7 +580,8 @@ export function MoneyMakers() {
             Headline gp/hr is the wiki&apos;s own figure, which it prices from current GE data.
             This app&apos;s independent recomputation from live prices sits underneath it, and a
             row is flagged when the two disagree by more than 25%. &ldquo;No uniques&rdquo; strips
-            drops rarer than 1-in-100, so it is what a short session pays without a jackpot.
+            drops you expect less than once an hour, so it is what a short session pays without a
+            jackpot.
             Requirements come from your Wise Old Man profile.
           </>
         }
@@ -687,7 +725,7 @@ export function MoneyMakers() {
                               a row; the rest are in the expanded panel. */}
                           <div className="flex items-center gap-0.5 flex-wrap">
                             {r.gear.slice(0, 6).map((g) => (
-                              <ItemChip key={g.name} name={g.name} icon={g.icon} />
+                              <ItemChip key={g.name} item={g} />
                             ))}
                             {r.gear.length > 6 && (
                               <span className="text-[10px] text-gray-600 ml-0.5">
@@ -732,10 +770,13 @@ export function MoneyMakers() {
                             <GuideDetail row={r} />
 
                             {/* Gear is only asked for on activities that name a monster -- there is
-                                nothing to optimise a loadout against for a farming run. */}
+                                nothing to optimise a loadout against for a farming run. The
+                                parenthetical scope has to come off too: "The Doom of Mokhaiotl
+                                (Delve 1-16)" is not a monster name, and looking it up as one is
+                                how that row ended up reporting a failure. */}
                             {/^(Killing|Fighting) /i.test(r.activity) && (
                               <GearPanel
-                                monster={r.activity.replace(/^(Killing|Fighting)\s+/i, "").split(/ using | with |,/)[0].trim()}
+                                monster={monsterNameFrom(r.activity)}
                                 bankroll={bankroll}
                                 username={username || undefined}
                               />

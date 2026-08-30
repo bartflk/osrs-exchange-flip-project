@@ -1103,7 +1103,9 @@ export interface MmgLine {
   unitPrice: number | null;
   value: number;
   icon: string | null;
-  /** A drop stated at under 1-in-100 per kill: a jackpot, not income. */
+  /** Wiki thumbnail URL, for lines the GE catalogue cannot illustrate. */
+  imageUrl: string | null;
+  /** A drop expected less than once per hour: a jackpot, not income. */
   rare: boolean;
   /** Quantity per kill before kph scaling. Null on guides not stated per kill. */
   perAction?: number | null;
@@ -1113,6 +1115,7 @@ export interface MmgGearPiece {
   name: string;
   itemId: number | null;
   icon: string | null;
+  imageUrl: string | null;
   price: number | null;
 }
 
@@ -1281,6 +1284,8 @@ export interface SetupItem {
   name: string;
   itemId: number | null;
   icon: string | null;
+  /** Wiki thumbnail URL. Carries most of a loadout, since half of it is untradeable. */
+  imageUrl: string | null;
   price: number | null;
 }
 

@@ -61,7 +61,12 @@ export function InfoTip({
   children?: ReactNode;
   className?: string;
 }) {
-  const content = explanation ?? (id ? EXPLANATIONS[id] : undefined);
+  // Annotated, not inferred. EXPLANATIONS is declared `as const satisfies Record<string,
+  // Explanation>`, so its inferred type is the literal object and entries that happen to omit an
+  // optional field genuinely lack it -- reading `content.caveat` off the resulting union is a type
+  // error, because roughly half the entries have no `caveat` key at all. The `satisfies` clause
+  // already proves every entry IS an Explanation, so saying so here loses nothing.
+  const content: Explanation | undefined = explanation ?? (id ? EXPLANATIONS[id] : undefined);
   const triggerRef = useRef<HTMLSpanElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
