@@ -209,7 +209,15 @@ function SessionCell({ row }: { row: MoneyMakerRow }) {
  * what you pack -- and showing it as icons with quantities reads as a loadout instead of a
  * spreadsheet.
  */
-function GuideDetail({ row }: { row: MoneyMakerRow }) {
+function GuideDetail({
+  row,
+  bankroll,
+  username,
+}: {
+  row: MoneyMakerRow;
+  bankroll: number;
+  username?: string;
+}) {
   // The guide's `Item` list is prose ("Food and potions", "Elite Void Knight equipment"), so when
   // the wiki has a real loadout for this boss the list is strictly worse information sitting
   // directly beneath a strictly better version of it. On the Doom of Mokhaiotl it rendered as
@@ -233,7 +241,13 @@ function GuideDetail({ row }: { row: MoneyMakerRow }) {
         {/* The wiki's real loadout comes first when there is one: it supersedes the guide's prose
             gear list, which says things like "Food and potions". Renders nothing for the ~90% of
             activities that are not bosses with a Strategies page. */}
-        <StrategySetupPanel activity={row.activity} onResolved={setHasSetup} />
+        <StrategySetupPanel
+          activity={row.activity}
+          monster={/^(Killing|Fighting) /i.test(row.activity) ? monsterNameFrom(row.activity) : undefined}
+          bankroll={bankroll}
+          username={username}
+          onResolved={setHasSetup}
+        />
 
         {row.gear.length > 0 && !hasSetup && (
           <div className="max-w-[36rem]">
@@ -781,7 +795,7 @@ export function MoneyMakers() {
                       {open && (
                         <tr key={`${r.title}-detail`} className="bg-black/25">
                           <td colSpan={6} className="px-4 py-3">
-                            <GuideDetail row={r} />
+                            <GuideDetail row={r} bankroll={bankroll} username={username || undefined} />
 
                             {/* Gear is only asked for on activities that name a monster -- there is
                                 nothing to optimise a loadout against for a farming run. The

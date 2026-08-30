@@ -63,6 +63,15 @@ export interface StrategySetup {
   inventory: (SetupItem | null)[];
   runePouch: SetupItem[];
   /**
+   * Every ammo the setup lists, in wiki order, because one of them is usually for a swap weapon.
+   *
+   * The Doom of Mokhaiotl's max setup carries `ammo = Seeking dragon arrow` for its Twisted bow
+   * and `ammo2 = Ruby bolts (e)` for the Zaryte crossbow it wears. Reading only the first left a
+   * crossbow loaded with arrows, which the legality check then stripped -- so the best setup in
+   * the game scored 1.93 dps against the budget setup's 4.02, because it was firing nothing.
+   */
+  ammoOptions: SetupItem[];
+  /**
    * What the tradeable half of this setup costs at live prices.
    *
    * A floor, and labelled as one everywhere it is shown. Untradeables (void, quest items, capes)
@@ -358,6 +367,15 @@ function parseSetup(variant: string, text: string): StrategySetup | null {
     }
   }
 
+  const ammoOptions: SetupItem[] = [];
+  if (equipmentTpl) {
+    const params = splitTemplateParams(equipmentTpl.body);
+    for (const key of ["ammo", "ammo2", "ammo3"]) {
+      const item = lookupItem(params.get(key) ?? "");
+      if (item && !ammoOptions.some((a) => a.name === item.name)) ammoOptions.push(item);
+    }
+  }
+
   const pouchTpl = findTemplates(text, "Rune pouch")[0];
   const runePouch: SetupItem[] = [];
   if (pouchTpl) {
@@ -375,6 +393,7 @@ function parseSetup(variant: string, text: string): StrategySetup | null {
     equipment,
     inventory,
     runePouch,
+    ammoOptions,
     cost: priced.reduce((s, x) => s + (x.price ?? 0), 0),
     pricedCount: priced.length,
     totalCount: all.length,
@@ -434,6 +453,7 @@ async function attachImages(setups: StrategySetup[]): Promise<void> {
     for (const item of Object.values(setup.equipment)) visit(item);
     for (const item of setup.inventory) visit(item);
     for (const item of setup.runePouch) visit(item);
+    for (const item of setup.ammoOptions ?? []) visit(item);
   }
   if (wanted.size === 0) return;
 
@@ -445,6 +465,7 @@ async function attachImages(setups: StrategySetup[]): Promise<void> {
     for (const item of Object.values(setup.equipment)) apply(item);
     for (const item of setup.inventory) apply(item);
     for (const item of setup.runePouch) apply(item);
+    for (const item of setup.ammoOptions ?? []) apply(item);
   }
 }
 
@@ -465,6 +486,7 @@ function reprice(setup: StrategySetup): StrategySetup {
     equipment,
     inventory,
     runePouch: setup.runePouch.map((r) => fix(r) ?? r),
+    ammoOptions: (setup.ammoOptions ?? []).map((a) => fix(a) ?? a),
     cost: priced.reduce((s, x) => s + (x.price ?? 0), 0),
     pricedCount: priced.length,
     totalCount: all.length,

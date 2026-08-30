@@ -1296,20 +1296,63 @@ export interface StrategySetup {
   /** Exactly 28 entries, nulls for empty slots, so the grid keeps its shape. */
   inventory: (SetupItem | null)[];
   runePouch: SetupItem[];
+  /** Every ammo the setup lists; one is usually for a swap weapon. */
+  ammoOptions?: SetupItem[];
   /** Live cost of the TRADEABLE half only. A floor, never presented as the full price. */
   cost: number;
   pricedCount: number;
   totalCount: number;
 }
 
+export interface UpgradeSuggestion {
+  slot: string;
+  fromName: string | null;
+  fromPrice: number | null;
+  toName: string;
+  toItemId: number;
+  toPrice: number;
+  /** Extra gp over what the piece being replaced is worth. */
+  extraCost: number;
+  dps: number;
+  dpsGain: number;
+  gainPct: number;
+  gpPerDps: number;
+}
+
+export interface SetupAnalysis {
+  variant: string;
+  style: "melee" | "ranged" | "magic";
+  dps: {
+    dps: number;
+    maxHit: number;
+    accuracy: number;
+    timeToKill: number;
+    attackType: string;
+    effects: string[];
+  } | null;
+  unresolved: string[];
+  upgrades: UpgradeSuggestion[];
+}
+
 export interface StrategySetupsResponse {
   /** The wiki page these came from, so the claim is checkable. Null when none was found. */
   page: string | null;
   setups: StrategySetup[];
+  monster?: { name: string; hp: number; defence: number };
+  levelsKnown?: boolean;
+  /** DPS and upgrade suggestions per variant. Absent when no monster was matched. */
+  analysis?: SetupAnalysis[];
 }
 
-export async function fetchStrategySetups(activity: string): Promise<StrategySetupsResponse> {
-  const res = await fetch(`/api/strategy-setups?activity=${encodeURIComponent(activity)}`);
+export async function fetchStrategySetups(
+  activity: string,
+  opts: { monster?: string; bankroll?: number; username?: string } = {},
+): Promise<StrategySetupsResponse> {
+  const q = new URLSearchParams({ activity });
+  if (opts.monster) q.set("monster", opts.monster);
+  if (opts.bankroll != null) q.set("bankroll", String(opts.bankroll));
+  if (opts.username) q.set("username", opts.username);
+  const res = await fetch(`/api/strategy-setups?${q}`);
   if (!res.ok) throw new Error(`strategy setups failed: ${res.status}`);
   return res.json();
 }

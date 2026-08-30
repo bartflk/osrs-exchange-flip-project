@@ -1,6 +1,13 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import { fetchStrategySetups, type SetupItem, type StrategySetup } from "../api";
+import {
+  fetchStrategySetups,
+  type SetupAnalysis,
+  type SetupItem,
+  type StrategySetup,
+  type StrategySetupsResponse,
+  type UpgradeSuggestion,
+} from "../api";
 import { formatGp } from "../format";
 
 // The wiki's own inventory setups, drawn the way the wiki draws them: the equipment silhouette
@@ -182,13 +189,20 @@ function Grid({
 
 export function StrategySetupPanel({
   activity,
+  monster,
+  bankroll,
+  username,
   onResolved,
 }: {
   activity: string;
+  /** Monster to score the setup against. Without it the panel is loadouts only, no DPS. */
+  monster?: string;
+  bankroll?: number;
+  username?: string;
   /** Whether a real loadout was found, so the caller can drop its own weaker gear list. */
   onResolved?: (found: boolean) => void;
 }) {
-  const [data, setData] = useState<{ page: string | null; setups: StrategySetup[] } | null>(null);
+  const [data, setData] = useState<StrategySetupsResponse | null>(null);
   const [failed, setFailed] = useState(false);
   const [variant, setVariant] = useState(0);
 
@@ -197,7 +211,7 @@ export function StrategySetupPanel({
     setData(null);
     setFailed(false);
     setVariant(0);
-    fetchStrategySetups(activity)
+    fetchStrategySetups(activity, { monster, bankroll, username })
       .then((d) => {
         if (cancelled) return;
         setData(d);
@@ -214,7 +228,7 @@ export function StrategySetupPanel({
     // onResolved deliberately excluded: callers pass an inline closure, so including it would
     // refetch the wiki on every parent render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activity]);
+  }, [activity, monster, bankroll, username]);
 
   if (failed) return null;
   if (!data) {
@@ -225,6 +239,7 @@ export function StrategySetupPanel({
   if (data.setups.length === 0) return null;
 
   const active = data.setups[Math.min(variant, data.setups.length - 1)];
+  const analysis = data.analysis?.find((a) => a.variant === active.variant) ?? null;
   return (
     <div>
       <div className="flex items-baseline justify-between gap-3 flex-wrap mb-2">
@@ -260,6 +275,99 @@ export function StrategySetupPanel({
         )}
       </div>
       <SetupView setup={active} />
+      {analysis && <DpsBlock analysis={analysis} levelsKnown={data.levelsKnown ?? false} />}
+    </div>
+  );
+}
+
+/**
+ * What this setup does, and what to buy next.
+ *
+ * Scored for the loadout the wiki names, not for a free search over every item in the game. The
+ * gear optimiser lower down does the free search, and at the Doom of Mokhaiotl it proposed a
+ * Webweaver bow -- which nobody takes there, because raw DPS against a stationary dummy is not
+ * what picks a loadout for a fight with phases and a melee punish.
+ */
+function DpsBlock({
+  analysis,
+  levelsKnown,
+}: {
+  analysis: SetupAnalysis;
+  levelsKnown: boolean;
+}) {
+  if (!analysis.dps) return null;
+  const { dps, upgrades } = analysis;
+  return (
+    <div className="mt-3 flex flex-wrap items-start gap-x-8 gap-y-3">
+      <div>
+        <div className="text-[11px] uppercase tracking-wider text-gray-500 mb-1">
+          This setup
+          <span className="normal-case tracking-normal text-gray-600"> {analysis.style}</span>
+        </div>
+        <div className="font-mono text-lg text-gray-100 tabular-nums leading-tight">
+          {dps.dps.toFixed(2)} <span className="text-xs text-gray-500">dps</span>
+        </div>
+        <div className="text-[10.5px] text-gray-500">
+          max {dps.maxHit} &middot; {(dps.accuracy * 100).toFixed(0)}% acc
+          {Number.isFinite(dps.timeToKill) && ` · ${dps.timeToKill.toFixed(0)}s kill`}
+        </div>
+        {dps.effects.map((e) => (
+          <div key={e} className="text-[10.5px] text-violet-300">
+            {e}
+          </div>
+        ))}
+        {!levelsKnown && (
+          <div className="text-[10px] text-amber-400/80 mt-0.5">assuming 99s</div>
+        )}
+      </div>
+
+      <div className="min-w-[19rem] max-w-[30rem] flex-1">
+        <div className="text-[11px] uppercase tracking-wider text-gray-500 mb-1">
+          Worth upgrading
+          <span className="normal-case tracking-normal text-gray-600">
+            {" "}
+            best single swap per slot, within what you have spare
+          </span>
+        </div>
+        {upgrades.length === 0 ? (
+          <div className="text-[11px] text-gray-600">
+            Nothing affordable improves on this setup.
+          </div>
+        ) : (
+          upgrades.slice(0, 5).map((u) => <UpgradeRow key={u.slot} upgrade={u} />)
+        )}
+        {/* Said plainly, because it is the difference between a number you can act on and one you
+            cannot. The weapon slot is excluded on purpose: the model reads stats and a fixed list
+            of effects, and knows nothing about bolt procs, special attacks or weapon passives,
+            which is exactly where a weapon is chosen. */}
+        <p className="text-[10px] text-gray-600 mt-1.5 leading-snug">
+          Armour, jewellery and ammunition only. The weapon is left alone: this model reads stats
+          and a fixed list of gear effects, and cannot see bolt procs, special attacks or weapon
+          passives, which is most of why a weapon gets picked. DPS across two different setups is
+          not comparable for the same reason.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function UpgradeRow({ upgrade: u }: { upgrade: UpgradeSuggestion }) {
+  return (
+    <div className="flex items-center justify-between gap-2 text-xs py-0.5">
+      <span className="min-w-0 flex items-baseline gap-1.5">
+        <span className="text-[10px] uppercase text-gray-600 w-10 shrink-0">{u.slot}</span>
+        <span className="text-gray-200 truncate">{u.toName}</span>
+        {u.fromName && (
+          <span className="text-[10px] text-gray-600 truncate">was {u.fromName}</span>
+        )}
+      </span>
+      <span className="shrink-0 flex items-baseline gap-2 font-mono tabular-nums">
+        <span className="text-emerald-400">+{u.dpsGain.toFixed(2)}</span>
+        <span className="text-[10px] text-gray-500">{u.gainPct.toFixed(1)}%</span>
+        <span className="text-gray-400 w-20 text-right">
+          {u.extraCost <= 0 ? "free" : formatGp(u.extraCost)}
+        </span>
+      </span>
     </div>
   );
 }

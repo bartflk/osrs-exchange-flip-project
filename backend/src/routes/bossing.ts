@@ -11,6 +11,7 @@ import {
 } from "../moneyMaking.js";
 import { getPlayerSnapshot } from "../wiseoldman.js";
 import { getStrategySetups } from "../strategySetups.js";
+import { computeSetupDps, type SetupDpsResult } from "../setupDps.js";
 
 // Money makers, ranked by gp/hr computed from live prices, gated by what the player can actually
 // do -- their real skill levels and their real bankroll.
@@ -47,10 +48,17 @@ export async function bossingRoutes(app: FastifyInstance) {
   // /api/money-makers: only a fraction of the 639 guides have a Strategies page, and scraping
   // them all to answer a question about one row would be hundreds of wasted requests.
   app.get("/api/strategy-setups", async (req, reply) => {
-    const { activity } = req.query as { activity?: string };
+    const { activity, monster, bankroll, username } = req.query as {
+      activity?: string;
+      monster?: string;
+      bankroll?: string;
+      username?: string;
+    };
     if (!activity) return reply.code(400).send({ error: "activity is required" });
+
+    let result;
     try {
-      return await getStrategySetups(activity);
+      result = await getStrategySetups(activity);
     } catch (err) {
       // A missing or restructured wiki page must not surface as a broken panel. The caller
       // renders nothing for an empty result, which is the correct outcome for a boss that has
@@ -58,6 +66,59 @@ export async function bossingRoutes(app: FastifyInstance) {
       req.log.error({ err, activity }, "strategy setups failed");
       return { page: null, setups: [] };
     }
+    if (result.setups.length === 0) return result;
+
+    // DPS is scored for the setup the wiki actually recommends, not for a free search over every
+    // item in the game. The optimiser's answer at the Doom of Mokhaiotl was a Webweaver bow, which
+    // nobody takes there -- raw DPS against a stationary dummy is not what picks a loadout for a
+    // fight with phases and a melee punish, and the wiki's setups already encode that judgement.
+    const target = monster ? await findMonster(monster) : null;
+    if (!target) return result;
+
+    let skills = DEFAULT_SKILLS;
+    let levelsKnown = false;
+    if (username) {
+      try {
+        const snap = await getPlayerSnapshot(username);
+        const lvl = (n: string, fallback: number) => snap.skills[n]?.level ?? fallback;
+        skills = {
+          attack: lvl("attack", 1),
+          strength: lvl("strength", 1),
+          defence: lvl("defence", 1),
+          ranged: lvl("ranged", 1),
+          magic: lvl("magic", 1),
+          hitpoints: lvl("hitpoints", 10),
+          prayer: lvl("prayer", 1),
+        };
+        levelsKnown = true;
+      } catch {
+        levelsKnown = false;
+      }
+    }
+
+    const budget = Number(bankroll);
+    const analysis: (SetupDpsResult & { variant: string })[] = [];
+    for (const setup of result.setups) {
+      // Spare is measured against THIS setup: the money left once you own it. On a Budget setup
+      // that is most of the bankroll and the suggestions are real; on a max setup it is usually
+      // nothing, and offering upgrades you cannot fund would be noise.
+      const spare = Number.isFinite(budget) ? Math.max(0, budget - setup.cost) : 0;
+      try {
+        analysis.push({
+          variant: setup.variant,
+          ...(await computeSetupDps(setup, target, skills, spare)),
+        });
+      } catch (err) {
+        req.log.warn({ err, variant: setup.variant }, "setup dps failed");
+      }
+    }
+
+    return {
+      ...result,
+      monster: { name: target.name, hp: target.skills.hp, defence: target.skills.def },
+      levelsKnown,
+      analysis,
+    };
   });
 
   app.get("/api/money-makers", async (req) => {
