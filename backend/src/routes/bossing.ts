@@ -9,6 +9,7 @@ import {
   type PricedMoneyMaker,
 } from "../moneyMaking.js";
 import { getPlayerSnapshot } from "../wiseoldman.js";
+import { getStrategySetups } from "../strategySetups.js";
 
 // Money makers, ranked by gp/hr computed from live prices, gated by what the player can actually
 // do -- their real skill levels and their real bankroll.
@@ -41,6 +42,23 @@ function evaluateRequirements(
 }
 
 export async function bossingRoutes(app: FastifyInstance) {
+  // The wiki's own inventory setups for a boss, priced live. On demand rather than bundled into
+  // /api/money-makers: only a fraction of the 639 guides have a Strategies page, and scraping
+  // them all to answer a question about one row would be hundreds of wasted requests.
+  app.get("/api/strategy-setups", async (req, reply) => {
+    const { activity } = req.query as { activity?: string };
+    if (!activity) return reply.code(400).send({ error: "activity is required" });
+    try {
+      return await getStrategySetups(activity);
+    } catch (err) {
+      // A missing or restructured wiki page must not surface as a broken panel. The caller
+      // renders nothing for an empty result, which is the correct outcome for a boss that has
+      // no documented setup anyway.
+      req.log.error({ err, activity }, "strategy setups failed");
+      return { page: null, setups: [] };
+    }
+  });
+
   app.get("/api/money-makers", async (req) => {
     const { username, bankroll, membersOnly } = req.query as {
       username?: string;

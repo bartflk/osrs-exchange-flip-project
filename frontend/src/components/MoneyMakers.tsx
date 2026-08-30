@@ -7,20 +7,69 @@ import {
 } from "../api";
 import { formatGp } from "../format";
 import { loadSettings } from "../settings";
+import { StrategySetupPanel } from "./StrategySetup";
 import { Badge, Button, EmptyState, Field, GpInput, Input, Panel, Select, Toolbar } from "./ui";
 
-// What to do with your time, priced with the same live market data as everything else.
+// What to do with your time, with the wiki's own hourly profit as the headline and this app's
+// live recomputation beside it.
 //
-// The OSRS Wiki publishes a gp/hr on each money-making guide, but it is baked in whenever the page
-// was last edited. What the guides really provide is the RECIPE -- items consumed and produced per
-// hour -- and multiplying that by prices this app already polls every minute gives a figure that
-// is current, which the wiki's own number is not.
+// That ordering is a correction. This page used to lead with the recomputed figure on the belief
+// that the wiki's was a stale snapshot baked in at edit time. It is not -- the wiki prices its
+// table from current Grand Exchange data on every render -- and the recomputation was carrying
+// five separate parser bugs that put "Crafting sunfire runes" at 64.95m/hr against a real 4.14m
+// and "Dismantling bracelets of ethereum" at 147m/hr when it is actually a 2.3m/hr LOSS.
+//
+// Both numbers are kept, because they answer different questions. The wiki's is right by
+// construction, since the template that computes it is the same one the guide authors write
+// against. This app's is fresher, priced from a poll that runs every minute rather than the
+// wiki's cache. Where they agree, the live one is the better number; where they disagree by a
+// lot, the row is telling you not to trust it, and that is worth seeing rather than hiding.
 //
 // Three things are then layered on that only this app can answer: whether YOUR levels meet the
 // requirements (Wise Old Man), whether YOUR bankroll covers the supplies, and what the best gear
 // YOUR money can buy for the boss actually is.
 
-type SortKey = "activity" | "profit" | "supplies" | "revenue" | "skill";
+type SortKey = "activity" | "profit" | "supplies" | "revenue" | "skill" | "session";
+
+const INTENSITY_TONE: Record<string, string> = {
+  low: "border-emerald-400/30 bg-emerald-500/10 text-emerald-300",
+  moderate: "border-amber-400/30 bg-amber-500/10 text-amber-300",
+  high: "border-rose-400/30 bg-rose-500/10 text-rose-300",
+  "very high": "border-rose-400/50 bg-rose-500/20 text-rose-200",
+};
+
+function itemIconUrl(icon: string | null): string | null {
+  if (!icon) return null;
+  return `https://oldschool.runescape.wiki/images/${encodeURIComponent(icon.replace(/ /g, "_"))}`;
+}
+
+/** Item icon with its name as the tooltip, falling back to a text chip when there is no icon. */
+function ItemChip({
+  name,
+  icon,
+  sub,
+  tone = "",
+}: {
+  name: string;
+  icon: string | null;
+  sub?: string;
+  tone?: string;
+}) {
+  const url = itemIconUrl(icon);
+  return (
+    <span
+      title={sub ? `${name} — ${sub}` : name}
+      className={`inline-flex items-center gap-1 px-1.5 py-1 rounded border border-white/10 bg-white/5 ${tone}`}
+    >
+      {url ? (
+        <img src={url} alt="" width={20} height={20} className="shrink-0" loading="lazy" />
+      ) : (
+        <span className="text-[10px] text-gray-500 px-0.5">?</span>
+      )}
+      {sub && <span className="text-[10px] font-mono text-gray-400 tabular-nums">{sub}</span>}
+    </span>
+  );
+}
 
 const RELIABILITY_NOTE: Record<MoneyMakerRow["reliability"], string> = {
   exact: "Every input and output priced.",
@@ -63,17 +112,229 @@ function SortHeader({
 }
 
 function ProfitCell({ row }: { row: MoneyMakerRow }) {
-  const tone =
-    row.reliability === "overstated"
-      ? "text-amber-300"
-      : row.profitPerHour >= 0
-        ? "text-emerald-400"
-        : "text-rose-400";
+  const headline = row.headlineProfitPerHour;
+  const tone = headline >= 0 ? "text-emerald-400" : "text-rose-400";
+  // Only flagged past 25%. Below that the gap is ordinary price drift between the wiki's cache
+  // and this app's poll, which is not a defect and should not be dressed up as one.
+  const disputed = row.divergence != null && row.divergence > 0.25;
   return (
-    <span className={`font-mono font-semibold tabular-nums ${tone}`} title={RELIABILITY_NOTE[row.reliability]}>
-      {row.reliability === "floor" ? "≥" : row.reliability === "overstated" ? "≤" : ""}
-      {formatGp(row.profitPerHour)}
-    </span>
+    <div className="leading-tight">
+      <div
+        className={`font-mono font-semibold tabular-nums ${tone}`}
+        title={
+          row.headlineSource === "wiki"
+            ? "The wiki's own figure, priced from current GE data by the same template the guide is written in."
+            : `Not listed in the wiki's table, so this is this app's own live recomputation. ${RELIABILITY_NOTE[row.reliability]}`
+        }
+      >
+        {row.headlineSource === "live" && row.reliability === "floor" ? "≥" : ""}
+        {row.headlineSource === "live" && row.reliability === "overstated" ? "≤" : ""}
+        {formatGp(headline)}
+      </div>
+      {row.wikiProfitPerHour != null ? (
+        <div
+          className={`text-[10px] font-mono tabular-nums ${disputed ? "text-amber-400" : "text-gray-600"}`}
+          title={
+            disputed
+              ? "This app's live recomputation disagrees with the wiki by more than 25%. One of the two is wrong, so treat this row's number as unverified."
+              : "This app's own recomputation from live prices, for comparison."
+          }
+        >
+          {disputed ? "⚠ live " : "live "}
+          {formatGp(row.profitPerHour)}
+        </div>
+      ) : (
+        // Without a wiki figure there is nothing to check this against, and the recomputation
+        // has a known tail of bad rows. Saying so is the difference between a number the reader
+        // can calibrate and one they cannot -- an unlabelled figure here would look exactly as
+        // authoritative as the corroborated ones sitting above and below it.
+        <div
+          className="text-[10px] text-gray-600"
+          title="This guide is not listed in the wiki's overview table, so there is no second figure to check this against. It is this app's own recomputation only."
+        >
+          unverified
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Profit with rare drops stripped out: what a two-hour session actually pays.
+ *
+ * An hourly average quietly promises you a slice of a drop you will usually not see. At 30
+ * kills/hr a 1/1000 drop lands once every 33 hours, yet it is folded into "gp/hr" as though it
+ * arrived evenly. Both numbers are true; only one of them describes tonight.
+ */
+function SessionCell({ row }: { row: MoneyMakerRow }) {
+  if (row.profitPerHourNoUniques == null) {
+    return <span className="text-[10px] text-gray-700">n/a</span>;
+  }
+  const share = row.rareShare ?? 0;
+  return (
+    <div className="leading-tight">
+      <div
+        className={`font-mono tabular-nums ${row.profitPerHourNoUniques >= 0 ? "text-gray-300" : "text-rose-400"}`}
+        title="Hourly profit with every drop rarer than 1-in-100 removed. This is what a short session pays if you do not hit the jackpot."
+      >
+        {formatGp(row.profitPerHourNoUniques)}
+      </div>
+      {share > 0.05 && (
+        <div
+          className="text-[10px] text-violet-400 tabular-nums"
+          title={`${Math.round(share * 100)}% of this activity's gross income comes from drops rarer than 1-in-100.`}
+        >
+          {Math.round(share * 100)}% uniques
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The expanded row: the kit, the hour's consumables, and the drop table split by rarity.
+ *
+ * Laid out as three named blocks rather than a two-column dump of every line. The supplies list IS
+ * the inventory setup -- "100 cheap food, 15 super restores, 2.5 antivenom per hour" is exactly
+ * what you pack -- and showing it as icons with quantities reads as a loadout instead of a
+ * spreadsheet.
+ */
+function GuideDetail({ row }: { row: MoneyMakerRow }) {
+  const outputs = [...row.outputs].sort((a, b) => b.value - a.value);
+  const common = outputs.filter((o) => !o.rare);
+  const rare = outputs.filter((o) => o.rare);
+  const qty = (n: number) =>
+    n >= 10
+      ? Math.round(n).toLocaleString()
+      : n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* The wiki's real loadout comes first when there is one: it supersedes the guide's prose
+          gear list, which says things like "Food and potions". Renders nothing for the ~90% of
+          activities that are not bosses with a Strategies page. */}
+      <StrategySetupPanel activity={row.activity} />
+
+      {row.gear.length > 0 && (
+        <div>
+          <DetailHeading
+            label="Gear the guide names"
+            note={
+              row.gearPricedCount > 0
+                ? `${formatGp(row.gearCost)} for the ${row.gearPricedCount} of ${row.gear.length} pieces that are GE items, a floor since untradeables and set names carry no price`
+                : "none of these resolved to a tradeable GE item"
+            }
+          />
+          <div className="flex flex-wrap gap-1">
+            {row.gear.map((g) => (
+              <ItemChip
+                key={g.name}
+                name={g.name}
+                icon={g.icon}
+                sub={g.price == null ? undefined : formatGp(g.price)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div>
+          <DetailHeading
+            label="Supplies per hour"
+            note={`${formatGp(row.inputCost)} total, this is the inventory you pack`}
+          />
+          {row.inputs.length === 0 ? (
+            <div className="text-[11px] text-gray-600">none</div>
+          ) : (
+            <div className="flex flex-wrap gap-1">
+              {row.inputs.map((i) => (
+                <ItemChip
+                  key={i.name}
+                  name={i.name}
+                  icon={i.icon}
+                  sub={qty(i.qtyPerHour)}
+                  tone={i.unitPrice == null ? "border-amber-400/40" : ""}
+                />
+              ))}
+            </div>
+          )}
+          {row.inputs.some((i) => i.unitPrice == null) && (
+            <p className="text-[10px] text-amber-400/80 mt-1">
+              Amber-outlined supplies have no GE price, so their cost is missing from the total.
+            </p>
+          )}
+        </div>
+
+        <div>
+          <DetailHeading label="Income per hour" note="after GE tax, biggest first" />
+          {common.slice(0, 8).map((o) => (
+            <LineRow key={o.name} line={o} qty={qty} />
+          ))}
+          {common.length > 8 && (
+            <div className="text-[10px] text-gray-600 mt-0.5">
+              +{common.length - 8} smaller lines
+            </div>
+          )}
+        </div>
+      </div>
+
+      {rare.length > 0 && (
+        <div>
+          <DetailHeading
+            label="Rare drops"
+            note={`rarer than 1-in-100, holding ${Math.round((row.rareShare ?? 0) * 100)}% of gross income you will usually not see in a session`}
+          />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
+            {rare.map((o) => (
+              <LineRow key={o.name} line={o} qty={qty} rate />
+            ))}
+          </div>
+        </div>
+      )}
+
+      <p className="text-[10px] text-gray-600">
+        {row.headlineSource === "wiki"
+          ? "Headline is the wiki's own figure. The breakdown here is this app's live recomputation, which is why the two can differ."
+          : `Not in the wiki's overview table, so the headline is this app's own figure. ${RELIABILITY_NOTE[row.reliability]}`}
+      </p>
+    </div>
+  );
+}
+
+function DetailHeading({ label, note }: { label: string; note?: string }) {
+  return (
+    <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-1.5">
+      {label}
+      {note && <span className="normal-case tracking-normal text-gray-600"> &middot; {note}</span>}
+    </div>
+  );
+}
+
+function LineRow({
+  line,
+  qty,
+  rate,
+}: {
+  line: MoneyMakerRow["outputs"][number];
+  qty: (n: number) => string;
+  rate?: boolean;
+}) {
+  // A drop rate reads far better as "1 in 1,000" than as the 0.001-per-kill the guide stores.
+  const oneIn = rate && line.perAction ? Math.round(1 / line.perAction) : null;
+  return (
+    <div className="flex items-center justify-between gap-2 text-[11px] py-0.5">
+      <span className="flex items-center gap-1.5 min-w-0">
+        <ItemChip name={line.name} icon={line.icon} />
+        <span className="text-gray-400 truncate">{line.name}</span>
+        <span className="text-gray-600 shrink-0">
+          {oneIn ? `1/${oneIn.toLocaleString()}` : `\u00d7${qty(line.qtyPerHour)}`}
+        </span>
+      </span>
+      <span className="font-mono shrink-0 text-emerald-300 tabular-nums">
+        {line.unitPrice == null ? "not priced" : formatGp(line.value)}
+      </span>
+    </div>
   );
 }
 
@@ -183,6 +444,8 @@ export function MoneyMakers() {
   const [sortKey, setSortKey] = useState<SortKey>("profit");
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
   const [category, setCategory] = useState<string>("all");
+  const [hideDisputed, setHideDisputed] = useState(false);
+  const [bossOnly, setBossOnly] = useState(false);
 
   function toggleSort(key: SortKey) {
     if (key === sortKey) {
@@ -219,10 +482,19 @@ export function MoneyMakers() {
     const filtered = rows.filter((r) => {
       if (needle && !r.activity.toLowerCase().includes(needle)) return false;
       if (category !== "all" && r.category !== category) return false;
-      // Only guides with NO counted cost are hidden by default, not everything flagged. Hiding
-      // all flagged rows removed every modern boss; hiding none let pure-revenue rows (147m/hr
-      // with a zero cost side) sit at the top of a sorted list as if comparable.
-      if (hideOverstated && r.costsUnknown) return false;
+      // Only guides with NO counted cost are hidden, and only when the headline is OUR figure.
+      //
+      // That second condition matters and was missing at first. `costsUnknown` describes this
+      // app's recomputation, so once the wiki's own figure became the headline it stopped being
+      // a reason to hide anything: Nex (Duo) at 11.10m and the Theatre of Blood at 9.73m were
+      // both dropped off the board despite their displayed number coming from the wiki and being
+      // perfectly sound. The flag now gates only the rows it actually describes.
+      if (hideOverstated && r.costsUnknown && r.headlineSource === "live") return false;
+      if (hideDisputed && r.divergence != null && r.divergence > 0.25) return false;
+      // "Boss" is taken from the guide's own wording rather than a curated list: a guide whose
+      // activity starts with Killing/Fighting and whose drops include something rarer than
+      // 1-in-100 is a boss for the purpose of "what does this pay without the jackpot".
+      if (bossOnly && r.profitPerHourNoUniques == null) return false;
       if (onlyDoable) {
         if (r.requirementsMet === false) return false;
         if (r.affordable === false) return false;
@@ -235,7 +507,12 @@ export function MoneyMakers() {
         case "activity":
           return r.activity.toLowerCase();
         case "profit":
-          return r.profitPerHour;
+          // Ranked on the HEADLINE, so the list is ordered by the same number it displays.
+          // Sorting by the live recomputation while showing the wiki's put rows in an order the
+          // page appeared to contradict.
+          return r.headlineProfitPerHour;
+        case "session":
+          return r.profitPerHourNoUniques ?? r.headlineProfitPerHour;
         case "supplies":
           return r.inputCost;
         case "revenue":
@@ -256,15 +533,18 @@ export function MoneyMakers() {
       }
       return (av - bv) * sortDir;
     });
-  }, [rows, search, onlyDoable, hideOverstated, category, sortKey, sortDir]);
+  }, [rows, search, onlyDoable, hideOverstated, hideDisputed, bossOnly, category, sortKey, sortDir]);
 
   return (
     <div>
       <Toolbar
         aside={
           <>
-            gp/hr computed from this app&apos;s live prices and the wiki&apos;s per-hour recipe, not
-            the figure printed on the guide. Requirements come from your Wise Old Man profile.
+            Headline gp/hr is the wiki&apos;s own figure, which it prices from current GE data.
+            This app&apos;s independent recomputation from live prices sits underneath it, and a
+            row is flagged when the two disagree by more than 25%. &ldquo;No uniques&rdquo; strips
+            drops rarer than 1-in-100, so it is what a short session pays without a jackpot.
+            Requirements come from your Wise Old Man profile.
           </>
         }
       >
@@ -311,6 +591,22 @@ export function MoneyMakers() {
           <Button size="sm" active={hideOverstated} onClick={() => setHideOverstated((v) => !v)}>
             Hide zero-cost
           </Button>
+          <Button
+            size="sm"
+            active={bossOnly}
+            onClick={() => setBossOnly((v) => !v)}
+            title="Only activities with per-kill drop tables, where the without-uniques figure means something"
+          >
+            Bosses
+          </Button>
+          <Button
+            size="sm"
+            active={hideDisputed}
+            onClick={() => setHideDisputed((v) => !v)}
+            title="Hide rows where this app's live recomputation and the wiki disagree by more than 25%"
+          >
+            Hide disputed
+          </Button>
         </Field>
       </Toolbar>
 
@@ -321,7 +617,8 @@ export function MoneyMakers() {
           <h3 className="text-sm font-semibold text-gray-100">
             Money makers
             <span className="ml-2 text-[11px] font-normal text-gray-500">
-              {visible.length} shown of {rows.length} · ranked by live gp/hr
+              {visible.length} shown of {rows.length} · headline gp/hr from the wiki, cross-checked
+              against live prices
             </span>
           </h3>
         </div>
@@ -338,8 +635,9 @@ export function MoneyMakers() {
                 <tr className="text-[10px] uppercase tracking-wider text-gray-500 text-left border-b border-white/8">
                   <SortHeader label="Activity" k="activity" sortKey={sortKey} dir={sortDir} onSort={toggleSort} className="px-4" />
                   <SortHeader label="Profit/hr" k="profit" sortKey={sortKey} dir={sortDir} onSort={toggleSort} align="right" />
+                  <SortHeader label="No uniques" k="session" sortKey={sortKey} dir={sortDir} onSort={toggleSort} align="right" />
                   <SortHeader label="Supplies/hr" k="supplies" sortKey={sortKey} dir={sortDir} onSort={toggleSort} align="right" />
-                  <SortHeader label="Income/hr" k="revenue" sortKey={sortKey} dir={sortDir} onSort={toggleSort} align="right" />
+                  <th className="px-3 py-2 font-medium">Kit</th>
                   <SortHeader label="Skills" k="skill" sortKey={sortKey} dir={sortDir} onSort={toggleSort} />
                 </tr>
               </thead>
@@ -355,14 +653,28 @@ export function MoneyMakers() {
                       >
                         <td className="px-4 py-2">
                           <div className="text-gray-100">{r.activity}</div>
-                          <div className="text-[10px] text-gray-600">
-                            {r.members ? "members" : "F2P"}
-                            {r.kph != null && ` · ${r.kph.toLocaleString()}/hr`}
-                            {r.gear.length > 0 && ` · ${r.gear.length} gear items listed`}
+                          <div className="text-[10px] text-gray-600 flex items-center gap-1.5 flex-wrap mt-0.5">
+                            {r.intensity && (
+                              <span
+                                title={`Click intensity: ${r.intensity}. How much attention the method demands, from the guide itself.`}
+                                className={`px-1.5 py-0.5 rounded border text-[9px] uppercase tracking-wide ${
+                                  INTENSITY_TONE[r.intensity.toLowerCase()] ??
+                                  "border-white/10 bg-white/5 text-gray-400"
+                                }`}
+                              >
+                                {r.intensity}
+                              </span>
+                            )}
+                            <span>{r.members ? "members" : "F2P"}</span>
+                            {r.kph != null && <span>· {r.kph.toLocaleString()}/hr</span>}
+                            {r.category && <span>· {r.category}</span>}
                           </div>
                         </td>
                         <td className="px-3 py-2 text-right">
                           <ProfitCell row={r} />
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <SessionCell row={r} />
                         </td>
                         <td className="px-3 py-2 text-right font-mono text-gray-400 tabular-nums">
                           {formatGp(r.inputCost)}
@@ -370,8 +682,22 @@ export function MoneyMakers() {
                             <div className="text-[10px] text-rose-400">over budget</div>
                           )}
                         </td>
-                        <td className="px-3 py-2 text-right font-mono text-gray-500 tabular-nums">
-                          {formatGp(r.outputRevenue)}
+                        <td className="px-3 py-2">
+                          {/* The gear the guide names, as icons. Six is where the row stops being
+                              a row; the rest are in the expanded panel. */}
+                          <div className="flex items-center gap-0.5 flex-wrap">
+                            {r.gear.slice(0, 6).map((g) => (
+                              <ItemChip key={g.name} name={g.name} icon={g.icon} />
+                            ))}
+                            {r.gear.length > 6 && (
+                              <span className="text-[10px] text-gray-600 ml-0.5">
+                                +{r.gear.length - 6}
+                              </span>
+                            )}
+                            {r.gear.length === 0 && (
+                              <span className="text-[10px] text-gray-700">none listed</span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-3 py-2">
                           {r.requirements.length === 0 ? (
@@ -402,53 +728,8 @@ export function MoneyMakers() {
                       </tr>
                       {open && (
                         <tr key={`${r.title}-detail`} className="bg-black/25">
-                          <td colSpan={5} className="px-4 py-3">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div>
-                                <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">
-                                  Costs per hour
-                                </div>
-                                {r.inputs.length === 0 && (
-                                  <div className="text-[11px] text-gray-600">none</div>
-                                )}
-                                {r.inputs.map((i) => (
-                                  <div key={i.name} className="flex justify-between gap-2 text-[11px]">
-                                    <span className="text-gray-400 truncate">
-                                      {i.name} ×{i.qtyPerHour.toLocaleString(undefined, {
-                                        maximumFractionDigits: 1,
-                                      })}
-                                    </span>
-                                    <span className="font-mono shrink-0 text-rose-300">
-                                      {i.unitPrice == null ? "not priced" : formatGp(i.value)}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                              <div>
-                                <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">
-                                  Income per hour (after tax)
-                                </div>
-                                {[...r.outputs]
-                                  .sort((a, b) => b.value - a.value)
-                                  .slice(0, 10)
-                                  .map((o) => (
-                                    <div key={o.name} className="flex justify-between gap-2 text-[11px]">
-                                      <span className="text-gray-400 truncate">
-                                        {o.name} ×{o.qtyPerHour.toLocaleString(undefined, {
-                                          maximumFractionDigits: 1,
-                                        })}
-                                      </span>
-                                      <span className="font-mono shrink-0 text-emerald-300">
-                                        {o.unitPrice == null ? "not priced" : formatGp(o.value)}
-                                      </span>
-                                    </div>
-                                  ))}
-                              </div>
-                            </div>
-
-                            <p className="text-[10px] text-gray-600 mt-2">
-                              {RELIABILITY_NOTE[r.reliability]}
-                            </p>
+                          <td colSpan={6} className="px-4 py-3">
+                            <GuideDetail row={r} />
 
                             {/* Gear is only asked for on activities that name a monster -- there is
                                 nothing to optimise a loadout against for a farming run. */}

@@ -1102,6 +1102,18 @@ export interface MmgLine {
   qtyPerHour: number;
   unitPrice: number | null;
   value: number;
+  icon: string | null;
+  /** A drop stated at under 1-in-100 per kill: a jackpot, not income. */
+  rare: boolean;
+  /** Quantity per kill before kph scaling. Null on guides not stated per kill. */
+  perAction?: number | null;
+}
+
+export interface MmgGearPiece {
+  name: string;
+  itemId: number | null;
+  icon: string | null;
+  price: number | null;
 }
 
 export interface MoneyMakerRow {
@@ -1111,12 +1123,29 @@ export interface MoneyMakerRow {
   members: boolean;
   kph: number | null;
   requirements: { skill: string; level: number }[];
-  gear: string[];
+  gear: MmgGearPiece[];
+  /** Live cost of the gear pieces that resolved to real GE items: a floor, not the full kit. */
+  gearCost: number;
+  gearPricedCount: number;
   inputs: MmgLine[];
   outputs: MmgLine[];
   inputCost: number;
   outputRevenue: number;
+  /** This app's own recomputation from live prices. */
   profitPerHour: number;
+  /** The wiki's own published figure, live-priced by the wiki. Null when not in its table. */
+  wikiProfitPerHour: number | null;
+  /** The figure to lead with, and which of the two it is. */
+  headlineProfitPerHour: number;
+  headlineSource: "wiki" | "live";
+  /** |live - wiki| / |wiki|. A large value means one of the two is wrong. */
+  divergence: number | null;
+  /** Headline minus rare drops: what a short session actually pays. Null when not per-kill. */
+  profitPerHourNoUniques: number | null;
+  /** Share of gross revenue coming from rare drops, 0..1. */
+  rareShare: number | null;
+  /** The guide's own click-intensity rating: Low / Moderate / High. */
+  intensity: string | null;
   complete: boolean;
   unpricedLines: number;
   /** exact | floor (real figure is higher) | overstated (a cost is missing). */
@@ -1243,5 +1272,39 @@ export interface HighlightsResponse {
 export async function fetchHighlights(window: HighlightWindow): Promise<HighlightsResponse> {
   const res = await fetch(`/api/highlights?window=${window}`);
   if (!res.ok) throw new Error(`Failed to fetch highlights: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------- strategy setups
+
+export interface SetupItem {
+  name: string;
+  itemId: number | null;
+  icon: string | null;
+  price: number | null;
+}
+
+export interface StrategySetup {
+  /** The wiki tabber section name: "Max Ranged", "Budget", "Recommended". */
+  variant: string;
+  equipment: Partial<Record<string, SetupItem>>;
+  /** Exactly 28 entries, nulls for empty slots, so the grid keeps its shape. */
+  inventory: (SetupItem | null)[];
+  runePouch: SetupItem[];
+  /** Live cost of the TRADEABLE half only. A floor, never presented as the full price. */
+  cost: number;
+  pricedCount: number;
+  totalCount: number;
+}
+
+export interface StrategySetupsResponse {
+  /** The wiki page these came from, so the claim is checkable. Null when none was found. */
+  page: string | null;
+  setups: StrategySetup[];
+}
+
+export async function fetchStrategySetups(activity: string): Promise<StrategySetupsResponse> {
+  const res = await fetch(`/api/strategy-setups?activity=${encodeURIComponent(activity)}`);
+  if (!res.ok) throw new Error(`strategy setups failed: ${res.status}`);
   return res.json();
 }
