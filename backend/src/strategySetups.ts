@@ -72,6 +72,17 @@ export interface StrategySetup {
    */
   ammoOptions: SetupItem[];
   /**
+   * The wiki's own prose for this setup, one entry per bullet.
+   *
+   * This is the per-encounter knowledge no stat model has, and it was being parsed and discarded.
+   * The Zulrah page says plainly that "a Noxious halberd is powerful enough to reliably defeat
+   * Zulrah without use of other combat styles" -- which settles a question this app's DPS model
+   * cannot even represent, since it has no notion of attack range and would never work out that a
+   * polearm reaches a boss you cannot stand beside. Vorkath's page explains which bolts suit which
+   * phase. None of that is derivable from equipment bonuses.
+   */
+  notes: string[];
+  /**
    * What the tradeable half of this setup costs at live prices.
    *
    * A floor, and labelled as one everywhere it is shown. Untradeables (void, quest items, capes)
@@ -259,6 +270,42 @@ function findTemplates(text: string, name: string): { body: string; start: numbe
   return out;
 }
 
+/**
+ * A wikitext bullet list turned into readable lines.
+ *
+ * Templates go first and iteratively, because they nest ({{plink|{{...}}}}), and a single pass
+ * leaves the outer braces behind. Links keep their display text. Sub-bullets are kept but marked,
+ * since on these pages they are usually a caveat attached to the line above.
+ */
+function parseNotes(text: string): string[] {
+  let body = text;
+  for (let i = 0; i < 6; i++) {
+    const next = body.replace(/\{\{[^{}]*\}\}/g, "");
+    if (next === body) break;
+    body = next;
+  }
+  const out: string[] = [];
+  for (const raw of body.split("\n")) {
+    const line = raw.trim();
+    if (!line.startsWith("*")) continue;
+    const depth = line.match(/^\*+/)?.[0].length ?? 1;
+    const cleaned = line
+      .replace(/^\*+\s*/, "")
+      .replace(/\[\[([^\]|]+)\|([^\]]*)\]\]/g, "$2")
+      .replace(/\[\[([^\]]+)\]\]/g, "$1")
+      .replace(/''+/g, "")
+      .replace(/<ref[^>]*>[\s\S]*?<\/ref>/g, "")
+      .replace(/<[^>]*>/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    // A bullet that is only an item name is already visible in the grid above; the notes are for
+    // the lines that say something the pictures cannot.
+    if (!cleaned || cleaned.length < 12) continue;
+    out.push(depth > 1 ? `· ${cleaned}` : cleaned);
+  }
+  return out.slice(0, 10);
+}
+
 function cleanItemName(raw: string): string {
   return raw
     .replace(/\[\[([^\]|]+)\|([^\]]*)\]\]/g, "$1")
@@ -394,6 +441,7 @@ function parseSetup(variant: string, text: string): StrategySetup | null {
     inventory,
     runePouch,
     ammoOptions,
+    notes: parseNotes(text),
     cost: priced.reduce((s, x) => s + (x.price ?? 0), 0),
     pricedCount: priced.length,
     totalCount: all.length,
@@ -487,6 +535,7 @@ function reprice(setup: StrategySetup): StrategySetup {
     inventory,
     runePouch: setup.runePouch.map((r) => fix(r) ?? r),
     ammoOptions: (setup.ammoOptions ?? []).map((a) => fix(a) ?? a),
+    notes: setup.notes ?? [],
     cost: priced.reduce((s, x) => s + (x.price ?? 0), 0),
     pricedCount: priced.length,
     totalCount: all.length,

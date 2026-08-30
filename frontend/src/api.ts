@@ -1298,6 +1298,15 @@ export interface StrategySetup {
   runePouch: SetupItem[];
   /** Every ammo the setup lists; one is usually for a swap weapon. */
   ammoOptions?: SetupItem[];
+  /**
+   * The wiki's own prose for this setup, one entry per bullet.
+   *
+   * The per-encounter knowledge no stat model has. Zulrah's page states that a Noxious halberd
+   * "is powerful enough to reliably defeat Zulrah without use of other combat styles", which
+   * settles a question the DPS model cannot represent: it has no notion of attack range, so it
+   * could never work out that a polearm reaches a boss you cannot stand beside.
+   */
+  notes?: string[];
   /** Live cost of the TRADEABLE half only. A floor, never presented as the full price. */
   cost: number;
   pricedCount: number;

@@ -275,6 +275,26 @@ export function StrategySetupPanel({
         )}
       </div>
       <SetupView setup={active} />
+      {active.notes && active.notes.length > 0 && (
+        <div className="mt-2.5 max-w-[42rem]">
+          <div className="text-[11px] uppercase tracking-wider text-gray-500 mb-1">
+            Wiki notes for this setup
+          </div>
+          {/* The wiki's own words, kept verbatim. This is the per-encounter reasoning the DPS
+              model cannot produce: Zulrah's melee entry says a Noxious halberd alone is enough,
+              which is true because a polearm has reach, and reach is not in the equipment data at
+              all. Where the numbers and the notes disagree, the notes are the ones written by
+              people who have done the fight. */}
+          <ul className="space-y-0.5">
+            {active.notes.map((n) => (
+              <li key={n} className="text-[11.5px] text-gray-400 leading-snug">
+                <span className="text-gray-600 mr-1">&bull;</span>
+                {n}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {analysis && <DpsBlock analysis={analysis} levelsKnown={data.levelsKnown ?? false} />}
     </div>
   );
@@ -399,9 +419,10 @@ function DpsBlock({
             which is exactly where a weapon is chosen. */}
         <p className="text-[10px] text-gray-600 mt-1.5 leading-snug">
           Armour, jewellery and ammunition only. The weapon is left alone: this model reads stats
-          and a fixed list of gear effects, and cannot see bolt procs, special attacks or weapon
-          passives, which is most of why a weapon gets picked. DPS across two different setups is
-          not comparable for the same reason.
+          and a fixed list of gear effects, and cannot see bolt procs, special attacks, weapon
+          passives or attack range, which is most of why a weapon gets picked. Comparing DPS
+          between two setups is unsound for the same reason, and the wiki notes above are the
+          better guide to which style the fight actually wants.
         </p>
       </div>
     </div>
