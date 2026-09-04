@@ -1748,6 +1748,152 @@ Correct, and the distinction matters more than it first sounds. The item modal a
 
 An offer with no plan is judged with the same slot for both legs, since the question is only "would this price fill at this hour". The chart's footer then reported a paired median that is really a same-slot spread - on a Dragon hunter crossbow it read *"median day -232.0k/unit, profitable on 0 of 7 days"*, which looks exactly like a verdict on the offer being viewed and is nothing of the kind. It is now omitted when both legs are the same slot. A number that answers a question nobody asked is worse than no number, because the reader assumes it answers theirs.
 
+## 16. Plan - Market indices from the wiki's own category graph
+
+Status: **planned, not built.** Written 2026-09-04 after auditing which taxonomies actually exist.
+Every count below was measured live against this app's own priced catalogue, not estimated.
+
+### 16.1 What exists today, and why it is not enough
+
+`sectors.ts` already does a small version of this: six hand-written baskets (raid uniques, Barrows,
+Herblore, combat food, God Wars, dragon equipment) totalling 44 item names, averaged into one
+percentage each. Its UI, `SectorIndices.tsx`, was deleted when `MarketHighlights` replaced it, so
+the backend currently computes indices that nothing renders.
+
+Two problems with the curated approach, and only the second is fatal:
+
+1. 44 items out of 4,510 priced. It covers the items somebody happened to think of.
+2. **It cannot be maintained.** Every new raid, every new boss, every rebalance needs a human to
+   remember to edit a TypeScript array. `SET_DEFINITIONS` in `setArbitrage.ts` has the same shape
+   and the same drift.
+
+### 16.2 The source: the wiki already maintains the taxonomy
+
+The OSRS Wiki categorises every item page, and `list=categorymembers` returns a whole category in
+one request (500 per page, namespace 0). Verified live: `Category:Ranged weapons` has 152 members,
+`Category:Food` 249, `Category:Chambers of Xeric` 196.
+
+Content categories include monsters, mechanics and NPCs -- Chambers of Xeric lists "Abyssal portal"
+and "Acidic miasma" beside the Twisted bow. That is handled for free by **intersecting category
+members with this app's priced catalogue**: NPCs have no GE price, so they fall out, and every
+surviving member is guaranteed to have a live price. Chambers of Xeric goes from 196 members to 14
+priced items, which is precisely its unique drop table.
+
+One request per category, roughly 40 categories, cached for a week. Cheaper than the per-item
+`prop=categories` route, which would need about 94 requests to cover 4,652 items.
+
+### 16.3 The verified index list
+
+Counts are priced members after intersection. Turnover is price times 1h volume summed across the
+basket, measured 2026-09-04. Turnover is what decides whether a basket earns a row at all:
+`Category:Shields` resolves to five items and `Category:Slayer` to 57m/hr, and neither does.
+
+**Combat gear**
+
+| Index | Priced | Turnover/hr |
+|---|---|---|
+| Two-handed slot items | 114 | 29.4b |
+| Melee weapons | 190 | 28.0b |
+| Ranged weapons | 90 | 18.0b |
+| Melee armour | 259 | 13.7b |
+| Ranged armour | 147 | 7.1b |
+| Amulets | 47 | 5.9b |
+| Boots | 70 | 5.3b |
+| Rings | 39 | 5.3b |
+| Magic armour | 120 | 4.2b |
+| Magic weapons | 62 | 3.7b |
+| Helmets | 79 | 1.3b |
+| Gloves | 23 | 775m |
+| Capes | 88 | 75m |
+| Shields | 5 | 11m |
+
+**Ammunition**: Bolts 79 / 1.3b, Arrows 35 / 926m, Darts 9 / 207m, Javelins 16 / 133m.
+
+**Skilling materials**: Herbs 32 / 1.3b, Metal bars 10 / 1.2b, Gems 29 / 886m, Fish 72 / 779m,
+Ores 11 / 556m, Seeds 79 / 422m, Logs 29 / 236m.
+
+**Consumables**: Runes 23 / 2.5b, Food 176 / 703m, Potions 29 / 563m, Bones 24 / 535m.
+
+**By skill**: Smithing 276 / 21.5b, Crafting 214 / 13.8b, Prayer items 166 / 6.4b,
+Fletching 219 / 3.0b, Herblore 48 / 1.3b, Farming 176 / 806m, Cooking 177 / 455m,
+Construction 54 / 48m.
+
+**Content source**: Chambers of Xeric 14 / 18.5b, God Wars Dungeon 44 / 17.6b,
+Tombs of Amascut 10 / 4.3b, Wilderness 21 / 4.0b, Theatre of Blood 6 / 1.5b,
+Barrows equipment 31 / 805m, Vorkath 4 / 375m, Zulrah 6 / 303m, Slayer 21 / 57m.
+
+Categories checked and found unusable, recorded so nobody retries them: `Bars`, `Planks`,
+`Raw fish`, `Secondary ingredients`, `Clue scroll items`, `Third Age`, `Revenants`,
+`Desert Treasure II` and `Nightmare of Ashihama` all return zero members. The live names are
+`Metal bars`, `Fish`, and so on.
+
+### 16.4 The tiers the wiki does NOT have
+
+"PvM gear" and "high-end PvM gear" were asked for by name and are **not wiki categories**. They are
+community concepts, so they must be derived here and labelled as ours rather than the wiki's:
+
+- **PvM gear** = equipment carrying a positive offensive bonus in any style. That excludes
+  cosmetics, skilling tools and Construction materials, a distinction `Category:Equipable items`
+  does not make.
+- Tiered on price, the only axis available, and honest as long as it is named as such:
+  **Entry** under 1m, **Mid** 1m to 50m, **High-end** over 50m. These are round numbers chosen for
+  legibility, not thresholds discovered in the data, and the UI should say so wherever they appear.
+
+The tier split earns its place precisely because it cuts across the wiki's axes: "high-end PvM gear
+is down 4% this week" is a claim about a market segment no single wiki category expresses.
+
+### 16.5 How the index number is computed
+
+`sectors.ts` takes a flat mean of per-item percentage change. That is the wrong default here, and
+the reason is worth stating: in a 176-item food basket a flat mean lets a dead 300gp pie that moved
+40% on two trades outvote a heavily traded shark. It measures attention, not money.
+
+- **Default: turnover-weighted.** Weight each item by price times volume over the window, so the
+  index tracks where money actually moved. The data is present: `vol_high_1h` and `vol_low_1h` are
+  populated on all 4,535 snapshot rows.
+- **Also offered: equal-weighted**, which answers the different and legitimate question "how broad
+  is this move". The two disagreeing is itself the signal that one item is carrying the basket.
+- **Not offered: price-weighted.** OSRS has no share count, so a 1.4bn Twisted bow is not
+  economically "larger" than 10,000 sharks. Cap weighting borrowed from equities would be a
+  category error, and it is the sort of thing that looks rigorous while meaning nothing.
+
+Alongside the percentage each index should carry **breadth** (how many members rose against fell)
+and its **largest contributor**, because "Ranged weapons +3%" is a different fact depending on
+whether 60 of 90 items rose or one bow moved 40%.
+
+### 16.6 Implementation
+
+Backend:
+
+- `backend/src/itemCategories.ts` -- fetch `categorymembers` per category, intersect with the priced
+  catalogue, cache in a new `item_categories` table (`category`, `item_id`, `fetched_at`) on a
+  7-day TTL. Same additive-not-load-bearing discipline as `wikiImages.ts`: a failed category logs
+  and leaves the rest working.
+- `backend/src/indices.ts` -- replaces `sectors.ts`. Reads membership from the table and computes
+  turnover-weighted and equal-weighted change over the existing trend windows
+  (1h/4h/12h/24h/7d/30d), plus breadth and top contributor. The derived tiers live here too, since
+  they are computed from price rather than fetched.
+- `GET /api/indices?window=24h&weight=turnover` -- returns every index, with member contributions
+  available on demand rather than inline, since 276 Smithing items should not ship on every poll.
+- Keep `sectors.ts` until the replacement is verified, then delete it and its route together.
+
+Frontend:
+
+- `MarketIndices.tsx` on the Market page, grouped by the six headings above, each row showing the
+  percentage, a breadth bar and the top contributor.
+- Clicking an index filters the market table to its members. This is what makes it a tool rather
+  than a dashboard: the existing preset chips ("High volume", "High-value PvM") are a crude version
+  of the same idea and should be replaced by index membership rather than left sitting beside it.
+
+### 16.7 What to verify before believing it
+
+- Membership counts match the table in 16.3 after the first fetch. A category that silently returns
+  zero must log, not vanish.
+- Turnover-weighted and equal-weighted figures differ in the expected direction on a deliberately
+  lopsided basket (Chambers of Xeric, where the Twisted bow is most of the turnover).
+- A basket whose members all lack recent volume reports "not enough data" rather than 0%, the same
+  trap `avgChangePct: null` already guards against in `sectors.ts`.
+
 ## 15. Key references
 
 - [RuneScape:Real-time Prices — OSRS Wiki](https://oldschool.runescape.wiki/w/RuneScape:Real-time_Prices)
