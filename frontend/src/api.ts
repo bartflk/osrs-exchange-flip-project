@@ -1381,3 +1381,48 @@ export async function fetchStrategySetups(
   if (!res.ok) throw new Error(`strategy setups failed: ${res.status}`);
   return res.json();
 }
+
+// ---------------------------------------------------------------------------- market indices
+
+export interface IndexContributor {
+  itemId: number;
+  name: string;
+  icon: string;
+  changePct: number;
+  /** Share of the basket's weight this item carries, 0..1. */
+  weight: number;
+}
+
+export interface MarketIndex {
+  key: string;
+  label: string;
+  group: string;
+  /** Turnover-weighted change: where the money moved. Null when nothing in it has data. */
+  changePct: number | null;
+  /** The median member's change: how broad the move was. */
+  medianChangePct: number | null;
+  scored: number;
+  total: number;
+  up: number;
+  down: number;
+  turnover: number;
+  topContributor: IndexContributor | null;
+  /** True when the grouping is this app's own rather than a wiki category. */
+  derived: boolean;
+}
+
+export async function fetchIndices(
+  window: TrendWindow,
+): Promise<{ window: TrendWindow; indices: MarketIndex[] }> {
+  const res = await fetch(`/api/indices?window=${window}`);
+  if (!res.ok) throw new Error(`indices failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchIndexMembers(
+  key: string,
+): Promise<{ key: string; label: string; itemIds: number[] }> {
+  const res = await fetch(`/api/indices/${encodeURIComponent(key)}/members`);
+  if (!res.ok) throw new Error(`index members failed: ${res.status}`);
+  return res.json();
+}

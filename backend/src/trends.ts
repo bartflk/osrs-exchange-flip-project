@@ -39,7 +39,10 @@ function buildItemMap(): Map<number, { name: string; icon: string }> {
 // 1h/4h/12h/24h: price_history (SQLite) retains RAW_RETENTION_DAYS (3) of raw ticks, comfortably
 // covering all four short windows. "As-of" join: the most recent tick at or before the cutoff,
 // per item, compared against the current live price.
-function computeShortTrend(window: "1h" | "4h" | "12h" | "24h"): TrendEntry[] {
+function computeShortTrend(
+  window: "1h" | "4h" | "12h" | "24h",
+  opts: TrendOptions = {},
+): TrendEntry[] {
   const cutoff = Math.floor(Date.now() / 1000) - SHORT_WINDOW_SECONDS[window];
   const rows = db
     .prepare(
@@ -62,11 +65,14 @@ function computeShortTrend(window: "1h" | "4h" | "12h" | "24h"): TrendEntry[] {
   }[];
 
   const itemMap = buildItemMap();
-  return buildEntries(rows, itemMap);
+  return buildEntries(rows, itemMap, opts);
 }
 
 // 7d/30d: raw ticks are long gone by then -- use the DuckDB daily rollup instead (warehouse.ts).
-async function computeLongTrend(window: "7d" | "30d"): Promise<TrendEntry[]> {
+async function computeLongTrend(
+  window: "7d" | "30d",
+  opts: TrendOptions = {},
+): Promise<TrendEntry[]> {
   const days = window === "7d" ? 7 : 30;
   const cutoffDate = new Date(Date.now() - days * 86400 * 1000).toISOString().slice(0, 10);
   const dailyRows = await getPriceDailyAsOf(cutoffDate);
@@ -91,17 +97,34 @@ async function computeLongTrend(window: "7d" | "30d"): Promise<TrendEntry[]> {
     });
 
   const itemMap = buildItemMap();
-  return buildEntries(rows, itemMap);
+  return buildEntries(rows, itemMap, opts);
+}
+
+/**
+ * Options for callers that are not the movers leaderboard.
+ *
+ * `screen: false` drops the price and liquidity floors and keeps only the sanity cap. Those floors
+ * exist to stop one thin item topping a LEADERBOARD, a list whose entire content is its extremes.
+ * An index has no extremes to protect: a thin item there is diluted by its own weight, so screening
+ * it out deletes data to solve a problem the weighting already solves. Applied to indices the
+ * floors emptied the two most interesting baskets outright, since every rune trades under the
+ * 1,000gp floor and Chambers of Xeric uniques trade under the 20/hr liquidity floor.
+ */
+export interface TrendOptions {
+  screen?: boolean;
 }
 
 function buildEntries(
   rows: { item_id: number; from_high: number; to_high: number; liquidity: number }[],
   itemMap: Map<number, { name: string; icon: string }>,
+  opts: TrendOptions = {},
 ): TrendEntry[] {
+  const screen = opts.screen !== false;
   const entries: TrendEntry[] = [];
   for (const r of rows) {
-    if (r.from_high < MIN_PRICE || r.from_high <= 0) continue;
-    if (r.liquidity < MIN_LIQUIDITY) continue;
+    if (r.from_high <= 0) continue;
+    if (screen && r.from_high < MIN_PRICE) continue;
+    if (screen && r.liquidity < MIN_LIQUIDITY) continue;
     const changePct = (r.to_high - r.from_high) / r.from_high;
     if (Math.abs(changePct) > MAX_SANE_PCT) continue;
     const item = itemMap.get(r.item_id);
@@ -123,10 +146,13 @@ function buildEntries(
 // view; this is for callers that need a specific item's change regardless of whether it's a big
 // mover (e.g. sectors.ts averaging a curated, mostly-stable basket of high-value items that would
 // never make a "biggest movers" top 50).
-export async function computeAllTrendEntries(window: TrendWindow): Promise<TrendEntry[]> {
+export async function computeAllTrendEntries(
+  window: TrendWindow,
+  opts: TrendOptions = {},
+): Promise<TrendEntry[]> {
   return window === "7d" || window === "30d"
-    ? await computeLongTrend(window)
-    : computeShortTrend(window);
+    ? await computeLongTrend(window, opts)
+    : computeShortTrend(window, opts);
 }
 
 export async function computeTrend(window: TrendWindow): Promise<TrendEntry[]> {

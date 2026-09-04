@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import {
+  fetchIndexMembers,
   fetchItems,
   fetchStatus,
   fetchAlerts,
@@ -24,6 +25,7 @@ import { UpdateSensitivity } from "./components/UpdateSensitivity";
 import { ResearchReport } from "./components/ResearchReport";
 import { Sets } from "./components/Sets";
 import { MarketHighlights } from "./components/MarketHighlights";
+import { MarketIndices } from "./components/MarketIndices";
 import { UpdateCycleBadge } from "./components/UpdateCycleBadge";
 import { MarketTemperatureGauge } from "./components/MarketTemperatureGauge";
 import { SettingsModal } from "./components/SettingsModal";
@@ -153,6 +155,12 @@ function App() {
   const [settings, setSettingsRaw] = useState<Settings>(() => loadSettings());
   const [minVolume, setMinVolume] = useState(() => loadSettings().defaultMinLiquidity);
   const [preset, setPreset] = useState<"none" | "volume" | "taxfree" | "pvm">("none");
+  // Index membership filter, kept SEPARATE from the presets rather than folded into them. A preset
+  // is a saved view the user builds; an index is a fact about the market. They compose -- "high
+  // volume items, within ranged weapons" is a reasonable thing to ask for -- and merging them into
+  // one exclusive control would have made that impossible.
+  const [activeIndex, setActiveIndex] = useState<{ key: string; label: string } | null>(null);
+  const [indexItemIds, setIndexItemIds] = useState<Set<number> | null>(null);
   const [f2pOnly, setF2pOnly] = useState(false);
   const [watchedOnly, setWatchedOnly] = useState(false);
   const [minPrice, setMinPrice] = useState("");
@@ -174,12 +182,19 @@ function App() {
   // min vol 50," "tax-free: max tax 0"). minVolume is a backend query param (liquidity); buy
   // limit/tax presets are applied client-side since the backend doesn't filter on those.
   function applyPreset(next: "none" | "volume" | "taxfree" | "pvm") {
-    setPreset((current) => (current === next ? "none" : next));
-    if (next === "volume") setMinVolume(100_000);
+    // Toggling a preset OFF restores the liquidity default. It used to set minVolume on the way in
+    // and leave it there on the way out, so turning "High volume" off left the table still capped
+    // at 100,000 with no control showing why: eleven rows, no active preset, and nothing on screen
+    // accounting for the difference.
+    const turningOff = preset === next;
+    setPreset(turningOff ? "none" : next);
+    if (turningOff) setMinVolume(loadSettings().defaultMinLiquidity);
+    else if (next === "volume") setMinVolume(100_000);
     else if (next === "pvm") setMinVolume(50);
   }
 
   const hasActiveFilters =
+    activeIndex !== null ||
     preset !== "none" ||
     f2pOnly ||
     watchedOnly ||
@@ -189,6 +204,8 @@ function App() {
     minVolume !== loadSettings().defaultMinLiquidity;
 
   function clearFilters() {
+    setActiveIndex(null);
+    setIndexItemIds(null);
     setPreset("none");
     setF2pOnly(false);
     setWatchedOnly(false);
@@ -199,6 +216,8 @@ function App() {
   }
 
   const marketItems = items.filter((i) => {
+    // Not filtered by index here: when one is active the fetch above already asked for exactly
+    // those ids, and re-filtering would be a second chance to get it wrong.
     if (preset === "volume" && (i.buy_limit ?? 0) < 10_000) return false;
     if (preset === "taxfree" && (i.tax ?? 0) !== 0) return false;
     if (minPrice !== "" && (i.high ?? 0) < Number(minPrice)) return false;
@@ -235,11 +254,17 @@ function App() {
       const watchedIds = Object.keys(watched).map(Number);
       const heldIds = Object.keys(holdings).map(Number);
       const [itemsRes, statusRes, watchedRes, heldRes, alertsRes] = await Promise.all([
-        fetchItems({
-          minVolume,
-          search: search || undefined,
-          membersOnly: f2pOnly ? false : undefined,
-        }),
+        // An index selection fetches its members BY ID rather than filtering the default page.
+        // /api/items returns a capped 300 rows, so client-side filtering could only ever show the
+        // basket's members that happened to be in that page -- 2 of the Chambers of Xeric 14,
+        // since the other twelve are too thin to make the default cut.
+        indexItemIds
+          ? fetchItems({ ids: [...indexItemIds] })
+          : fetchItems({
+              minVolume,
+              search: search || undefined,
+              membersOnly: f2pOnly ? false : undefined,
+            }),
         fetchStatus(),
         watchedIds.length
           ? fetchItems({ ids: watchedIds })
@@ -383,7 +408,7 @@ function App() {
       if (refreshTimeoutRef.current != null) clearTimeout(refreshTimeoutRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [minVolume, search, watched, holdings, settings, f2pOnly]);
+  }, [minVolume, search, watched, holdings, settings, f2pOnly, indexItemIds]);
 
   // UI-only ticker for the countdown display -- doesn't touch the actual poll schedule above.
   useEffect(() => {
@@ -564,6 +589,21 @@ function App() {
                     {p.label}
                   </Chip>
                 ))}
+                {/* The index filter surfaces here as its own removable chip, beside the presets
+                    rather than among them. Without it the table would be silently filtered by a
+                    click made further down the page. */}
+                {activeIndex && (
+                  <Chip
+                    active
+                    onClick={() => {
+                      setActiveIndex(null);
+                      setIndexItemIds(null);
+                      setMinVolume(loadSettings().defaultMinLiquidity);
+                    }}
+                  >
+                    {activeIndex.label} ✕
+                  </Chip>
+                )}
               </Field>
 
               {hasActiveFilters && (
@@ -594,6 +634,36 @@ function App() {
             {/* Secondary/browsing panels sit below the primary table, not above it -- the price
                 table is what you're here for; the highlight leaderboards are for when you're
                 curious, not the first thing that should compete for attention. */}
+            <div className="mt-8">
+              <MarketIndices
+                activeKey={activeIndex?.key ?? null}
+                onSelectIndex={async (key, label) => {
+                  if (key == null) {
+                    setActiveIndex(null);
+                    setIndexItemIds(null);
+                    setMinVolume(loadSettings().defaultMinLiquidity);
+                    return;
+                  }
+                  setActiveIndex({ key, label });
+                  // Drop the liquidity floor while an index is selected. Asking for a basket by
+                  // name is an explicit request to see THAT basket, and the default floor hid 12
+                  // of the 14 Chambers of Xeric uniques -- a filter answering a question the user
+                  // had already overridden by clicking. Restored on clear.
+                  setMinVolume(0);
+                  try {
+                    const res = await fetchIndexMembers(key);
+                    setIndexItemIds(new Set(res.itemIds));
+                  } catch {
+                    // The filter is the whole point of the click, so a failed fetch clears the
+                    // selection rather than leaving a chip highlighted over an unfiltered table.
+                    setActiveIndex(null);
+                    setIndexItemIds(null);
+                    setMinVolume(loadSettings().defaultMinLiquidity);
+                  }
+                }}
+              />
+            </div>
+
             <div className="mt-8">
               <MarketHighlights items={items} onSelectItem={setSelectedItem} />
             </div>
