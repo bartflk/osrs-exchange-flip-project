@@ -402,6 +402,25 @@ export function PriceChart({
     fAnchor > 0
       ? `${val >= fAnchor ? "+" : ""}${(((val - fAnchor) / fAnchor) * 100).toFixed(1)}%`
       : "n/a";
+  // The hovered real point, positioned. Direct request: read the price at the cursor rather than
+  // in a legend line at the far corner of the panel. On a 980-wide chart that legend was up to a
+  // full screen away from where the eye already was, which made checking a number a deliberate
+  // act instead of a glance.
+  const hx = hovered && hoverIdx != null ? x(hoverIdx - v.start) : 0;
+  const hyHigh = hovered?.avgHighPrice != null ? y(hovered.avgHighPrice) : null;
+  const hyLow = hovered?.avgLowPrice != null ? y(hovered.avgLowPrice) : null;
+  const hoveredVolume = (hovered?.highPriceVolume ?? 0) + (hovered?.lowPriceVolume ?? 0);
+  const HT_W = 178;
+  const HT_H = blended ? (hoveredVolume > 0 ? 50 : 38) : hoveredVolume > 0 ? 62 : 50;
+  // Flips to the other side of the line near the right edge, so the box never runs off the plot
+  // and never covers the very point being read.
+  const htX =
+    hx + 12 + HT_W > WIDTH - PAD_RIGHT ? Math.max(hx - HT_W - 12, PAD_LEFT) : hx + 12;
+  const htY = Math.min(
+    Math.max((hyHigh ?? hyLow ?? PAD_TOP) - 14, PAD_TOP + 2),
+    PAD_TOP + plotH - HT_H - 2,
+  );
+
   const FT_W = 296;
   const FT_H = 92;
   const ftX = Math.min(Math.max(fx - FT_W - 12, PAD_LEFT), WIDTH - PAD_RIGHT - FT_W);
@@ -783,14 +802,82 @@ export function PriceChart({
         )}
 
         {hovered && hoverIdx != null && (
-          <line
-            x1={x(hoverIdx - v.start)}
-            x2={x(hoverIdx - v.start)}
-            y1={PAD_TOP}
-            y2={PAD_TOP + plotH}
-            stroke="rgba(255,255,255,0.3)"
-            stroke-width={1}
-          />
+          <g style={{ pointerEvents: "none" }}>
+            <line
+              x1={hx}
+              x2={hx}
+              y1={PAD_TOP}
+              y2={PAD_TOP + plotH}
+              stroke="rgba(255,255,255,0.3)"
+              stroke-width={1}
+            />
+            {/* Dots on the lines themselves. The vertical rule alone says WHERE you are but not
+                which points the numbers came from, and on a busy series that is a real question. */}
+            {hyHigh != null && (
+              <circle cx={hx} cy={hyHigh} r={3} fill={blended ? "#e2e8f0" : "#34d399"} />
+            )}
+            {!blended && hyLow != null && <circle cx={hx} cy={hyLow} r={3} fill="#fb7185" />}
+
+            <rect
+              x={htX}
+              y={htY}
+              width={HT_W}
+              height={HT_H}
+              rx={5}
+              fill="rgba(10,11,15,0.96)"
+              stroke="rgba(255,255,255,0.14)"
+            />
+            <text x={htX + 8} y={htY + 14} font-size="9" className="fill-gray-400">
+              {new Date(hovered.timestamp * 1000).toLocaleString([], {
+                month: "short",
+                day: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+              })}
+            </text>
+            {blended ? (
+              <text x={htX + 8} y={htY + 29} font-size="11" className="fill-gray-100">
+                {formatGp(hovered.avgHighPrice)}
+              </text>
+            ) : (
+              <>
+                {/* A missing side means nobody traded at that price in this bucket, which is a
+                    different fact from a low number. formatGp renders null as a bare dash, and a
+                    dash next to a price reads as a value you failed to see rather than one that
+                    does not exist. */}
+                <text
+                  x={htX + 8}
+                  y={htY + 29}
+                  font-size="11"
+                  className={hovered.avgHighPrice != null ? "fill-emerald-400" : "fill-gray-600"}
+                >
+                  {hovered.avgHighPrice != null
+                    ? `high ${formatGp(hovered.avgHighPrice)}`
+                    : "no sell trades"}
+                </text>
+                <text
+                  x={htX + 8}
+                  y={htY + 43}
+                  font-size="11"
+                  className={hovered.avgLowPrice != null ? "fill-rose-400" : "fill-gray-600"}
+                >
+                  {hovered.avgLowPrice != null
+                    ? `low ${formatGp(hovered.avgLowPrice)}`
+                    : "no buy trades"}
+                </text>
+              </>
+            )}
+            {hoveredVolume > 0 && (
+              <text
+                x={htX + 8}
+                y={htY + HT_H - 6}
+                font-size="8"
+                className="fill-gray-500"
+              >
+                {hoveredVolume.toLocaleString()} traded
+              </text>
+            )}
+          </g>
         )}
 
         {/* Hovering the projection. The band is the widest thing on the chart and the least
@@ -891,20 +978,6 @@ export function PriceChart({
             Reddit
           </span>
         )}
-        {hovered &&
-          (blended ? (
-            <span className="ml-auto font-mono text-gray-300">
-              {new Date(hovered.timestamp * 1000).toLocaleDateString()} ·{" "}
-              {formatGp(hovered.avgHighPrice)}
-              {hovered.highPriceVolume ? ` · vol ${hovered.highPriceVolume.toLocaleString()}` : ""}
-            </span>
-          ) : (
-            <span className="ml-auto font-mono text-gray-300">
-              {new Date(hovered.timestamp * 1000).toLocaleString()} ·{" "}
-              <span className="text-emerald-400">high {formatGp(hovered.avgHighPrice)}</span> ·{" "}
-              <span className="text-rose-400">low {formatGp(hovered.avgLowPrice)}</span>
-            </span>
-          ))}
       </div>
     </div>
   );
