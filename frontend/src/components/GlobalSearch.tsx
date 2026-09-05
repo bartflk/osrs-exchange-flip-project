@@ -49,7 +49,7 @@ export function GlobalSearch({ onSelect }: { onSelect: (item: MarketItem) => voi
         className="glass rounded-lg px-3 py-1.5 text-sm text-gray-100 placeholder:text-gray-500 outline-none focus:border-white/20 w-56"
       />
       {open && results.length > 0 && (
-        <div className="absolute right-0 mt-1 w-80 glass rounded-lg overflow-hidden shadow-xl z-30 max-h-96 overflow-y-auto">
+        <div className="absolute right-0 mt-1 w-80 popover rounded-lg overflow-hidden z-30 max-h-96 overflow-y-auto">
           {results.map((item) => (
             <button
               key={item.id}

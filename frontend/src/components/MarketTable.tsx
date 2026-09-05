@@ -171,7 +171,7 @@ function FilterPopover({
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
       <div
-        className="absolute right-0 top-full mt-1 z-50 w-64 rounded-lg border border-white/10 bg-[#14151c] shadow-xl p-3 text-left normal-case font-normal"
+        className="absolute right-0 top-full mt-1 z-50 w-64 rounded-lg popover p-3 text-left normal-case font-normal"
         onClick={(e) => e.stopPropagation()}
       >
         <select

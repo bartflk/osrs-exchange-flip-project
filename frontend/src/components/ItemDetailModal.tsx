@@ -305,7 +305,7 @@ export function ItemDetailModal({
                 + List
               </button>
               {showListMenu && (
-                <div className="absolute right-0 top-full mt-1.5 w-56 rounded-xl border border-white/10 bg-[#14161d]/95 backdrop-blur-xl shadow-2xl shadow-black/50 p-1.5 z-10">
+                <div className="absolute right-0 top-full mt-1.5 w-56 rounded-xl popover p-1.5 z-10">
                   {lists.length === 0 && (
                     <p className="text-[11px] text-gray-600 px-2 py-1.5">No lists yet.</p>
                   )}

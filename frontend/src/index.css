@@ -63,6 +63,24 @@ body,
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 
+/* A floating surface: anything that opens ON TOP of the page, rather than sitting in it.
+   Search suggestions, nav menus, the filter popovers.
+   
+   Deliberately NOT .glass. A 4% white wash over whatever happens to be behind it is fine for a
+   panel that sits in the layout, because what is behind it is the page background. A dropdown
+   opens over live content, and direct feedback: a market alert chip was reading straight through
+   the item suggestions, so the list was unreadable. Near-opaque black is the fix, and it belongs
+   in one class rather than four different hardcoded colours across four components. */
+.popover {
+  background-color: rgba(10, 11, 15, 0.9);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 18px 45px -12px rgba(0, 0, 0, 0.9);
+}
+
 .price-flash {
   transition: background-color 150ms ease-out;
 }
