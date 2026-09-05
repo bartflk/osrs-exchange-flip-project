@@ -72,7 +72,7 @@ body,
    the item suggestions, so the list was unreadable. Near-opaque black is the fix, and it belongs
    in one class rather than four different hardcoded colours across four components. */
 .popover {
-  background-color: rgba(10, 11, 15, 0.9);
+  background-color: rgba(10, 11, 15, 0.96);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   border: 1px solid rgba(255, 255, 255, 0.12);
