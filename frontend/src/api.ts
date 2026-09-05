@@ -612,48 +612,6 @@ export async function extractGeOffersFromScreenshot(
   return res.json();
 }
 
-// DESIGN.md §14.15: bankstand/session planner -- activities filtered to what the player's real
-// skill levels unlock, with live GP profit where computable from local GE prices.
-export type ActivityAttention = "afk" | "moderate" | "active";
-
-export interface SessionPlanEntry {
-  name: string;
-  skill: string;
-  levelRequired: number;
-  playerLevel: number;
-  attention: ActivityAttention;
-  suggestedMinutes: number;
-  description: string;
-  profitPerUnit: number | null;
-}
-
-// DESIGN.md §10 item 29: a goal axis for the planner, honestly scoped to what real data
-// supports (attention level + live GP profit) -- "Questing"/"Collection Log" from the original
-// brainstorm aren't buildable without a quest/diary/collection-log dataset this app doesn't have.
-export type SessionGoal = "afk" | "profit" | "active";
-
-export interface SessionPlanResponse {
-  username: string;
-  availableMinutes: number;
-  goal: SessionGoal;
-  plan: SessionPlanEntry[];
-}
-
-export async function fetchSessionPlan(
-  username: string,
-  minutes: number,
-  goal: SessionGoal = "afk",
-): Promise<SessionPlanResponse> {
-  const res = await fetch(
-    `/api/session-plan?username=${encodeURIComponent(username)}&minutes=${minutes}&goal=${goal}`,
-  );
-  if (!res.ok) {
-    if (res.status === 404) throw new Error(`Player "${username}" not found on Wise Old Man`);
-    throw new Error(`Failed to fetch session plan: ${res.status}`);
-  }
-  return res.json();
-}
-
 // DESIGN.md §10 item 9 / §14.17: multi-window trend leaderboards -- browsable ranked movers,
 // distinct from alerts.ts's event-triggered crash/spike detector.
 export type TrendWindow = "1h" | "4h" | "12h" | "24h" | "7d" | "30d";
@@ -1463,5 +1421,84 @@ export async function fetchItemOvernight(
   if (opts.maxHoldHours != null) q.set("maxHoldHours", String(opts.maxHoldHours));
   const res = await fetch(`/api/items/${itemId}/overnight?${q}`);
   if (!res.ok) throw new Error(`overnight verdict failed: ${res.status}`);
+  return res.json();
+}
+
+// DESIGN.md §14.15: the bankstand list. Restored after the Actions tab was removed and took the
+// session planner down with it; the backend endpoint never went away.
+export type ActivityAttention = "afk" | "moderate" | "active";
+export type SessionGoal = "afk" | "profit" | "active";
+
+export interface SessionPlanEntry {
+  name: string;
+  skill: string;
+  levelRequired: number;
+  playerLevel: number;
+  attention: ActivityAttention;
+  suggestedMinutes: number;
+  description: string;
+  /** Tax-adjusted profit per output unit, or null for pure-experience activities. */
+  profitPerUnit: number | null;
+}
+
+export async function fetchSessionPlan(
+  username: string,
+  minutes: number,
+  goal: SessionGoal,
+): Promise<{ username: string; availableMinutes: number; goal: SessionGoal; plan: SessionPlanEntry[] }> {
+  const q = new URLSearchParams({ username, minutes: String(minutes), goal });
+  const res = await fetch(`/api/session-plan?${q}`);
+  if (!res.ok) throw new Error(`session plan failed: ${res.status}`);
+  return res.json();
+}
+
+// Skill training methods, priced live off the wiki's own calculator modules.
+export interface TrainingMaterial {
+  name: string;
+  quantity: number;
+  itemId: number | null;
+  icon: string | null;
+  unitPrice: number | null;
+}
+
+export interface TrainingMethod {
+  id: string;
+  skill: string;
+  name: string;
+  title: string;
+  type: string;
+  level: number;
+  xp: number;
+  members: boolean;
+  materials: TrainingMaterial[];
+  outputItemId: number | null;
+  outputIcon: string | null;
+  outputQuantity: number;
+  outputValue: number;
+  costPerAction: number | null;
+  /** Gp per experience point. Negative means the method pays for itself. */
+  gpPerXp: number | null;
+  actionsPerHour: number | null;
+  /** The wiki sentence the rate came from, so the assumption is never invisible. */
+  rateNote: string | null;
+  xpPerHour: number | null;
+  gpPerHour: number | null;
+  unpricedMaterials: string[];
+  consumesOutput: boolean;
+  /** Units of the product traded per hour, or null when nothing is sold. */
+  outputVolume: number | null;
+}
+
+export interface TrainingMethodsResponse {
+  skills: string[];
+  methods: TrainingMethod[];
+  failed: string[];
+  gatheringSkills: string[];
+}
+
+export async function fetchTrainingMethods(skills?: string[]): Promise<TrainingMethodsResponse> {
+  const q = skills?.length ? `?skills=${encodeURIComponent(skills.join(","))}` : "";
+  const res = await fetch(`/api/skilling/methods${q}`);
+  if (!res.ok) throw new Error(`training methods failed: ${res.status}`);
   return res.json();
 }

@@ -44,6 +44,7 @@ import { type HoldingEntry, loadHoldings, saveHoldings } from "./bankHoldings";
 import { type Settings, loadSettings, saveSettings } from "./settings";
 import type { BankValueItem } from "./api";
 import { MoneyMakers } from "./components/MoneyMakers";
+import { Skilling } from "./components/Skilling";
 import { Lists } from "./components/Lists";
 import { loadLists, createList, type ItemList } from "./lists";
 import {
@@ -63,6 +64,7 @@ type Tab =
   | "signals"
   | "overnight"
   | "moneymakers"
+  | "skilling"
   | "lists"
   | "portfolio"
   | "flips"
@@ -79,6 +81,7 @@ const TAB_LABELS: Record<Tab, string> = {
   signals: "Active flipping",
   overnight: "Overnight",
   moneymakers: "Money makers",
+  skilling: "Skilling",
   lists: "Lists",
   portfolio: "Portfolio",
   flips: "Flips",
@@ -94,7 +97,10 @@ const TAB_LABELS: Record<Tab, string> = {
 // it's the default landing page; everything else groups by what it's actually for: finding/
 // acting on a flip right now, reviewing your own holdings, or background reading.
 const NAV_GROUPS: { label: string; tabs: Tab[] }[] = [
-  { label: "Flipping Tools", tabs: ["signals", "overnight", "moneymakers", "actions", "sets", "lists"] },
+  {
+    label: "Flipping Tools",
+    tabs: ["signals", "overnight", "moneymakers", "skilling", "actions", "sets", "lists"],
+  },
   { label: "Analytics", tabs: ["portfolio", "flips", "bank"] },
   { label: "Resources", tabs: ["news"] },
 ];
@@ -685,6 +691,7 @@ function App() {
           />
         )}
         {tab === "moneymakers" && <MoneyMakers />}
+        {tab === "skilling" && <Skilling />}
         {tab === "lists" && <Lists items={items} onSelectItem={setSelectedItem} />}
         {tab === "portfolio" && <Portfolio items={items} onSelectItem={setSelectedItem} />}
         {tab === "flips" && <Flips items={items} onSelectItem={setSelectedItem} />}

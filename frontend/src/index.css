@@ -31,7 +31,10 @@ body,
 }
 
 .glass {
-  background: rgba(255, 255, 255, 0.04);
+  /* background-COLOR, not the `background` shorthand. The shorthand resets background-image to
+     none, and .glass outranks a bare element selector, so a <select> wearing this class silently
+     lost the chevron drawn for it below. */
+  background-color: rgba(255, 255, 255, 0.04);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -76,4 +79,306 @@ body,
 }
 .animate-toast-in {
   animation: toast-in 160ms ease-out;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Native controls, restyled.
+
+   Direct request: style the dropdowns and the rest of the HTML elements so they are not default
+   any more. Every control below is one the browser draws itself, which means it ignores the
+   surrounding design entirely: a select renders as a Windows combo box on a dark glass panel, a
+   checkbox as a grey-blue square, a range track as a beige rail. Component classes could not fix
+   these, because the parts being drawn (the dropdown arrow, the tick, the thumb) are not in the
+   DOM at all.
+
+   Element selectors on purpose, not utility classes. A control added anywhere later inherits this
+   for free, which is the only way "all of them" stays true after today. Specificity stays below
+   Tailwind utilities, so a component that wants something different still wins.
+   --------------------------------------------------------------------------------------------- */
+
+:root {
+  --control-bg: rgba(255, 255, 255, 0.04);
+  --control-border: rgba(255, 255, 255, 0.1);
+  --control-border-hover: rgba(255, 255, 255, 0.18);
+  --control-accent: #a78bfa;
+  --control-surface: #14151d;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button:not(:disabled),
+select:not(:disabled) {
+  cursor: pointer;
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Keyboard focus only. A visible ring on every mouse click would be noise; removing it entirely
+   would make the app unusable without a mouse. :focus-visible is exactly that distinction. */
+:focus-visible {
+  outline: 2px solid rgba(167, 139, 250, 0.55);
+  outline-offset: 1px;
+}
+
+/* --- select ---------------------------------------------------------------------------------
+   The chevron is an inline SVG background rather than a wrapper element, so a plain select
+   anywhere in the app gets one without needing to be wrapped in anything. Both vendor spellings
+   of `appearance` are still needed: Safari wants -webkit-, older Firefox wants -moz-. */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-color: var(--control-bg);
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%239ca3af' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.55rem center;
+  background-size: 0.7rem;
+  padding-right: 1.9rem;
+  border: 1px solid var(--control-border);
+  border-radius: 0.5rem;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+select:hover:not(:disabled) {
+  border-color: var(--control-border-hover);
+}
+
+/* The open dropdown list is drawn by the OS, so these two rules are the only hook there is.
+   Without them the list stays near-white in a dark app, which is the most visible default left. */
+select option,
+select optgroup {
+  background-color: var(--control-surface);
+  color: #e5e7eb;
+}
+
+select option:disabled {
+  color: #6b7280;
+}
+
+/* --- text inputs ---------------------------------------------------------------------------- */
+input,
+textarea {
+  background-color: var(--control-bg);
+  border: 1px solid var(--control-border);
+  border-radius: 0.5rem;
+  caret-color: var(--control-accent);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #6b7280;
+}
+
+textarea {
+  padding: 0.5rem 0.75rem;
+  resize: vertical;
+}
+
+/* Chrome paints autofilled fields a solid pastel yellow and ignores background-color outright.
+   An inset shadow the size of the field is the long-standing way to cover it. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #e5e7eb;
+  -webkit-box-shadow: 0 0 0 1000px #171821 inset;
+  caret-color: var(--control-accent);
+  transition: background-color 9999s ease-out;
+}
+
+/* Spinners on a number field are a 12px click target that changes a value by one. Every numeric
+   field in this app is a price or a quantity where that is useless. */
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="search"]::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  height: 0.8rem;
+  width: 0.8rem;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' stroke='%239ca3af' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M3 3l6 6M9 3l-6 6'/%3E%3C/svg%3E");
+  background-size: contain;
+}
+
+/* The date and time pickers hand you a black glyph on a dark field. Inverting it is the only
+   control available over an icon the browser owns. */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.7);
+  cursor: pointer;
+}
+
+/* --- checkbox and radio --------------------------------------------------------------------- */
+input[type="checkbox"],
+input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 0.95rem;
+  height: 0.95rem;
+  flex: none;
+  display: inline-grid;
+  place-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background-color: rgba(0, 0, 0, 0.25);
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+input[type="checkbox"] {
+  border-radius: 0.25rem;
+}
+
+input[type="radio"] {
+  border-radius: 50%;
+}
+
+input[type="checkbox"]:hover:not(:disabled),
+input[type="radio"]:hover:not(:disabled) {
+  border-color: rgba(167, 139, 250, 0.6);
+}
+
+input[type="checkbox"]:checked,
+input[type="radio"]:checked {
+  background-color: var(--control-accent);
+  border-color: var(--control-accent);
+}
+
+/* The tick is a pseudo-element rather than a background image so it scales with the box if a
+   component ever makes one bigger. */
+input[type="checkbox"]:checked::before {
+  content: "";
+  width: 0.55rem;
+  height: 0.3rem;
+  border-left: 2px solid #14151d;
+  border-bottom: 2px solid #14151d;
+  transform: translateY(-1px) rotate(-45deg);
+}
+
+input[type="radio"]:checked::before {
+  content: "";
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 50%;
+  background: #14151d;
+}
+
+input[type="checkbox"]:indeterminate {
+  background-color: var(--control-accent);
+  border-color: var(--control-accent);
+}
+
+input[type="checkbox"]:indeterminate::before {
+  content: "";
+  width: 0.5rem;
+  height: 2px;
+  background: #14151d;
+}
+
+/* --- range ---------------------------------------------------------------------------------- */
+input[type="range"] {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 0;
+  height: 1rem;
+  padding: 0;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 0.25rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+input[type="range"]::-moz-range-track {
+  height: 0.25rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  margin-top: -0.3rem;
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 50%;
+  background: var(--control-accent);
+  border: 2px solid #14151d;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 50%;
+  background: var(--control-accent);
+  border: 2px solid #14151d;
+}
+
+/* --- progress, details, misc ---------------------------------------------------------------- */
+progress {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 0.35rem;
+  border: 0;
+  border-radius: 999px;
+  background-color: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+progress::-webkit-progress-bar {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+progress::-webkit-progress-value,
+progress::-moz-progress-bar {
+  background-color: var(--control-accent);
+}
+
+summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+summary::-webkit-details-marker {
+  display: none;
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+::selection {
+  background: rgba(167, 139, 250, 0.3);
+  color: #f9fafb;
+}
+
+/* Firefox draws its own scrollbars and ignores ::-webkit-scrollbar entirely. */
+* {
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  scrollbar-width: thin;
 }
