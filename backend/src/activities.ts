@@ -17,7 +17,14 @@ export type Attention = "afk" | "moderate" | "active";
 // fabricating one.
 export interface ActivityRecipe {
   inputs: string[]; // exact GE item names, bought at low
-  output: string; // exact GE item name, sold at high (taxed)
+  // Exact GE item name, sold at high (taxed).
+  //
+  // The DOSE matters and was wrong here. Combining an unfinished potion with its secondary makes
+  // a THREE-dose potion, and this named the four-dose one: Prayer potions read as 2.2k profit
+  // each when they are really a 239gp loss, because a whole extra dose was being sold that the
+  // action never produced. Checked against Module:Skill calc/Herblore, which is the same data the
+  // wiki calculator uses.
+  output: string;
   outputsPerInputSet: number; // e.g. 1 cut gem per uncut gem
 }
 
@@ -138,10 +145,10 @@ export const ACTIVITY_DEFINITIONS: ActivityDefinition[] = [
     attention: "moderate",
     suggestedMinutes: 20,
     description:
-      "Ranarr potion (unf) + Snape grass. Active ingredient combining at bank intervals.",
+      "Ranarr potion (unf) + Snape grass, for a 3-dose potion. Active combining at bank intervals.",
     recipe: {
       inputs: ["Ranarr potion (unf)", "Snape grass"],
-      output: "Prayer potion(4)",
+      output: "Prayer potion(3)",
       outputsPerInputSet: 1,
     },
   },
@@ -152,10 +159,10 @@ export const ACTIVITY_DEFINITIONS: ActivityDefinition[] = [
     attention: "moderate",
     suggestedMinutes: 20,
     description:
-      "Snapdragon potion (unf) + Red spiders' eggs. Active ingredient combining at bank intervals.",
+      "Snapdragon potion (unf) + Red spiders' eggs, for a 3-dose potion. Active combining at bank intervals.",
     recipe: {
       inputs: ["Snapdragon potion (unf)", "Red spiders' eggs"],
-      output: "Super restore(4)",
+      output: "Super restore(3)",
       outputsPerInputSet: 1,
     },
   },

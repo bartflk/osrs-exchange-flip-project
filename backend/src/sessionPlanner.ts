@@ -33,6 +33,19 @@ export interface SessionPlanEntry {
   // Profit per output unit, tax-adjusted -- null when the activity has no recipe (pure XP, e.g.
   // birdhouses/darts/HLA) or when a required item's price isn't currently available locally.
   profitPerUnit: number | null;
+  /**
+   * The two halves of that number, so it can be checked rather than believed.
+   *
+   * Added after a wrong figure survived on screen for as long as it did: Prayer potions read as
+   * 2.2k profit each because the recipe named the four-dose potion while the action makes a
+   * three-dose one. A bare profit number gives a reader nothing to notice that with. What you pay
+   * and what you get back, side by side, does.
+   */
+  inputCost: number | null;
+  outputRevenue: number | null;
+  /** What you buy and what you sell, named, since the row now quotes prices for them. */
+  inputs: string[];
+  output: string | null;
 }
 
 // DESIGN.md §10 item 29: a "goal" axis for the planner, honestly scoped to what real data
@@ -52,6 +65,8 @@ export function computeSessionPlan(
 
   const entries: SessionPlanEntry[] = eligible.map((activity) => {
     let profitPerUnit: number | null = null;
+    let inputCostOut: number | null = null;
+    let outputRevenueOut: number | null = null;
 
     if (activity.recipe) {
       const outputPrice = lookupPrice(activity.recipe.output);
@@ -69,6 +84,8 @@ export function computeSessionPlan(
         const revenue =
           (outputPrice.high - geTax(outputPrice.high)) * activity.recipe.outputsPerInputSet;
         profitPerUnit = revenue - inputCost;
+        inputCostOut = inputCost;
+        outputRevenueOut = revenue;
       }
     }
 
@@ -81,6 +98,10 @@ export function computeSessionPlan(
       suggestedMinutes: activity.suggestedMinutes,
       description: activity.description,
       profitPerUnit,
+      inputCost: inputCostOut,
+      outputRevenue: outputRevenueOut,
+      inputs: activity.recipe?.inputs ?? [],
+      output: activity.recipe?.output ?? null,
     };
   });
 

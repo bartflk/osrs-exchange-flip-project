@@ -1439,6 +1439,11 @@ export interface SessionPlanEntry {
   description: string;
   /** Tax-adjusted profit per output unit, or null for pure-experience activities. */
   profitPerUnit: number | null;
+  /** The two halves of that profit, so the row can be checked rather than believed. */
+  inputCost: number | null;
+  outputRevenue: number | null;
+  inputs: string[];
+  output: string | null;
 }
 
 export async function fetchSessionPlan(

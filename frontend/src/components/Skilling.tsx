@@ -112,14 +112,33 @@ function ActivityRow({ entry }: { entry: SessionPlanEntry }) {
         </div>
       </div>
       {entry.profitPerUnit != null && (
-        <span
-          className={`font-mono text-sm text-right shrink-0 ${
-            entry.profitPerUnit >= 0 ? "text-emerald-400" : "text-rose-400"
-          }`}
-          title="Profit for one made item, after GE tax, at today's prices."
-        >
-          {formatGp(entry.profitPerUnit)}/ea
-        </span>
+        <div className="text-right shrink-0">
+          <span
+            className={`font-mono text-sm ${
+              entry.profitPerUnit >= 0 ? "text-emerald-400" : "text-rose-400"
+            }`}
+            title="Profit for one made item, after GE tax, at today's prices."
+          >
+            {formatGp(entry.profitPerUnit)}/ea
+          </span>
+          {/* The arithmetic, not just its answer. A bare profit figure is unfalsifiable at a
+              glance, which is how "Prayer potions, 2.2k each" sat here being wrong: the recipe
+              named the four-dose potion and the action makes a three-dose one. Buy price and sell
+              price side by side is the smallest thing that makes that visible. */}
+          {entry.inputCost != null && entry.outputRevenue != null && (
+            <div className="text-[10px] text-gray-600 font-mono mt-0.5">
+              buy {formatGp(entry.inputCost)}
+              <span className="text-gray-700"> to sell </span>
+              {formatGp(entry.outputRevenue)}
+              <span className="text-gray-700"> after tax</span>
+            </div>
+          )}
+          {entry.output && (
+            <div className="text-[10px] text-gray-600 mt-0.5" title={entry.inputs.join(" + ")}>
+              {entry.inputs.join(" + ")} → {entry.output}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
