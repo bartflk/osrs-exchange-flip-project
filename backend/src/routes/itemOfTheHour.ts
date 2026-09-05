@@ -16,6 +16,7 @@ import {
   slotProfileCoverage,
   refreshSlotProfiles,
   ensureSlotProfile,
+  explainOvernight,
 } from "../slotProfiles.js";
 
 // DESIGN.md §14.44: "best item to buy" for a given half-hour of the UTC day.
@@ -58,6 +59,43 @@ export async function itemOfTheHourRoutes(app: FastifyInstance) {
   app.post("/api/item-of-the-hour/refresh", async () => {
     refreshSlotProfiles(true).catch((err) => app.log.error(err, "slot profile refresh failed"));
     return { started: true };
+  });
+
+  /**
+   * Is this ONE item worth holding overnight, and if not, why not.
+   *
+   * The ranked board answers "what are the best eight tonight"; an item's own chart raises the
+   * different question "what about this one", and an absence from a top-eight list is not an
+   * answer to it. Runs the same gates with the same bankroll and hold window, so the verdict here
+   * and a row over there cannot contradict each other.
+   */
+  app.get("/api/items/:id/overnight", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const itemId = Number(id);
+    if (!Number.isInteger(itemId)) return reply.code(400).send({ error: "bad item id" });
+
+    const { bedtimeSlot, maxHoldHours, bankroll } = req.query as {
+      bedtimeSlot?: string;
+      maxHoldHours?: string;
+      bankroll?: string;
+    };
+    const requested = Number(bedtimeSlot);
+    const useSlot =
+      Number.isInteger(requested) && requested >= 0 && requested < 48 ? requested : currentSlot();
+    const hours = Number.isFinite(Number(maxHoldHours))
+      ? Math.min(24, Math.max(1, Number(maxHoldHours)))
+      : 8;
+
+    // Profile on demand. An item you are looking at is exactly the one worth spending a profile
+    // pass on, and without this every unprofiled item would report "no data" forever while the
+    // background refresh worked through the catalogue in ranking order.
+    try {
+      await ensureSlotProfile(itemId);
+    } catch (err) {
+      req.log.warn({ err, itemId }, "on-demand slot profile failed");
+    }
+
+    return explainOvernight(itemId, useSlot, Math.round(hours * 2), parseBankroll(bankroll));
   });
 
   // Overnight Trading, Phase 1: same slot-profile method as Item of the Hour, but the sell-slot

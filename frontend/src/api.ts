@@ -391,15 +391,27 @@ export async function fetchBarrowsRepair(): Promise<{ flips: BarrowsRepairResult
 // not a trained model. Empty `points` means not enough local history has accumulated yet.
 export interface ForecastPoint {
   timestamp: number;
+  /** Median path: where the price sits if the item keeps drifting as it has been. */
   mid: number;
+  /** Inner band, 25th to 75th percentile. Roughly half of outcomes. */
   low: number;
   high: number;
+  /** Outer band, 10th to 90th percentile. Roughly eight outcomes in ten. */
+  outerLow: number;
+  outerHigh: number;
 }
 
 export interface ForecastResponse {
   itemId: number;
   points: ForecastPoint[];
+  /** Resampled steps behind the bands, not raw ticks. */
   historicalSamples: number;
+  stepMinutes: number;
+  horizonHours: number;
+  /** Share of steps with no price change at all: how much to trust the band. */
+  flatShare: number;
+  /** Median drift per step. Negative means it has been falling. */
+  driftPerStep: number;
 }
 
 export async function fetchForecast(itemId: number): Promise<ForecastResponse> {
@@ -1424,5 +1436,32 @@ export async function fetchIndexMembers(
 ): Promise<{ key: string; label: string; itemIds: number[] }> {
   const res = await fetch(`/api/indices/${encodeURIComponent(key)}/members`);
   if (!res.ok) throw new Error(`index members failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------- overnight verdict
+
+export interface OvernightVerdict {
+  itemId: number;
+  slot: number;
+  slotLabel: string;
+  maxHoldHours: number;
+  /** Non-null only when every gate passed. Same gates the ranked board uses. */
+  pick: HourlyPick | null;
+  /** Which gate stopped it, when it did not pass. */
+  reason: string | null;
+  /** Whether a profile exists at all, as distinct from existing and failing. */
+  profiled: boolean;
+}
+
+export async function fetchItemOvernight(
+  itemId: number,
+  opts: { bankroll?: number; maxHoldHours?: number } = {},
+): Promise<OvernightVerdict> {
+  const q = new URLSearchParams();
+  if (opts.bankroll != null) q.set("bankroll", String(opts.bankroll));
+  if (opts.maxHoldHours != null) q.set("maxHoldHours", String(opts.maxHoldHours));
+  const res = await fetch(`/api/items/${itemId}/overnight?${q}`);
+  if (!res.ok) throw new Error(`overnight verdict failed: ${res.status}`);
   return res.json();
 }

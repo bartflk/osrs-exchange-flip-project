@@ -120,7 +120,7 @@ export function PriceChart({
     .flatMap((p) => [p.avgHighPrice, p.avgLowPrice])
     .filter((v): v is number => v != null);
   if (showForecast) {
-    for (const p of forecast!) allPrices.push(p.low, p.high);
+    for (const p of forecast!) allPrices.push(p.outerLow, p.outerHigh);
   }
   const min = allPrices.length ? Math.min(...allPrices) : 0;
   const max = allPrices.length ? Math.max(...allPrices) : 1;
@@ -323,16 +323,16 @@ export function PriceChart({
     return d;
   })();
 
-  // IQR forecast band: starts as a single point at the last real price (both edges coincide),
-  // then fans out through each forecast step -- same visual language as the reference chart
-  // (dashed "Low/High prediction" lines around a shaded "Low/High IQR" band).
+  // Forecast bands: both start as a single point at the last real price and fan out through each
+  // step. Two of them, inner (quartiles) and outer (10th/90th), so the shape reads as "likely
+  // here, plausibly here" rather than asserting one corridor.
   const lastRealPrice = showForecast
     ? (visible[visible.length - 1].avgHighPrice ?? visible[visible.length - 1].avgLowPrice ?? 0)
     : 0;
   const forecastStartX = showForecast ? x(visibleCount - 1) : 0;
   const forecastStartY = showForecast ? y(lastRealPrice) : 0;
 
-  function forecastLinePath(key: "low" | "high"): string {
+  function forecastLinePath(key: "low" | "high" | "mid" | "outerLow" | "outerHigh"): string {
     if (!showForecast) return "";
     let d = `M${forecastStartX.toFixed(1)},${forecastStartY.toFixed(1)} `;
     forecast!.forEach((p, i) => {
@@ -341,17 +341,21 @@ export function PriceChart({
     return d;
   }
 
-  const forecastBandPolygon = (() => {
+  // Two bands, not one. The inner is the interquartile range and the outer the 10th to 90th
+  // percentile, so the shape reads as "likely here, plausibly here" rather than asserting a single
+  // corridor. Both start as a point at the last real price and fan out with the square root of
+  // time, which is what a random walk does.
+  function forecastBand(lo: "low" | "outerLow", hi: "high" | "outerHigh"): string {
     if (!showForecast) return "";
     const top = [`${forecastStartX.toFixed(1)},${forecastStartY.toFixed(1)}`];
     const bottom = [`${forecastStartX.toFixed(1)},${forecastStartY.toFixed(1)}`];
     forecast!.forEach((p, i) => {
       const fx = x(visibleCount - 1 + (i + 1));
-      top.push(`${fx.toFixed(1)},${y(p.high).toFixed(1)}`);
-      bottom.push(`${fx.toFixed(1)},${y(p.low).toFixed(1)}`);
+      top.push(`${fx.toFixed(1)},${y(p[hi]).toFixed(1)}`);
+      bottom.push(`${fx.toFixed(1)},${y(p[lo]).toFixed(1)}`);
     });
     return `${top.join(" ")} ${bottom.reverse().join(" ")}`;
-  })();
+  }
 
   return (
     <div className="relative">
@@ -483,20 +487,33 @@ export function PriceChart({
             model. Only drawn when the view reaches the end of the real data. */}
         {showForecast && (
           <>
-            <polygon points={forecastBandPolygon} fill="rgba(96,165,250,0.15)" />
+            {/* Outer band first so the inner one layers over it and reads as denser. */}
+            <polygon points={forecastBand("outerLow", "outerHigh")} fill="rgba(96,165,250,0.08)" />
+            <polygon points={forecastBand("low", "high")} fill="rgba(96,165,250,0.18)" />
+            {/* The median path. Drawn because a band with no centre invites the reader to assume
+                the middle is flat, and on a drifting item it is not. */}
             <path
-              d={forecastLinePath("high")}
+              d={forecastLinePath("mid")}
               fill="none"
-              stroke="#34d399"
+              stroke="#93c5fd"
               stroke-width={1.25}
-              stroke-dasharray="4,3"
+              stroke-dasharray="5,3"
             />
             <path
-              d={forecastLinePath("low")}
+              d={forecastLinePath("outerHigh")}
+              fill="none"
+              stroke="#34d399"
+              stroke-width={1}
+              stroke-dasharray="3,3"
+              opacity={0.75}
+            />
+            <path
+              d={forecastLinePath("outerLow")}
               fill="none"
               stroke="#fb7185"
-              stroke-width={1.25}
-              stroke-dasharray="4,3"
+              stroke-width={1}
+              stroke-dasharray="3,3"
+              opacity={0.75}
             />
           </>
         )}
@@ -743,10 +760,29 @@ export function PriceChart({
           </>
         )}
         {showForecast && (
-          <span className="flex items-center gap-1 text-gray-500">
-            <span className="w-2.5 h-2.5 rounded-sm bg-sky-400/25 inline-block" /> IQR forecast
-            (~24h)
-          </span>
+          <>
+            {/* Named for what each band actually is. The old single entry said "IQR forecast" over
+                a band that was collapsed to a line on most items, which promised a statistic the
+                chart was not drawing. */}
+            <span
+              className="flex items-center gap-1 text-gray-500"
+              title="Interquartile range: about half of outcomes land inside this, if the item keeps behaving as it has."
+            >
+              <span className="w-2.5 h-2.5 rounded-sm bg-sky-400/40 inline-block" /> Likely (24h)
+            </span>
+            <span
+              className="flex items-center gap-1 text-gray-500"
+              title="10th to 90th percentile: about eight outcomes in ten. Widens with the square root of time, as a random walk does."
+            >
+              <span className="w-2.5 h-2.5 rounded-sm bg-sky-400/15 inline-block" /> Plausible
+            </span>
+            <span
+              className="flex items-center gap-1 text-gray-500"
+              title="The median path. Drift carried forward, not a prediction of direction."
+            >
+              <span className="w-3 h-0.5 bg-blue-300 inline-block" /> Median
+            </span>
+          </>
         )}
         {events && events.length > 0 && (
           <span className="flex items-center gap-1 text-gray-500">

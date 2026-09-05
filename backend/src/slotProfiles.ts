@@ -400,13 +400,30 @@ function bestPickForItem(
   slot: number,
   maxLookaheadSlots: number,
   bankroll: number,
+  /**
+   * Called with the reason whenever this item is rejected.
+   *
+   * Threaded through the REAL gate function rather than reimplemented next to it. A per-item
+   * explainer that recomputed these checks separately would be a second opinion, free to drift
+   * from the ranker it claims to explain, and the first time they disagreed the screen would be
+   * confidently wrong about why a row is missing. There is one set of gates and one place they
+   * live.
+   */
+  onReject?: (reason: string) => void,
 ): HourlyPick | null {
+  const reject = (reason: string): null => {
+    onReject?.(reason);
+    return null;
+  };
   // scoreItem() has excluded these from Market/Buy Signals/the allocator since early on, but the
   // slot-profile ranking never shared the list -- so Old school bond was ranking #1 among the
   // items a nearly-spent bankroll could still afford. It has a spread like anything else; what it
   // does not have is a way to acquire one off the GE cheaply, which is what makes it not a flip.
-  if (NON_FLIPPABLE_IDS.has(r.item_id)) return null;
-  if (r.days < MIN_DAYS_PER_SLOT) return null;
+  if (NON_FLIPPABLE_IDS.has(r.item_id)) return reject("Not flippable on the GE.");
+  if (r.days < MIN_DAYS_PER_SLOT)
+    return reject(
+      `Only ${r.days} days of history at this slot, ${MIN_DAYS_PER_SLOT} needed.`,
+    );
   // The plan's quoted price must still describe today's market, in EITHER direction.
   //
   // This gate was one-sided and only caught the market running above the plan (a bid that cannot
@@ -422,10 +439,16 @@ function bestPickForItem(
   // edge being real per-unit does not help if the entry price has been left behind.
   if (r.low != null && r.buy_price != null && r.buy_price > 0) {
     const drift = (r.low - r.buy_price) / r.buy_price;
-    if (Math.abs(drift) > MAX_LIVE_DRIFT) return null;
+    if (Math.abs(drift) > MAX_LIVE_DRIFT) {
+      return reject(
+        `Plan price ${(drift * 100).toFixed(1)}% off the live market, limit is ` +
+          `${(MAX_LIVE_DRIFT * 100).toFixed(0)}%.`,
+      );
+    }
   }
-  if (r.volume <= 0) return null;
-  if (r.buy_price == null || r.buy_price <= 0) return null;
+  if (r.volume <= 0) return reject("No traded volume recorded at this slot.");
+  if (r.buy_price == null || r.buy_price <= 0)
+    return reject("No median buy price for this slot.");
 
   // Index the profile by its own slot column rather than array position: relying on the array
   // being exactly 48 ordered rows is true today only because the writer always emits 48.
@@ -448,16 +471,31 @@ function bestPickForItem(
   let bestSpanDays = 0;
   let bestWorstDay = 0;
   let bestBestDay = 0;
+  // Counted rather than listed. Every sell slot that fails does so for one of four reasons, and
+  // "37 of 47 candidate sell slots had too few paired days" is the sentence worth showing, not
+  // thirty-seven separate lines saying the same thing.
+  let sellSlotsConsidered = 0;
+  let failedPairedDays = 0;
+  let failedSpan = 0;
+  let failedWinRate = 0;
+  let failedEdge = 0;
   for (let offset = 1; offset <= maxLookaheadSlots; offset++) {
     const s = (slot + offset) % SLOTS_PER_DAY;
     const row = bySlot.get(s);
     if (!row || row.sell_price == null || row.sell_price <= 0) continue;
 
+    sellSlotsConsidered++;
     const paired = getPairedDays(r.item_id, slot, s);
-    if (paired.length < MIN_PAIRED_DAYS) continue;
+    if (paired.length < MIN_PAIRED_DAYS) {
+      failedPairedDays++;
+      continue;
+    }
     // Reject evidence stretched across too wide a calendar window (see MAX_PAIRED_SPAN_DAYS).
     const span = pairedSpanDays(paired);
-    if (span > MAX_PAIRED_SPAN_DAYS) continue;
+    if (span > MAX_PAIRED_SPAN_DAYS) {
+      failedSpan++;
+      continue;
+    }
     const profits = paired.map((d) => d.sell - geTax(Math.round(d.sell)) - d.buy);
     const m = median(profits);
     if (m == null) continue;
@@ -466,8 +504,14 @@ function bestPickForItem(
     // consider a lucky slot in the first place -- filtering afterwards would still have let the
     // luckiest candidate crowd out a steadier one.
     const winRate = profits.filter((x) => x > 0).length / profits.length;
-    if (winRate < MIN_WIN_RATE) continue;
-    if (profit / r.buy_price < MIN_EDGE_PCT) continue;
+    if (winRate < MIN_WIN_RATE) {
+      failedWinRate++;
+      continue;
+    }
+    if (profit / r.buy_price < MIN_EDGE_PCT) {
+      failedEdge++;
+      continue;
+    }
     if (profit > bestProfit) {
       bestProfit = profit;
       bestSellSlot = s;
@@ -479,7 +523,21 @@ function bestPickForItem(
     }
   }
 
-  if (bestSellSlot == null || bestProfit <= 0) return null; // no timing profit available from here
+  if (bestSellSlot == null || bestProfit <= 0) {
+    // Attributed to the gate that rejected the most candidates, which is the one actually
+    // standing between this item and the board.
+    const worst = [
+      { n: failedWinRate, why: `did not win on ${(MIN_WIN_RATE * 100).toFixed(0)}% of measured days` },
+      { n: failedEdge, why: `cleared less than ${(MIN_EDGE_PCT * 100).toFixed(0)}% after tax` },
+      { n: failedPairedDays, why: `had fewer than ${MIN_PAIRED_DAYS} days pairing both slots` },
+      { n: failedSpan, why: `spanned more than ${MAX_PAIRED_SPAN_DAYS} calendar days` },
+    ].sort((a, b) => b.n - a.n)[0];
+    return reject(
+      sellSlotsConsidered === 0
+        ? "No later slot in the hold window has a sell price."
+        : `No profitable sell slot: ${worst.n} of ${sellSlotsConsidered} candidates ${worst.why}.`,
+    );
+  }
 
   // How often the buy would actually have filled: the share of measured days whose low at this
   // slot reached the quoted price. Not a fixed 50% -- a tight-ranged item fills far more reliably
@@ -508,7 +566,9 @@ function bestPickForItem(
   // position size.
   const affordable = Math.floor(bankroll / r.buy_price);
   const deployableUnits = Math.max(0, Math.min(r.buy_limit ?? Infinity, affordable));
-  if (deployableUnits <= 0) return null; // can't buy even one at this bankroll
+  if (deployableUnits <= 0) {
+    return reject("Bankroll does not cover a single unit at the plan price.");
+  }
   const capitalUsed = Math.round(deployableUnits * r.buy_price);
   const cycleProfit = Math.round(deployableUnits * bestProfit);
 
@@ -596,6 +656,66 @@ export function computeOvernightPicks(
     .map((r) => bestPickForItem(r, bedtimeSlot, maxHoldSlots, bankroll))
     .filter((p): p is HourlyPick => p != null);
   return picks.sort((a, b) => b.score - a.score).slice(0, limit);
+}
+
+export interface OvernightVerdict {
+  itemId: number;
+  slot: number;
+  slotLabel: string;
+  maxHoldHours: number;
+  /**
+   * The pick, when every gate passed. Null means this item is not an overnight buy right now, and
+   * `reason` says which gate stopped it.
+   *
+   * Produced by the same bestPickForItem() the ranked board uses, with the same bankroll and the
+   * same hold window, so a verdict here and a row there can never disagree.
+   */
+  pick: HourlyPick | null;
+  reason: string | null;
+  /** Whether a profile exists at all, as distinct from existing and failing. */
+  profiled: boolean;
+}
+
+/**
+ * Is this one item worth buying tonight, and if not, why not.
+ *
+ * The ranked board answers "what are the best eight"; this answers "what about THIS one", which is
+ * the question you have when looking at an item's chart. Both run the same gates, because the
+ * alternative is a page that says an item is fine while the board silently omits it.
+ */
+export function explainOvernight(
+  itemId: number,
+  bedtimeSlot: number,
+  maxHoldSlots: number,
+  bankroll = DEFAULT_BANKROLL,
+): OvernightVerdict {
+  const freshSince = Math.floor(Date.now() / 1000) - MAX_PROFILE_AGE_SECONDS;
+  const row = getItemsAtSlot(bedtimeSlot, freshSince).find((r) => r.item_id === itemId);
+
+  const base = {
+    itemId,
+    slot: bedtimeSlot,
+    slotLabel: slotLabel(bedtimeSlot),
+    maxHoldHours: maxHoldSlots / 2,
+  };
+
+  if (!row) {
+    // No profile row is a different answer from a failed gate, and worth saying so: it means this
+    // item has never been profiled at this time of night, not that it was judged and rejected.
+    return {
+      ...base,
+      pick: null,
+      reason: "No slot profile for this item at this time of night yet.",
+      profiled: false,
+    };
+  }
+
+  let reason: string | null = null;
+  const pick = bestPickForItem(row, bedtimeSlot, maxHoldSlots, bankroll, (r) => {
+    reason ??= r;
+  });
+
+  return { ...base, pick, reason: pick ? null : (reason ?? "Rejected."), profiled: true };
 }
 
 export function slotProfileCoverage(): {

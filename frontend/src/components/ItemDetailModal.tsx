@@ -7,7 +7,7 @@ import {
   type Lookback,
   type MarketItem,
   type TimeseriesPoint,
-  type ForecastPoint,
+  type ForecastResponse,
   type ItemTrackRecord,
 } from "../api";
 import { formatGp, formatPct } from "../format";
@@ -27,6 +27,7 @@ import { computeSizingTiers, type SizingTierName } from "../positionSizing";
 import { MarketIntelligencePanel } from "./MarketIntelligencePanel";
 import { TechnicalIndicatorsPanel } from "./TechnicalIndicatorsPanel";
 import { ItemMentions } from "./ItemMentions";
+import { OvernightVerdictPanel } from "./OvernightVerdict";
 import { InfoTip } from "./InfoTip";
 import type { ExplanationId } from "../explanations";
 
@@ -105,10 +106,21 @@ export function ItemDetailModal({
   const [blended, setBlended] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [forecast, setForecast] = useState<ForecastPoint[]>([]);
+  // The whole response, not just the points. The band's own metadata -- how many steps it was
+  // built from and how many of them were flat -- is what says whether the band is worth reading,
+  // and dropping it left the chart asserting a corridor with no way to judge it.
+  const [forecast, setForecast] = useState<ForecastResponse | null>(null);
   const [trackRecord, setTrackRecord] = useState<ItemTrackRecord | null>(null);
   const [chartEvents, setChartEvents] = useState<ChartEvent[]>([]);
   const sizingTiers = useMemo(() => computeSizingTiers(item), [item]);
+  // Read from the same localStorage key the money-maker and overnight pages use, so the verdict
+  // is sized against the bankroll the rest of the app already believes in rather than a default
+  // this one component invented.
+  const bankroll = useMemo(() => {
+    const raw = localStorage.getItem("bankroll");
+    const n = raw ? Number(raw) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : 10_000_000;
+  }, []);
 
   // DESIGN.md §14.43: the item's daily rhythm, fetched once and used twice -- as the panel below
   // the chart, and as the recurring B/S markers drawn on the chart itself.
@@ -171,8 +183,8 @@ export function ItemDetailModal({
   useEffect(() => {
     let cancelled = false;
     fetchForecast(item.id)
-      .then((res) => !cancelled && setForecast(res.points))
-      .catch(() => !cancelled && setForecast([]));
+      .then((res) => !cancelled && setForecast(res))
+      .catch(() => !cancelled && setForecast(null));
     fetchItemTrackRecord(item.id)
       .then((res) => !cancelled && setTrackRecord(res))
       .catch(() => !cancelled && setTrackRecord(null));
@@ -382,10 +394,20 @@ export function ItemDetailModal({
             below.
           </p>
         )}
+        {/* The verdict sits ABOVE the chart. The chart is evidence; this is the conclusion, and a
+            reader looking at an item overnight wants the answer first and the shape of the data
+            second. */}
+        <OvernightVerdictPanel
+          itemId={item.id}
+          bankroll={bankroll}
+          forecast={forecast}
+          currentPrice={item.low ?? item.high ?? null}
+        />
+
         <PriceChart
           points={points}
           blended={blended}
-          forecast={forecast}
+          forecast={forecast?.points}
           events={chartEvents}
           hourMarkers={hourMarkers}
         />
