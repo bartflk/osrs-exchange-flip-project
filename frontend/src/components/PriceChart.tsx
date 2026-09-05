@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 // preact/compat does not re-export WheelEvent (only React-shaped types it actually mirrors), so
 // these come from Preact's own JSX namespace, which is the canonical source for DOM handler types.
 import type { JSX } from "preact";
-import type { TimeseriesPoint, ForecastPoint } from "../api";
+import type { TimeseriesPoint, ForecastPoint, ForecastResponse } from "../api";
 import { formatGp } from "../format";
 
 const WIDTH = 980;
@@ -65,6 +65,7 @@ export function PriceChart({
   points,
   blended = false,
   forecast,
+  forecastMeta,
   events,
   trades,
   hourMarkers,
@@ -78,10 +79,17 @@ export function PriceChart({
   // DESIGN.md §14.12: IQR prediction bands -- only meaningful appended to the most recent real
   // data, so it's only ever drawn when the view hasn't been panned/zoomed away from the present.
   forecast?: ForecastPoint[];
+  // What the band was built from. Only used by the hover tooltip, which has to be able to say
+  // where the numbers came from: a band with no stated basis is indistinguishable from a guess.
+  forecastMeta?: ForecastResponse | null;
   // DESIGN.md §14.35: patch notes / Reddit posts, positioned the same way as TAX_MARKERS.
   events?: ChartEvent[];
 }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  // Hovering the forecast region is a separate cursor from hovering the real series: one reads a
+  // measurement, the other reads a projection, and merging them into one index would let the
+  // tooltip present a modelled number in the same words it uses for an observed one.
+  const [forecastHoverIdx, setForecastHoverIdx] = useState<number | null>(null);
   const [hoveredEventGroup, setHoveredEventGroup] = useState<number | null>(null);
   const [view, setView] = useState<View | null>(null);
   const dragRef = useRef<{ startClientX: number; startView: View } | null>(null);
@@ -96,6 +104,7 @@ export function PriceChart({
   useEffect(() => {
     setView(clean.length > 0 ? { start: 0, end: clean.length } : null);
     setHoverIdx(null);
+    setForecastHoverIdx(null);
   }, [clean]);
 
   if (clean.length < 2 || !view) {
@@ -207,8 +216,19 @@ export function PriceChart({
     const rect = e.currentTarget.getBoundingClientRect();
     const relX = ((e.clientX - rect.left) / rect.width) * WIDTH;
     const localIdx = Math.round(((relX - PAD_LEFT) / plotW) * (totalCount - 1));
-    if (localIdx >= 0 && localIdx < visibleCount) setHoverIdx(v.start + localIdx);
-    else setHoverIdx(null);
+    if (localIdx >= 0 && localIdx < visibleCount) {
+      setHoverIdx(v.start + localIdx);
+      setForecastHoverIdx(null);
+    } else if (showForecast && localIdx >= visibleCount && localIdx < totalCount) {
+      // Past the last real point the cursor is over the projection. Previously this branch just
+      // cleared the hover, so the widest, most consequential part of the chart was the only part
+      // you could not interrogate.
+      setHoverIdx(null);
+      setForecastHoverIdx(localIdx - visibleCount);
+    } else {
+      setHoverIdx(null);
+      setForecastHoverIdx(null);
+    }
   }
 
   function handleMouseUp() {
@@ -357,6 +377,36 @@ export function PriceChart({
     return `${top.join(" ")} ${bottom.reverse().join(" ")}`;
   }
 
+  // The projected step under the cursor, plus everything needed to say where its numbers came
+  // from. Clamped rather than trusted: the forecast array can shrink under a refresh while a
+  // stale index is still held in state.
+  const fHover =
+    showForecast && forecastHoverIdx != null && forecastHoverIdx < forecast!.length
+      ? forecast![forecastHoverIdx]
+      : null;
+  const fStepMinutes = forecastMeta?.stepMinutes ?? 30;
+  const fHoursAhead = fHover ? (((forecastHoverIdx as number) + 1) * fStepMinutes) / 60 : 0;
+  const fx = fHover ? x(visibleCount - 1 + ((forecastHoverIdx as number) + 1)) : 0;
+  // Every percentage in the tooltip is measured against one price, so the rows compare.
+  //
+  // Anchored on the price the BACKEND projected from, not on the last plotted point. Those differ
+  // slightly (the band is drawn from the last candle, the projection runs off the live snapshot),
+  // and reading percentages off the plotted point made the tooltip contradict itself: it showed a
+  // median of +0.1% next to a drift of 0.000%/step. mid at step 1 is P0 x (1 + driftPerStep) by
+  // construction, so the origin inverts exactly.
+  const fAnchor =
+    forecastMeta && showForecast && forecast!.length > 0 && 1 + forecastMeta.driftPerStep !== 0
+      ? forecast![0].mid / (1 + forecastMeta.driftPerStep)
+      : lastRealPrice;
+  const fPct = (val: number) =>
+    fAnchor > 0
+      ? `${val >= fAnchor ? "+" : ""}${(((val - fAnchor) / fAnchor) * 100).toFixed(1)}%`
+      : "n/a";
+  const FT_W = 296;
+  const FT_H = 92;
+  const ftX = Math.min(Math.max(fx - FT_W - 12, PAD_LEFT), WIDTH - PAD_RIGHT - FT_W);
+  const ftY = PAD_TOP + 6;
+
   return (
     <div className="relative">
       <div className="flex items-center justify-between mb-1">
@@ -400,6 +450,7 @@ export function PriceChart({
         onMouseUp={handleMouseUp}
         onMouseLeave={() => {
           setHoverIdx(null);
+          setForecastHoverIdx(null);
           dragRef.current = null;
         }}
         // Preact spells this onDblClick; the React-style onDoubleClick left over from the §14.x
@@ -740,6 +791,55 @@ export function PriceChart({
             stroke="rgba(255,255,255,0.3)"
             stroke-width={1}
           />
+        )}
+
+        {/* Hovering the projection. The band is the widest thing on the chart and the least
+            self-explanatory, so this states the median, both bands, and the sample they were read
+            off, and says plainly that the median is drift carried forward rather than a call on
+            direction. */}
+        {fHover && (
+          <g style={{ pointerEvents: "none" }}>
+            <line
+              x1={fx}
+              x2={fx}
+              y1={y(fHover.outerHigh)}
+              y2={y(fHover.outerLow)}
+              stroke="rgba(147,197,253,0.55)"
+              stroke-width={1}
+            />
+            <circle cx={fx} cy={y(fHover.mid)} r={3} fill="#93c5fd" />
+            <rect
+              x={ftX}
+              y={ftY}
+              width={FT_W}
+              height={FT_H}
+              rx={5}
+              fill="rgba(15,23,42,0.96)"
+              stroke="rgba(147,197,253,0.35)"
+            />
+            <text x={ftX + 8} y={ftY + 15} font-size="10" className="fill-gray-100">
+              +{fHoursAhead % 1 === 0 ? fHoursAhead.toFixed(0) : fHoursAhead.toFixed(1)}h from now
+            </text>
+            <text x={ftX + 8} y={ftY + 30} font-size="10" className="fill-blue-200">
+              Median {formatGp(fHover.mid)} ({fPct(fHover.mid)} vs now)
+            </text>
+            <text x={ftX + 8} y={ftY + 45} font-size="9" className="fill-gray-300">
+              Likely 50%: {formatGp(fHover.low)} to {formatGp(fHover.high)} ({fPct(fHover.low)} to{" "}
+              {fPct(fHover.high)})
+            </text>
+            <text x={ftX + 8} y={ftY + 58} font-size="9" className="fill-gray-400">
+              Plausible 80%: {formatGp(fHover.outerLow)} to {formatGp(fHover.outerHigh)} (
+              {fPct(fHover.outerLow)} to {fPct(fHover.outerHigh)})
+            </text>
+            <text x={ftX + 8} y={ftY + 72} font-size="8" className="fill-gray-500">
+              {forecastMeta
+                ? `${forecastMeta.historicalSamples} x ${fStepMinutes}min steps, ${Math.round(forecastMeta.flatShare * 100)}% of them flat, drift ${(forecastMeta.driftPerStep * 100).toFixed(3)}%/step`
+                : "quantiles of this item's own recent half-hour returns"}
+            </text>
+            <text x={ftX + 8} y={ftY + 84} font-size="8" className="fill-gray-600">
+              Median is that drift carried forward, not a call on direction.
+            </text>
+          </g>
         )}
       </svg>
 

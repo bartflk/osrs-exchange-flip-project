@@ -408,6 +408,7 @@ export function ItemDetailModal({
           points={points}
           blended={blended}
           forecast={forecast?.points}
+          forecastMeta={forecast}
           events={chartEvents}
           hourMarkers={hourMarkers}
         />
