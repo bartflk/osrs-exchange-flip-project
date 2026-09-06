@@ -38,6 +38,24 @@ export interface MarketItem {
   sell_age: number | null;
   /** Up to twelve prices over the last day, for the row sparkline. Empty when history is thin. */
   spark?: number[];
+  /** Flip rank 0-100 and the five factors behind it. See backend/src/flipScore.ts. */
+  flip?: FlipScore;
+}
+
+export interface FlipScore {
+  score: number;
+  /** Each factor is 0..1 and is shown to the reader, so the rank is never a black box. */
+  income: number;
+  edge: number;
+  fill: number;
+  freshness: number;
+  stability: number;
+  expectedUnits: number;
+  cycleProfit: number;
+  gpPerHour: number;
+  cycleCapital: number;
+  /** The factor dragging the rank down hardest, or null when nothing stands out. */
+  weakest: string | null;
 }
 
 export interface ItemsResponse {

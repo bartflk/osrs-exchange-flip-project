@@ -86,6 +86,14 @@ export interface ScoredItem extends ItemRow {
   sell_age: number | null;
   /** Recent price trace for the row sparkline, filled in by the items route, not by scoring. */
   spark?: number[];
+  /**
+   * The flip rank, 0 to 100, and the four factors behind it. See flipScore.ts.
+   *
+   * Attached after scoring rather than inside it, because it needs fields (buy_age, liquidity,
+   * volatility) that scoreItem itself produces. Optional so the many callers of scoreItem that
+   * only want a margin do not pay for it.
+   */
+  flip?: import("./flipScore.js").FlipScore;
 }
 
 export function scoreItem(row: ItemRow): ScoredItem {

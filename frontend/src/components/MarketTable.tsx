@@ -21,6 +21,8 @@ function BlockIcon({ className = "" }: { className?: string }) {
 
 type SortKey =
   | "name"
+  | "rank"
+  | "gp_per_hour"
   | "low"
   | "high"
   | "net_margin"
@@ -88,7 +90,11 @@ function columnValue(item: MarketItem, key: SortKey): number | null {
       ? potentialProfit(item)
       : key === "price_age"
         ? priceAge(item)
-        : item[key];
+        : key === "rank"
+          ? (item.flip?.score ?? null)
+          : key === "gp_per_hour"
+            ? (item.flip?.gpPerHour ?? null)
+            : item[key];
   if (raw == null) return null;
   return PERCENT_KEYS[key] ? raw * 100 : raw;
 }
@@ -133,6 +139,13 @@ const columns: {
   title?: string;
   explain?: ExplanationId;
 }[] = [
+  {
+    key: "rank",
+    label: "Rank",
+    align: "right",
+    title:
+      "How good a flip this is, 0 to 100, from five factors: what one GE slot earns per hour, the return after tax as a risk buffer, how much of a buy-limit cycle the market can absorb, how recent the two prices are, and whether this spread is normal for this item. Hover a rank to see the five. Underneath is the money itself, per hour, for one slot.",
+  },
   { key: "low", label: "Buy", align: "right", title: "Most recent price someone bought at" },
   { key: "high", label: "Sell", align: "right", title: "Most recent price someone sold at" },
   {
@@ -261,6 +274,60 @@ function Sparkline({ points }: { points?: number[] }) {
   );
 }
 
+const FACTOR_LABELS: Record<string, string> = {
+  income: "what a slot earns per hour",
+  edge: "return after tax",
+  fill: "how much a cycle can absorb",
+  freshness: "how recent the prices are",
+  stability: "how normal this spread is",
+};
+
+function rankTone(score: number): string {
+  if (score >= 80) return "text-emerald-400";
+  if (score >= 60) return "text-sky-300";
+  if (score >= 35) return "text-amber-300";
+  return "text-gray-500";
+}
+
+/**
+ * The rank, the money behind it, and the five factors in the tooltip.
+ *
+ * A single opaque number is what the old score was, and the reason it went unquestioned for so
+ * long while being a re-sort of margin. This one shows the reason it is not higher on the row
+ * itself, so a rank that looks wrong can be argued with rather than merely distrusted.
+ */
+function RankCell({ item }: { item: MarketItem }) {
+  const flip = item.flip;
+  if (!flip) return <span className="text-gray-700">-</span>;
+  const bars: [string, number][] = [
+    ["income", flip.income],
+    ["edge", flip.edge],
+    ["fill", flip.fill],
+    ["freshness", flip.freshness],
+    ["stability", flip.stability],
+  ];
+  const detail = bars
+    .map(([k, v]) => `${k} ${(v * 100).toFixed(0)}% (${FACTOR_LABELS[k]})`)
+    .join("\n");
+  return (
+    <div
+      title={`Rank ${flip.score.toFixed(0)} of 100\n\n${detail}\n\nOne cycle: ${Math.round(
+        flip.expectedUnits,
+      ).toLocaleString()} units, ${formatGp(Math.round(flip.cycleCapital))} of capital, over 4 hours.`}
+    >
+      <div className={`text-[15px] font-semibold tabular-nums ${rankTone(flip.score)}`}>
+        {flip.score.toFixed(0)}
+      </div>
+      <div className="text-[10px] text-gray-500 tabular-nums">
+        {flip.gpPerHour > 0 ? `${formatGp(Math.round(flip.gpPerHour))}/hr` : "no income"}
+      </div>
+      {flip.weakest && (
+        <div className="text-[9px] text-amber-500/70 leading-tight">held back by {flip.weakest}</div>
+      )}
+    </div>
+  );
+}
+
 function iconUrl(icon: string): string {
   if (!icon) return "";
   return `https://oldschool.runescape.wiki/images/${encodeURIComponent(icon.replace(/ /g, "_"))}`;
@@ -380,7 +447,7 @@ export function MarketTable({
   // Margin x volume, which is what both reference tools default to and the closest thing to a
   // single honest answer to "where should I look first". Score used to be the default and was a
   // near-duplicate of the margin column beside it.
-  const [sortKey, setSortKey] = useState<SortKey>("margin_x_volume");
+  const [sortKey, setSortKey] = useState<SortKey>("rank");
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
   const [columnFilters, setColumnFilters] = useState<Partial<Record<SortKey, ColumnFilter>>>({});
   const [openFilterKey, setOpenFilterKey] = useState<SortKey | null>(null);
@@ -410,6 +477,8 @@ export function MarketTable({
     const valueOf = (item: MarketItem): number => {
       if (sortKey === "potential_profit") return potentialProfit(item) ?? -Infinity;
       if (sortKey === "price_age") return priceAge(item) ?? Infinity;
+      if (sortKey === "rank") return item.flip?.score ?? -Infinity;
+      if (sortKey === "gp_per_hour") return item.flip?.gpPerHour ?? -Infinity;
       return item[sortKey] ?? -Infinity;
     };
     copy.sort((a, b) => (valueOf(a) - valueOf(b)) * sortDir);
@@ -660,6 +729,9 @@ export function MarketTable({
                       </button>
                       {item.volatility_pct != null && <InfoTip id="volatility" />}
                     </div>
+                  </td>
+                  <td className="px-3 py-2 font-mono text-right">
+                    <RankCell item={item} />
                   </td>
                   <td className="px-3 py-2 font-mono text-rose-300 text-right">
                     {formatGp(item.low)}

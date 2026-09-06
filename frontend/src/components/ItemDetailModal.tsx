@@ -9,6 +9,7 @@ import {
   type TimeseriesPoint,
   type ForecastResponse,
   type ItemTrackRecord,
+  type FlipScore,
 } from "../api";
 import { formatGp, formatPct } from "../format";
 import { PriceChart, type ChartEvent, type HourMarker } from "./PriceChart";
@@ -367,6 +368,27 @@ export function ItemDetailModal({
             value={formatPct(item.roi_pct)}
             tone={(item.roi_pct ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}
           />
+          {item.flip && (
+            <KeyStat
+              label="Flip rank"
+              value={item.flip.score.toFixed(0)}
+              tone={
+                item.flip.score >= 80
+                  ? "text-emerald-400"
+                  : item.flip.score >= 60
+                    ? "text-sky-300"
+                    : item.flip.score >= 35
+                      ? "text-amber-300"
+                      : "text-gray-400"
+              }
+              sub={
+                item.flip.gpPerHour > 0
+                  ? `${formatGp(Math.round(item.flip.gpPerHour))}/hr per slot`
+                  : "no income at these prices"
+              }
+              title="Out of 100. The five factors behind it are broken out below the chart."
+            />
+          )}
         </div>
 
         <div className="flex gap-1 mb-3">
@@ -447,21 +469,14 @@ export function ItemDetailModal({
             </div>
           )}
 
-        <div className="grid grid-cols-3 sm:grid-cols-6 xl:grid-cols-8 divide-x divide-y divide-white/[0.06]">
-          <Stat label="Buy at" value={formatGp(item.low)} />
-          <Stat label="Sell at" value={formatGp(item.high)} />
-          <Stat
-            label="Net margin"
-            value={formatGp(item.net_margin)}
-            positive={(item.net_margin ?? 0) >= 0}
-            explain="netMargin"
-          />
-          <Stat
-            label="ROI"
-            value={formatPct(item.roi_pct)}
-            positive={(item.roi_pct ?? 0) >= 0}
-            explain="roi"
-          />
+        {/* Ten stats in a five-wide grid, which is two full rows with no gaps.
+            
+            It used to be eleven in an eight-wide grid, so the second row was three numbers and
+            five empty bordered boxes, which is most of the dead space in this panel. Four of the
+            eleven were Buy at, Sell at, Net margin and ROI: the same four already printed twice
+            the size above the chart. Repeating them bought nothing and cost the row that made the
+            grid ragged. */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 divide-x divide-y divide-white/[0.06]">
           <Stat
             label="GE tax (2%)"
             value={item.tax ? `-${formatGp(item.tax)}` : "-"}
@@ -499,7 +514,26 @@ export function ItemDetailModal({
             positive={item.volatility_pct != null ? item.volatility_pct < 0.05 : undefined}
             explain="volatility"
           />
+          <Stat
+            label="Volume / day"
+            value={item.daily_volume != null ? item.daily_volume.toLocaleString() : "-"}
+          />
+          <Stat
+            label="Last trade"
+            value={
+              item.buy_age != null || item.sell_age != null
+                ? `${shortAge(Math.max(item.buy_age ?? 0, item.sell_age ?? 0))} ago`
+                : "-"
+            }
+            positive={
+              item.buy_age != null && item.sell_age != null
+                ? Math.max(item.buy_age, item.sell_age) < 3600
+                : undefined
+            }
+          />
         </div>
+
+        {item.flip && <FlipRankPanel flip={item.flip} />}
 
         {/* DESIGN.md §10 item 46 (Execution Edge, from Design/new suggestions.txt): the raw
             Buy at/Sell at stats above assume instant fills at the last-traded price, which is
@@ -675,13 +709,121 @@ function SizingTierCard({
 // Bigger than a Stat and without the box: these four sit on the same line as each other, above
 // the chart, and a border around each would put four more rectangles exactly where the complaint
 // was that there are too many rectangles.
-function KeyStat({ label, value, tone }: { label: string; value: string; tone: string }) {
+function shortAge(seconds: number): string {
+  if (seconds < 90) return `${Math.round(seconds)}s`;
+  if (seconds < 5400) return `${Math.round(seconds / 60)}m`;
+  if (seconds < 172800) return `${Math.round(seconds / 3600)}h`;
+  return `${Math.round(seconds / 86400)}d`;
+}
+
+const FLIP_FACTORS: { key: keyof FlipScore; label: string; why: string }[] = [
+  {
+    key: "income",
+    label: "Income",
+    why: "What one GE slot earns per hour here, against a 2m/hr ceiling. The objective: you are allocating eight slots, not unlimited capital.",
+  },
+  {
+    key: "edge",
+    label: "Edge",
+    why: "Return after tax, full marks at 3%. A risk buffer rather than the goal: under about half a percent, one tick of adverse movement while your offer sits wipes the trade out.",
+  },
+  {
+    key: "fill",
+    label: "Fill",
+    why: "How much of one buy-limit cycle the market can actually absorb in four hours, judged on the thinner of the two sides.",
+  },
+  {
+    key: "freshness",
+    label: "Freshness",
+    why: "How recent the two prices behind the margin are, taking the older. Halves every 30 minutes.",
+  },
+  {
+    key: "stability",
+    label: "Stability",
+    why: "Whether this spread is normal for this item, and how calm the price has been. A spread many times its own norm is usually one stale side, not free money.",
+  },
+];
+
+/**
+ * The rank, opened up.
+ *
+ * The whole reason this exists rather than a bare number: the score it replaces was a single
+ * opaque figure that turned out to be a re-sort of the margin column beside it, and nobody could
+ * see that from looking at it. Five bars and the arithmetic underneath mean a rank that looks
+ * wrong can be argued with.
+ */
+function FlipRankPanel({ flip }: { flip: FlipScore }) {
   return (
-    <div>
-      <div className="text-[10px] uppercase tracking-wider text-gray-500">{label}</div>
-      <div className={`font-mono text-xl font-semibold tabular-nums leading-tight ${tone}`}>
+    <div className="px-4 py-3.5 border-t border-white/[0.06]">
+      <div className="flex items-baseline gap-2 mb-3">
+        <span className="text-[10px] uppercase tracking-wide text-gray-500">Why this rank</span>
+        <span className="text-[11px] text-gray-600">
+          five factors, multiplied, so a zero in any one of them is disqualifying
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-5 gap-x-5 gap-y-2.5">
+        {FLIP_FACTORS.map((f) => {
+          const v = flip[f.key] as number;
+          return (
+            <div key={f.key} title={f.why}>
+              <div className="flex items-baseline justify-between">
+                <span className="text-[11px] text-gray-400">{f.label}</span>
+                <span className="font-mono text-[13px] tabular-nums text-gray-200">
+                  {(v * 100).toFixed(0)}
+                </span>
+              </div>
+              <div className="h-1.5 rounded-full bg-white/[0.07] mt-1 overflow-hidden">
+                <div
+                  className={`h-full rounded-full ${
+                    v >= 0.75 ? "bg-emerald-400/80" : v >= 0.4 ? "bg-sky-400/70" : "bg-amber-400/70"
+                  }`}
+                  style={{ width: `${Math.max(v * 100, 2)}%` }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="text-[11px] text-gray-500 mt-3">
+        One cycle is {Math.round(flip.expectedUnits).toLocaleString()} units over four hours,{" "}
+        {formatGp(Math.round(flip.cycleCapital))} of capital in and{" "}
+        <span className={flip.cycleProfit >= 0 ? "text-emerald-400" : "text-rose-400"}>
+          {formatGp(Math.round(flip.cycleProfit))}
+        </span>{" "}
+        out after tax.
+        {flip.weakest && (
+          <span className="text-amber-500/80">
+            {" "}
+            The rank is held back most by {flip.weakest}.
+          </span>
+        )}
+      </p>
+    </div>
+  );
+}
+
+function KeyStat({
+  label,
+  value,
+  tone,
+  sub,
+  title,
+}: {
+  label: string;
+  value: string;
+  tone: string;
+  sub?: string;
+  title?: string;
+}) {
+  return (
+    <div title={title}>
+      <div className="text-[11px] uppercase tracking-wider text-gray-500">{label}</div>
+      <div className={`font-mono text-2xl font-semibold tabular-nums leading-tight ${tone}`}>
         {value}
       </div>
+      {sub && <div className="text-[11px] text-gray-500 tabular-nums mt-0.5">{sub}</div>}
     </div>
   );
 }
@@ -698,13 +840,13 @@ function Stat({
   explain?: ExplanationId;
 }) {
   return (
-    <div className="px-2.5 py-1.5">
+    <div className="px-3.5 py-2.5">
       <div className="text-[10px] uppercase tracking-wide text-gray-500 flex items-center gap-1 truncate">
         {label}
         {explain && <InfoTip id={explain} />}
       </div>
       <div
-        className={`font-mono text-sm ${
+        className={`font-mono text-[15px] tabular-nums mt-0.5 ${
           positive === undefined ? "text-gray-200" : positive ? "text-emerald-400" : "text-rose-400"
         }`}
       >
@@ -730,15 +872,15 @@ function RangeStatGroup({
   lowClass: string;
 }) {
   return (
-    <div className="px-3 py-2">
-      <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">{label}</div>
+    <div className="px-3.5 py-2.5">
+      <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-1.5">{label}</div>
       <div className="flex items-center justify-between">
         <span className="text-gray-500 text-xs">High</span>
-        <span className={`font-mono ${highClass}`}>{formatGp(high)}</span>
+        <span className={`font-mono text-[15px] tabular-nums ${highClass}`}>{formatGp(high)}</span>
       </div>
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between mt-0.5">
         <span className="text-gray-500 text-xs">Low</span>
-        <span className={`font-mono ${lowClass}`}>{formatGp(low)}</span>
+        <span className={`font-mono text-[15px] tabular-nums ${lowClass}`}>{formatGp(low)}</span>
       </div>
     </div>
   );

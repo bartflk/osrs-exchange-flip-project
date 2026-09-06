@@ -2,6 +2,7 @@ import { fetchMapping, fetchLatest, fetchWindow, fetchDailyVolumes } from "./wik
 import { upsertItems, upsertSnapshots, setDailyVolumes } from "./db.js";
 import { recordSampleAndCheck, checkVolumeAnomalies } from "./alerts.js";
 import { refreshVolatility } from "./volatility.js";
+import { refreshSpreadNorms } from "./flipScore.js";
 import {
   logOvernightSnapshots,
   logRecommendationSnapshots,
@@ -128,6 +129,14 @@ function runVolatilityRefresh() {
     console.log(`[volatility] refreshed for ${count} items`);
   } catch (err) {
     console.error("[volatility] error", err);
+  }
+  // Same cadence and the same reason: a per-item aggregate over a day of price_history, far too
+  // slow to recompute inside a request, and it moves on the scale of hours anyway.
+  try {
+    const count = refreshSpreadNorms();
+    console.log(`[flipScore] spread norms refreshed for ${count} items`);
+  } catch (err) {
+    console.error("[flipScore] spread norm error", err);
   }
 }
 

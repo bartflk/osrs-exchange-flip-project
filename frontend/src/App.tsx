@@ -31,7 +31,7 @@ import { MarketTemperatureGauge } from "./components/MarketTemperatureGauge";
 import { SettingsModal } from "./components/SettingsModal";
 import { ToastHost } from "./components/ToastHost";
 import { showToast } from "./toast";
-import { formatAgo, formatGp } from "./format";
+import { formatAgo, formatGp, parseGpShorthand } from "./format";
 import {
   type WatchEntry,
   loadWatchlist,
@@ -104,6 +104,12 @@ const NAV_GROUPS: { label: string; tabs: Tab[] }[] = [
   { label: "Analytics", tabs: ["portfolio", "flips", "bank"] },
   { label: "Resources", tabs: ["news"] },
 ];
+
+// What the price-range fields will accept while you type. Digits and separators plus an optional
+// trailing k/m/b, so "10m" can be entered a character at a time; the old rule was digits only,
+// which rejected the "m" keystroke outright and made shorthand impossible rather than merely
+// unsupported.
+const SHORTHAND_RE = /^[\d,.]*[kKmMbB]?$/;
 
 const LISTS_SEEDED_KEY = "itemLists_seeded_v1";
 
@@ -226,8 +232,12 @@ function App() {
     // those ids, and re-filtering would be a second chance to get it wrong.
     if (preset === "volume" && (i.buy_limit ?? 0) < 10_000) return false;
     if (preset === "taxfree" && (i.tax ?? 0) !== 0) return false;
-    if (minPrice !== "" && (i.high ?? 0) < Number(minPrice)) return false;
-    if (maxPrice !== "" && (i.high ?? 0) > Number(maxPrice)) return false;
+    // parseGpShorthand, not Number: the fields accept "10m" and "250k", and Number("10m") is NaN,
+    // which compares false against everything and would silently disable the filter.
+    const min = minPrice !== "" ? parseGpShorthand(minPrice) : null;
+    const max = maxPrice !== "" ? parseGpShorthand(maxPrice) : null;
+    if (min != null && (i.high ?? 0) < min) return false;
+    if (max != null && (i.high ?? 0) > max) return false;
     if (watchedOnly && !watched[i.id]) return false;
     return true;
   });
@@ -547,24 +557,24 @@ function App() {
               <Field label="Price range (gp)">
                 <Input
                   type="text"
-                  inputMode="numeric"
-                  placeholder="Min"
+                  inputMode="text"
+                  placeholder="Min, e.g. 10m"
                   value={minPrice}
                   onInput={(e) => {
                     const v = (e.target as HTMLInputElement).value;
-                    if (/^\d*$/.test(v)) setMinPrice(v);
+                    if (SHORTHAND_RE.test(v)) setMinPrice(v);
                   }}
                   className="w-24"
                 />
                 <span className="text-gray-600 text-xs">–</span>
                 <Input
                   type="text"
-                  inputMode="numeric"
-                  placeholder="Max"
+                  inputMode="text"
+                  placeholder="Max, e.g. 500k"
                   value={maxPrice}
                   onInput={(e) => {
                     const v = (e.target as HTMLInputElement).value;
-                    if (/^\d*$/.test(v)) setMaxPrice(v);
+                    if (SHORTHAND_RE.test(v)) setMaxPrice(v);
                   }}
                   className="w-24"
                 />

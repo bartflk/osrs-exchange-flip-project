@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { db } from "../db.js";
 import { scoreItem, type ItemRow, type ScoredItem } from "../signals.js";
+import { scoreFlip } from "../flipScore.js";
 import { fetchTimeseries, fetchAllTimeHistory, type Lookback } from "../wiki.js";
 import { getWarehouseStatus } from "../warehouse.js";
 import { getSidecarStatus } from "../sidecar.js";
@@ -24,7 +25,7 @@ const PER_RANKING = 250;
  */
 function topUnion(scored: ScoredItem[]): ScoredItem[] {
   const rankings: ((r: ScoredItem) => number | null)[] = [
-    (r) => r.score,
+    (r) => r.flip?.score ?? null,
     (r) => r.net_margin,
     (r) => r.roi_pct,
     (r) => r.daily_volume,
@@ -98,6 +99,7 @@ export async function itemsRoutes(app: FastifyInstance) {
       .all() as unknown as ItemRow[];
 
     let scored = rows.map(scoreItem).filter((r) => r.net_margin != null);
+    for (const item of scored) item.flip = scoreFlip(item);
 
     // Explicit id lookup (e.g. watchlist) bypasses the liquidity/search filters below --
     // a pinned illiquid item shouldn't vanish just because it fails the Market tab's filter.
