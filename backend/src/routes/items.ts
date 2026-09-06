@@ -9,6 +9,9 @@ import { computeForecast } from "../forecast.js";
 import { getPricePollTiming } from "../poller.js";
 import { getLinkedEventsForItem } from "../eventItemLinking.js";
 
+/** When this process came up. A change in it means the backend restarted under the client. */
+const STARTED_AT = Date.now();
+
 // How many rows each ranking contributes to the page the table receives.
 const PER_RANKING = 250;
 
@@ -243,6 +246,15 @@ export async function itemsRoutes(app: FastifyInstance) {
     };
     const [warehouse, sidecar] = await Promise.all([getWarehouseStatus(), getSidecarStatus()]);
     const { nextPricePollAt } = getPricePollTiming();
-    return { itemCount, lastUpdate: lastUpdate.t, warehouse, sidecar, nextPricePollAt };
+    // startedAt lets the UI tell "the backend restarted" apart from "the network hiccuped". They
+    // look identical from a failed fetch and they mean completely different things.
+    return {
+      itemCount,
+      lastUpdate: lastUpdate.t,
+      warehouse,
+      sidecar,
+      nextPricePollAt,
+      startedAt: STARTED_AT,
+    };
   });
 }

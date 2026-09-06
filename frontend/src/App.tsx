@@ -44,6 +44,8 @@ import { type HoldingEntry, loadHoldings, saveHoldings } from "./bankHoldings";
 import { type Settings, loadSettings, saveSettings } from "./settings";
 import type { BankValueItem } from "./api";
 import { MoneyMakers } from "./components/MoneyMakers";
+import { ConnectionBanner } from "./components/ConnectionBanner";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Skilling } from "./components/Skilling";
 import { Lists } from "./components/Lists";
 import { loadLists, createList, type ItemList } from "./lists";
@@ -520,9 +522,18 @@ function App() {
         </div>
       </header>
 
+      {/* Audit finding: a failed poll only ever showed one line of small red text above the table,
+          while the stale prices on screen carried on looking live. This says so, and reloads by
+          itself when the server comes back, which is the refresh you used to do by hand. */}
+      <ConnectionBanner onReconnect={runRefreshCycle} />
+
       <MarketAlerts alerts={alerts} items={alertItems} onSelectItem={setSelectedItem} />
 
+      {/* Per-page, not just at the root: a crash inside one tab keeps the header and the nav
+          alive, so you can move to another page instead of losing the whole app. Keyed by tab so
+          switching tabs clears a caught error rather than stranding you on the panel. */}
       <main className="px-6 2xl:px-10 py-6 2xl:py-8 max-w-[1600px] 2xl:max-w-[2200px] mx-auto">
+        <ErrorBoundary key={tab} label={TAB_LABELS[tab]}>
         {tab === "market" && (
           <>
             <div className="mb-3">
@@ -730,6 +741,7 @@ function App() {
             <NewsFeed />
           </>
         )}
+        </ErrorBoundary>
       </main>
 
       <Sidebar items={items} onSelectItem={setSelectedItem} alerts={alerts} watched={watched} />

@@ -58,6 +58,24 @@ app.listen({ port: PORT, host: "127.0.0.1" }).then(() => {
   console.log(`Project Flashwave backend listening on http://127.0.0.1:${PORT}`);
 });
 
+// Do not let one stray promise take the whole backend down with it.
+//
+// Node terminates the process on an unhandled rejection by default. This server is a long-running
+// local daemon with a dozen background pollers touching the network, SQLite, DuckDB and a local
+// LLM, and every one of those is a place a promise can reject somewhere nobody wrapped. When it
+// happens the process exits, every open tab starts failing every request, and the only symptom the
+// user gets is an app that "disconnected" with nothing on screen saying why.
+//
+// Logging loudly and staying up is the right trade for a single-user local tool: a poller that
+// failed once will run again on its next tick, and a half-broken app you can still read beats a
+// dead one. The stack goes to the console so the actual fault is still recoverable.
+process.on("unhandledRejection", (reason) => {
+  console.error("[fatal-guard] unhandled promise rejection, staying up:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[fatal-guard] uncaught exception, staying up:", err);
+});
+
 // DESIGN.md §14.9: checkpoint + cleanly close the DuckDB warehouse on shutdown so a tsx-watch
 // hot-reload restart doesn't leave its WAL in a state the next process can't replay.
 for (const signal of ["SIGTERM", "SIGINT"] as const) {

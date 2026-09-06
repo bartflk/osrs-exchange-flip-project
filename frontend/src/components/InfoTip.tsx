@@ -24,11 +24,11 @@ interface Position {
   above: boolean;
 }
 
-function computePosition(rect: DOMRect, panelHeight: number): Position {
+function computePosition(rect: DOMRect, panelHeight: number, width = WIDTH): Position {
   // Horizontally centred on the trigger, then clamped so a tooltip on a far-right table column
   // slides back into view instead of running off the edge.
-  const rawLeft = rect.left + rect.width / 2 - WIDTH / 2;
-  const left = Math.min(Math.max(MARGIN, rawLeft), window.innerWidth - WIDTH - MARGIN);
+  const rawLeft = rect.left + rect.width / 2 - width / 2;
+  const left = Math.min(Math.max(MARGIN, rawLeft), window.innerWidth - width - MARGIN);
 
   // Prefer below; flip above when there isn't room, which is the common case for the stat cards
   // and table rows near the bottom of a long page.
@@ -42,6 +42,104 @@ function computePosition(rect: DOMRect, panelHeight: number): Position {
   // letting it run off the bottom edge: overlapping the trigger by a little beats being unreadable.
   const top = Math.min(Math.max(MARGIN, preferred), window.innerHeight - panelHeight - MARGIN);
   return { left, top, above };
+}
+
+/**
+ * A styled hover panel for arbitrary content, sharing InfoTip's positioning.
+ *
+ * The app was still leaning on the native `title` attribute for roughly twenty numbers, and the
+ * native tooltip is the worst surface available: it waits about a second, times out mid-read,
+ * renders one flat grey string with no formatting, cannot show a bar or a colour, and does not
+ * exist at all for keyboard or touch. Everything that had something real to say was saying it
+ * through that.
+ *
+ * Deliberately not merged into InfoTip. InfoTip renders a registry entry, formula and caveat and
+ * source, and is the right thing for "explain this formula". This is for "show me the numbers
+ * behind this cell", which wants tables and bars rather than prose.
+ */
+export function Tip({
+  title,
+  children,
+  content,
+  width = WIDTH,
+  className = "",
+}: {
+  /** Small heading at the top of the panel. */
+  title?: ReactNode;
+  /** The trigger. */
+  children: ReactNode;
+  /** The panel body. */
+  content: ReactNode;
+  width?: number;
+  className?: string;
+}) {
+  const triggerRef = useRef<HTMLSpanElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<Position | null>(null);
+
+  const place = useCallback(() => {
+    const el = triggerRef.current;
+    if (!el) return;
+    const height = panelRef.current?.offsetHeight ?? 200;
+    setPos(computePosition(el.getBoundingClientRect(), height, width));
+  }, [width]);
+
+  useEffect(() => {
+    if (!open) return;
+    place();
+    const dismiss = () => setOpen(false);
+    window.addEventListener("scroll", dismiss, true);
+    window.addEventListener("resize", dismiss);
+    return () => {
+      window.removeEventListener("scroll", dismiss, true);
+      window.removeEventListener("resize", dismiss);
+    };
+  }, [open, place]);
+
+  useEffect(() => {
+    if (open && panelRef.current) place();
+  }, [open, place]);
+
+  return (
+    <>
+      <span
+        ref={triggerRef}
+        className={`cursor-help ${className}`}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+      >
+        {children}
+      </span>
+      {open &&
+        createPortal(
+          <div
+            ref={panelRef}
+            role="tooltip"
+            style={{
+              position: "fixed",
+              left: `${pos?.left ?? 0}px`,
+              top: `${pos?.top ?? 0}px`,
+              width: `${width}px`,
+              maxHeight: `calc(100vh - ${MARGIN * 2}px)`,
+              overflowY: "auto",
+              visibility: pos ? "visible" : "hidden",
+            }}
+            className="z-[100] rounded-xl popover px-3.5 py-3 text-left pointer-events-none"
+          >
+            {title && (
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-violet-300 mb-2">
+                {title}
+              </div>
+            )}
+            {content}
+          </div>,
+          document.body,
+        )}
+    </>
+  );
 }
 
 export function InfoTip({
@@ -160,7 +258,7 @@ export function InfoTip({
               // Hidden until placed, so it never flashes at 0,0 on the first frame.
               visibility: pos ? "visible" : "hidden",
             }}
-            className="z-[100] rounded-xl border border-white/12 bg-[#12131a]/95 backdrop-blur-xl shadow-2xl shadow-black/60 px-3.5 py-3 text-left pointer-events-none"
+            className="z-[100] rounded-xl popover px-3.5 py-3 text-left pointer-events-none"
           >
             <div className="text-[11px] font-semibold uppercase tracking-wider text-violet-300">
               {content.title}

@@ -4,7 +4,7 @@ import { formatGp, formatPct } from "../format";
 import { type WatchEntry, toggleWatch } from "../watchlist";
 import { type BlockEntry, toggleBlock } from "../blocklist";
 import { Badge, Button, EmptyState } from "./ui";
-import { InfoTip } from "./InfoTip";
+import { InfoTip, Tip } from "./InfoTip";
 import type { ExplanationId } from "../explanations";
 import { showToast } from "../toast";
 
@@ -220,17 +220,34 @@ function shortAge(seconds: number): string {
 function AgeCell({ item }: { item: MarketItem }) {
   const worst = priceAge(item);
   if (worst == null) return <span className="text-gray-700">-</span>;
-  const tone =
-    worst < 600 ? "text-gray-300" : worst < 3600 ? "text-amber-300" : "text-rose-400";
+  const tone = worst < 600 ? "text-gray-300" : worst < 3600 ? "text-amber-300" : "text-rose-400";
+  const panel = (
+    <>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+        <span className="text-gray-400">Last buy</span>
+        <span className="font-mono text-rose-300 text-right">
+          {item.buy_age != null ? `${shortAge(item.buy_age)} ago` : "never"}
+        </span>
+        <span className="text-gray-400">Last sell</span>
+        <span className="font-mono text-emerald-300 text-right">
+          {item.sell_age != null ? `${shortAge(item.sell_age)} ago` : "never"}
+        </span>
+      </div>
+      <p className="mt-2.5 text-[10.5px] text-gray-400 leading-relaxed">
+        The column shows the OLDER of the two, because a margin is the gap between a buy price and a
+        sell price and is only as current as whichever of them is staler.
+      </p>
+      <p className="mt-1.5 text-[10px] text-gray-600 leading-snug">
+        Under 10 minutes reads as live, under an hour as worth checking, past that the spread is
+        describing a market that has probably moved. Measured across the whole catalogue the mean
+        last-trade age is over five days, so most of what the GE lists is not trading at all.
+      </p>
+    </>
+  );
   return (
-    <span
-      className={tone}
-      title={`Last buy ${item.buy_age != null ? shortAge(item.buy_age) : "never"} ago, last sell ${
-        item.sell_age != null ? shortAge(item.sell_age) : "never"
-      } ago. The margin is only as current as the older of the two.`}
-    >
-      {shortAge(worst)}
-    </span>
+    <Tip title="Price age" content={panel} width={250}>
+      <span className={tone}>{shortAge(worst)}</span>
+    </Tip>
   );
 }
 
@@ -261,25 +278,47 @@ function Sparkline({ points }: { points?: number[] }) {
     .join(" ");
   const change = (points[points.length - 1] - points[0]) / (points[0] || 1);
   const stroke = change > 0.001 ? "#34d399" : change < -0.001 ? "#fb7185" : "#94a3b8";
+  const panel = (
+    <>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+        <span className="text-gray-400">Move over the day</span>
+        <span
+          className={`font-mono text-right ${change >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+        >
+          {change >= 0 ? "+" : ""}
+          {(change * 100).toFixed(1)}%
+        </span>
+        <span className="text-gray-400">High</span>
+        <span className="font-mono text-right text-gray-200">{formatGp(max)}</span>
+        <span className="text-gray-400">Low</span>
+        <span className="font-mono text-right text-gray-200">{formatGp(min)}</span>
+        <span className="text-gray-400">Points</span>
+        <span className="font-mono text-right text-gray-500">{points.length} of 12</span>
+      </div>
+      <p className="mt-2.5 text-[10px] text-gray-500 leading-snug">
+        Two-hour buckets from this install&apos;s own price history, so an item it has been
+        watching for less than a day draws a shorter line. Shape only, and unscaled: the prices are
+        in the columns to the left.
+      </p>
+    </>
+  );
   return (
-    <svg
-      width={w}
-      height={h}
-      viewBox={`0 0 ${w} ${h}`}
-      className="overflow-visible"
-      title={`${change >= 0 ? "+" : ""}${(change * 100).toFixed(1)}% over the last day`}
-    >
-      <path d={d} fill="none" stroke={stroke} stroke-width={1.25} stroke-linejoin="round" />
-    </svg>
+    <Tip title="Last 24 hours" content={panel} width={240}>
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="overflow-visible block">
+        <path d={d} fill="none" stroke={stroke} stroke-width={1.25} stroke-linejoin="round" />
+      </svg>
+    </Tip>
   );
 }
 
 const FACTOR_LABELS: Record<string, string> = {
-  income: "what a slot earns per hour",
-  edge: "return after tax",
-  fill: "how much a cycle can absorb",
-  freshness: "how recent the prices are",
-  stability: "how normal this spread is",
+  income:
+    "Gp one GE slot earns per hour here, log-scaled to a 2m/hr ceiling. You are allocating eight slots, not unlimited capital, so money per slot is the objective.",
+  edge: "Return after tax, full marks at 3%. A risk buffer: under about half a percent, one tick of adverse movement while your offer sits wipes the trade out.",
+  fill: "How much of one buy-limit cycle the market can absorb in four hours, judged on the thinner of the two sides.",
+  freshness: "How recent the two prices behind the margin are, taking the older. Halves every 30 minutes.",
+  stability:
+    "Whether this spread is normal for this item, and how calm the price has been. A spread many times its own norm is usually one stale side, not free money.",
 };
 
 function rankTone(score: number): string {
@@ -296,35 +335,98 @@ function rankTone(score: number): string {
  * long while being a re-sort of margin. This one shows the reason it is not higher on the row
  * itself, so a rank that looks wrong can be argued with rather than merely distrusted.
  */
+function FactorBar({ label, value, why }: { label: string; value: number; why: string }) {
+  return (
+    <div className="mb-2 last:mb-0">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-[11px] text-gray-300">{label}</span>
+        <span className="font-mono text-[11px] tabular-nums text-gray-400">
+          {(value * 100).toFixed(0)}
+        </span>
+      </div>
+      <div className="h-1.5 rounded-full bg-white/[0.08] mt-1 overflow-hidden">
+        <div
+          className={`h-full rounded-full ${
+            value >= 0.75 ? "bg-emerald-400/80" : value >= 0.4 ? "bg-sky-400/70" : "bg-amber-400/70"
+          }`}
+          style={{ width: `${Math.max(value * 100, 2)}%` }}
+        />
+      </div>
+      <p className="text-[10px] text-gray-500 leading-snug mt-0.5">{why}</p>
+    </div>
+  );
+}
+
+/**
+ * The rank, the money behind it, and the five factors as a hover panel.
+ *
+ * This used to pack all of it into a native `title` string with escaped newlines, which the
+ * browser renders as flat grey text after a one-second delay and then hides again mid-read. The
+ * whole point of showing the factors is that a rank you disagree with should be arguable, and an
+ * argument you cannot finish reading is not much of one.
+ */
 function RankCell({ item }: { item: MarketItem }) {
   const flip = item.flip;
   if (!flip) return <span className="text-gray-700">-</span>;
-  const bars: [string, number][] = [
-    ["income", flip.income],
-    ["edge", flip.edge],
-    ["fill", flip.fill],
-    ["freshness", flip.freshness],
-    ["stability", flip.stability],
-  ];
-  const detail = bars
-    .map(([k, v]) => `${k} ${(v * 100).toFixed(0)}% (${FACTOR_LABELS[k]})`)
-    .join("\n");
+
+  const panel = (
+    <>
+      <div className="flex items-baseline justify-between mb-2.5 pb-2 border-b border-white/10">
+        <span className={`font-mono text-2xl font-semibold ${rankTone(flip.score)}`}>
+          {flip.score.toFixed(0)}
+        </span>
+        <span className="font-mono text-xs text-gray-300">
+          {flip.gpPerHour > 0 ? `${formatGp(Math.round(flip.gpPerHour))} / hr` : "no income"}
+        </span>
+      </div>
+
+      <FactorBar label="Income" value={flip.income} why={FACTOR_LABELS.income} />
+      <FactorBar label="Edge" value={flip.edge} why={FACTOR_LABELS.edge} />
+      <FactorBar label="Fill" value={flip.fill} why={FACTOR_LABELS.fill} />
+      <FactorBar label="Freshness" value={flip.freshness} why={FACTOR_LABELS.freshness} />
+      <FactorBar label="Stability" value={flip.stability} why={FACTOR_LABELS.stability} />
+
+      <div className="mt-2.5 pt-2 border-t border-white/10 text-[10.5px] text-gray-400 leading-relaxed">
+        One cycle is{" "}
+        <span className="font-mono text-gray-200">
+          {Math.round(flip.expectedUnits).toLocaleString()}
+        </span>{" "}
+        units over 4 hours,{" "}
+        <span className="font-mono text-gray-200">
+          {formatGp(Math.round(flip.cycleCapital))}
+        </span>{" "}
+        of capital in and{" "}
+        <span
+          className={`font-mono ${flip.cycleProfit >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+        >
+          {formatGp(Math.round(flip.cycleProfit))}
+        </span>{" "}
+        out after tax.
+      </div>
+      <p className="mt-1.5 text-[10px] text-gray-600 leading-snug">
+        The five are multiplied, weighted, so a zero anywhere is disqualifying rather than averaged
+        away.
+        {flip.weakest && (
+          <span className="text-amber-500/80"> Held back most by {flip.weakest}.</span>
+        )}
+      </p>
+    </>
+  );
+
   return (
-    <div
-      title={`Rank ${flip.score.toFixed(0)} of 100\n\n${detail}\n\nOne cycle: ${Math.round(
-        flip.expectedUnits,
-      ).toLocaleString()} units, ${formatGp(Math.round(flip.cycleCapital))} of capital, over 4 hours.`}
-    >
-      <div className={`text-[15px] font-semibold tabular-nums ${rankTone(flip.score)}`}>
-        {flip.score.toFixed(0)}
+    <Tip title="Flip rank" content={panel} width={300}>
+      <div>
+        <div className={`text-[15px] font-semibold tabular-nums ${rankTone(flip.score)}`}>
+          {flip.score.toFixed(0)}
+        </div>
+        <div className="text-[10px] text-gray-500 tabular-nums">
+          {flip.gpPerHour > 0 ? `${formatGp(Math.round(flip.gpPerHour))}/hr` : "no income"}
+        </div>
+        {flip.weakest && (
+          <div className="text-[9px] text-amber-500/70 leading-tight">held back by {flip.weakest}</div>
+        )}
       </div>
-      <div className="text-[10px] text-gray-500 tabular-nums">
-        {flip.gpPerHour > 0 ? `${formatGp(Math.round(flip.gpPerHour))}/hr` : "no income"}
-      </div>
-      {flip.weakest && (
-        <div className="text-[9px] text-amber-500/70 leading-tight">held back by {flip.weakest}</div>
-      )}
-    </div>
+    </Tip>
   );
 }
 
@@ -619,7 +721,6 @@ export function MarketTable({
               {columns.map((c) => (
                 <th
                   key={c.key}
-                  title={c.title}
                   className={`relative px-3 py-2.5 font-medium select-none hover:text-white transition-colors ${
                     c.align === "right" ? "text-right" : ""
                   }`}
@@ -635,9 +736,23 @@ export function MarketTable({
                     >
                       <FilterIcon active={!!columnFilters[c.key]} />
                     </button>
-                    <span className="cursor-pointer" onClick={() => toggleSort(c.key)}>
-                      {c.label} <SortIcon active={sortKey === c.key} dir={sortDir} />
-                    </span>
+                    {c.title ? (
+                      <Tip
+                        title={c.label}
+                        width={290}
+                        content={
+                          <p className="text-[11.5px] leading-relaxed text-gray-300">{c.title}</p>
+                        }
+                      >
+                        <span className="cursor-pointer" onClick={() => toggleSort(c.key)}>
+                          {c.label} <SortIcon active={sortKey === c.key} dir={sortDir} />
+                        </span>
+                      </Tip>
+                    ) : (
+                      <span className="cursor-pointer" onClick={() => toggleSort(c.key)}>
+                        {c.label} <SortIcon active={sortKey === c.key} dir={sortDir} />
+                      </span>
+                    )}
                     {c.explain && <InfoTip id={c.explain} />}
                   </span>
                   {openFilterKey === c.key && draft && (
