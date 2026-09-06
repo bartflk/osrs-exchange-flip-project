@@ -49,6 +49,11 @@ export interface ItemRow {
   vol_high_1h: number;
   vol_low_1h: number;
   updated_at: number | null;
+  /** Unix seconds of the last trade on each side. Null on items that have never traded. */
+  high_time: number | null;
+  low_time: number | null;
+  /** Units traded in the last 24 hours, from the wiki volumes endpoint. Null until first poll. */
+  daily_volume: number | null;
 }
 
 export interface ScoredItem extends ItemRow {
@@ -67,10 +72,24 @@ export interface ScoredItem extends ItemRow {
   execution_buy_price: number | null;
   execution_sell_price: number | null;
   execution_margin: number | null;
+  /**
+   * Margin times daily volume: how much profit the whole market moved through this item in a day.
+   *
+   * The one number every competing tool leads with, and the app did not have it. Margin alone
+   * ranks a 3.5m spread on an item that trades thirty times a day above a 1gp spread on one that
+   * trades a hundred million times, and only one of those is somewhere money actually is. It is
+   * NOT what you can personally make, which is the buy limit column next to it.
+   */
+  margin_x_volume: number | null;
+  /** Seconds since the last trade on each side. The margin is only as real as the older of these. */
+  buy_age: number | null;
+  sell_age: number | null;
+  /** Recent price trace for the row sparkline, filled in by the items route, not by scoring. */
+  spark?: number[];
 }
 
 export function scoreItem(row: ItemRow): ScoredItem {
-  const { high, low, buy_limit, vol_high_5m, vol_low_5m, vol_high_1h, vol_low_1h } = row;
+  const { high, low, buy_limit, vol_high_1h, vol_low_1h } = row;
 
   let net_margin: number | null = null;
   let roi_pct: number | null = null;
@@ -90,6 +109,9 @@ export function scoreItem(row: ItemRow): ScoredItem {
       execution_buy_price: null,
       execution_sell_price: null,
       execution_margin: null,
+      margin_x_volume: null,
+      buy_age: null,
+      sell_age: null,
     };
   }
 
@@ -112,11 +134,17 @@ export function scoreItem(row: ItemRow): ScoredItem {
     execution_margin = execution_sell_price - execution_buy_price - geTax(execution_sell_price);
   }
 
-  // liquidity: minimum of 5m and 1h volume on both sides, so a burst on one side
-  // doesn't overstate how fillable the flip actually is.
-  const minVol5m = Math.min(vol_high_5m, vol_low_5m);
-  const minVol1h = Math.min(vol_high_1h, vol_low_1h);
-  const liquidity = Math.min(minVol5m * 12, minVol1h); // normalize 5m to hourly rate, take the more conservative
+  // Units you could realistically fill in an hour: the THINNER SIDE of the last hour of trade, so
+  // a burst of buying does not overstate how easily you get back out.
+  //
+  // This used to also take min() against the five-minute volume scaled up by twelve, as a second
+  // conservatism. That term could only ever drag the answer to zero. An item trading a few hundred
+  // times a day has no trades at all in most five-minute windows, so one side is 0, times twelve is
+  // 0, and the min is 0. Measured on the live board: eight of the top ten items by market turnover
+  // reported 0/hr, including Ancestral robe top at 299 trades a day and Elder maul at 477. A
+  // liquidity number that reads zero for items that visibly trade is worse than no number, because
+  // it is also the score's volume term and the Market tab's minimum-liquidity filter.
+  const liquidity = Math.min(vol_high_1h, vol_low_1h);
 
   // Volatility as a mild score penalty, not a hard filter -- an item with no volatility data
   // yet (penalty factor 1) ranks exactly as before, so this never breaks ranking for items
@@ -127,6 +155,7 @@ export function scoreItem(row: ItemRow): ScoredItem {
   const score =
     net_margin != null ? (net_margin * Math.log10(liquidity + 1)) / volatilityPenalty : -Infinity;
 
+  const now = Math.floor(Date.now() / 1000);
   return {
     ...row,
     net_margin,
@@ -136,6 +165,10 @@ export function scoreItem(row: ItemRow): ScoredItem {
     score,
     tax,
     volatility_pct,
+    margin_x_volume:
+      net_margin != null && row.daily_volume != null ? net_margin * row.daily_volume : null,
+    buy_age: row.low_time != null ? Math.max(0, now - row.low_time) : null,
+    sell_age: row.high_time != null ? Math.max(0, now - row.high_time) : null,
     execution_buy_price,
     execution_sell_price,
     execution_margin,

@@ -36,7 +36,8 @@ const insertSnapshotStmt = db.prepare(`
 // job doesn't depend on an HTTP round-trip to itself.
 const scoredItemsStmt = db.prepare(`
   SELECT i.id, i.name, i.members, i.buy_limit, i.icon,
-         s.high, s.low, s.vol_high_5m, s.vol_low_5m, s.vol_high_1h, s.vol_low_1h, s.updated_at
+         s.high, s.low, s.vol_high_5m, s.vol_low_5m, s.vol_high_1h, s.vol_low_1h, s.updated_at,
+             s.high_time, s.low_time, i.daily_volume
   FROM items i
   JOIN latest_snapshot s ON s.item_id = i.id
   WHERE s.high IS NOT NULL AND s.low IS NOT NULL

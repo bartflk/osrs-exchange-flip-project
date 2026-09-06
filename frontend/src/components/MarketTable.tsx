@@ -1,6 +1,6 @@
 import { useMemo, useState } from "preact/hooks";
 import type { MarketItem } from "../api";
-import { formatGp, formatPct, formatAgo } from "../format";
+import { formatGp, formatPct } from "../format";
 import { type WatchEntry, toggleWatch } from "../watchlist";
 import { type BlockEntry, toggleBlock } from "../blocklist";
 import { Badge, Button, EmptyState } from "./ui";
@@ -21,20 +21,18 @@ function BlockIcon({ className = "" }: { className?: string }) {
 
 type SortKey =
   | "name"
-  | "score"
   | "low"
   | "high"
   | "net_margin"
-  | "tax"
   | "roi_pct"
-  | "liquidity"
-  | "buy_limit"
+  | "daily_volume"
+  | "margin_x_volume"
   | "potential_profit"
-  | "updated_at";
+  | "price_age";
 
 // Sort keys whose "natural" first click is ascending (A-Z, soonest-first) rather than the
 // descending "biggest number first" every gp/pct/score column defaults to.
-const ASC_FIRST: Partial<Record<SortKey, true>> = { name: true };
+const ASC_FIRST: Partial<Record<SortKey, true>> = { name: true, price_age: true };
 
 // Potential profit = net margin over a full buy-limit cycle (the most you could pocket
 // flipping this item to its GE limit right now) -- not tracked server-side, since it's a
@@ -70,9 +68,27 @@ interface ColumnFilter {
 // here rather than asking the user to type "0.05" to mean 5%.
 const PERCENT_KEYS: Partial<Record<SortKey, true>> = { roi_pct: true };
 
+/**
+ * The older of the two last-trade times, in seconds.
+ *
+ * The OLDER on purpose. A margin is the difference between a buy price and a sell price, so it is
+ * only as current as whichever of the two is staler; a fresh instabuy against a sell price from
+ * last Tuesday is not a spread, it is a memory. Measured across the whole catalogue the mean
+ * last-trade age is over five days, so this is not a rare edge.
+ */
+function priceAge(item: MarketItem): number | null {
+  const ages = [item.buy_age, item.sell_age].filter((a): a is number => a != null);
+  return ages.length ? Math.max(...ages) : null;
+}
+
 function columnValue(item: MarketItem, key: SortKey): number | null {
-  if (key === "name" || key === "updated_at") return null; // not filterable, no funnel on those headers
-  const raw = key === "potential_profit" ? potentialProfit(item) : item[key];
+  if (key === "name") return null; // not filterable, no funnel on that header
+  const raw =
+    key === "potential_profit"
+      ? potentialProfit(item)
+      : key === "price_age"
+        ? priceAge(item)
+        : item[key];
   if (raw == null) return null;
   return PERCENT_KEYS[key] ? raw * 100 : raw;
 }
@@ -97,6 +113,19 @@ function matchesFilter(value: number | null, filter: ColumnFilter): boolean {
   }
 }
 
+// Nine columns carrying what eleven used to, because four of the old ones were not answering a
+// question anyone asks of a flipping table.
+//
+// GONE. Tax was a deterministic 2% of the sell price that Margin had already subtracted, so it
+// spent a column restating arithmetic. Score was net_margin x log10(liquidity) over a volatility
+// penalty, and measured on live data 29 of its top 30 items were the same 30 as sorting by raw
+// margin: an opaque number that reordered a column already on screen. Liquidity/hr and Limit did
+// not vanish, they moved under the columns they qualify, because neither is read on its own.
+//
+// NEW, and both taken from what the competing tools lead with. Volume/day says whether anybody
+// trades this at all, which nothing here answered before. Margin x volume says where profit
+// actually moves through the market, as opposed to where the widest spread is sitting untouched.
+// Age says whether the two prices the margin is built from are minutes or days old.
 const columns: {
   key: SortKey;
   label: string;
@@ -106,13 +135,42 @@ const columns: {
 }[] = [
   { key: "low", label: "Buy", align: "right", title: "Most recent price someone bought at" },
   { key: "high", label: "Sell", align: "right", title: "Most recent price someone sold at" },
-  { key: "net_margin", label: "Margin", align: "right", explain: "netMargin" },
-  { key: "tax", label: "Tax", align: "right", explain: "geTax" },
-  { key: "roi_pct", label: "ROI", align: "right", explain: "roi" },
-  { key: "liquidity", label: "Liquidity/hr", align: "right", explain: "liquidity" },
-  { key: "buy_limit", label: "Limit", align: "right", title: "GE buy limit per 4-hour window" },
-  { key: "potential_profit", label: "Pot. profit", align: "right", explain: "potentialProfit" },
-  { key: "score", label: "Score", align: "right", explain: "score" },
+  {
+    key: "net_margin",
+    label: "Margin",
+    align: "right",
+    explain: "netMargin",
+    title: "Per unit after the 2% GE tax. ROI underneath is that margin over the buy price.",
+  },
+  {
+    key: "daily_volume",
+    label: "Vol/day",
+    align: "right",
+    title:
+      "Units traded across the whole game in the last 24 hours. Underneath is what you could realistically fill in an hour, the thinner side of the last hour of trade.",
+  },
+  {
+    key: "margin_x_volume",
+    label: "Margin x vol",
+    align: "right",
+    title:
+      "Margin times daily volume: the profit the whole market moved through this item in a day. Where the money is, as distinct from where the widest untouched spread is. It is NOT what you can make, that is the next column.",
+  },
+  {
+    key: "potential_profit",
+    label: "Per limit",
+    align: "right",
+    explain: "potentialProfit",
+    title:
+      "What YOU clear buying to the GE limit once, after tax. The buy limit underneath is the cap, per 4 hours.",
+  },
+  {
+    key: "price_age",
+    label: "Age",
+    align: "right",
+    title:
+      "Time since the last real trade, taking the older of the buy and sell side. The margin is only as current as the staler of the two.",
+  },
 ];
 
 // DESIGN.md §14.12: tiered volatility badge, coefficient of variation of the high price over a
@@ -122,6 +180,85 @@ function volatilityTone(pct: number): "success" | "warning" | "danger" {
   if (pct < 0.05) return "success";
   if (pct < 0.15) return "warning";
   return "danger";
+}
+
+/** Volume reads as a count, not money, so it gets its own compact form rather than formatGp. */
+function compactCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}m`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}k`;
+  return String(n);
+}
+
+function shortAge(seconds: number): string {
+  if (seconds < 90) return `${Math.round(seconds)}s`;
+  if (seconds < 5400) return `${Math.round(seconds / 60)}m`;
+  if (seconds < 172800) return `${Math.round(seconds / 3600)}h`;
+  return `${Math.round(seconds / 86400)}d`;
+}
+
+/**
+ * How stale the two prices behind the margin are, worst side first.
+ *
+ * Coloured rather than merely printed, because this is the column that says whether the rest of
+ * the row is describing today. Across the whole catalogue the mean last-trade age is over five
+ * days: most of what the Grand Exchange lists is not trading, and a spread quoted off two prices
+ * from last week is arithmetic on fossils.
+ */
+function AgeCell({ item }: { item: MarketItem }) {
+  const worst = priceAge(item);
+  if (worst == null) return <span className="text-gray-700">-</span>;
+  const tone =
+    worst < 600 ? "text-gray-300" : worst < 3600 ? "text-amber-300" : "text-rose-400";
+  return (
+    <span
+      className={tone}
+      title={`Last buy ${item.buy_age != null ? shortAge(item.buy_age) : "never"} ago, last sell ${
+        item.sell_age != null ? shortAge(item.sell_age) : "never"
+      } ago. The margin is only as current as the older of the two.`}
+    >
+      {shortAge(worst)}
+    </span>
+  );
+}
+
+/**
+ * A day of price in twelve points.
+ *
+ * Deliberately unlabelled and unscaled: every number is already in a column to the left, and what
+ * a number cannot show is whether the price is walking down into the spread you are about to buy.
+ * Coloured by the net move so the direction survives at this size, where a 40px line does not read
+ * as up or down on its own. Fewer than three points draws nothing, because two points is a
+ * straight line between two arbitrary moments and would read as a stable price.
+ */
+function Sparkline({ points }: { points?: number[] }) {
+  if (!points || points.length < 3) {
+    return <span className="text-[10px] text-gray-700" title="Not enough local history yet">-</span>;
+  }
+  const w = 56;
+  const h = 16;
+  const min = Math.min(...points);
+  const max = Math.max(...points);
+  const span = max - min || 1;
+  const d = points
+    .map((p, i) => {
+      const px = (i / (points.length - 1)) * w;
+      const py = h - ((p - min) / span) * h;
+      return `${i === 0 ? "M" : "L"}${px.toFixed(1)},${py.toFixed(1)}`;
+    })
+    .join(" ");
+  const change = (points[points.length - 1] - points[0]) / (points[0] || 1);
+  const stroke = change > 0.001 ? "#34d399" : change < -0.001 ? "#fb7185" : "#94a3b8";
+  return (
+    <svg
+      width={w}
+      height={h}
+      viewBox={`0 0 ${w} ${h}`}
+      className="overflow-visible"
+      title={`${change >= 0 ? "+" : ""}${(change * 100).toFixed(1)}% over the last day`}
+    >
+      <path d={d} fill="none" stroke={stroke} stroke-width={1.25} stroke-linejoin="round" />
+    </svg>
+  );
 }
 
 function iconUrl(icon: string): string {
@@ -240,7 +377,10 @@ export function MarketTable({
   hasActiveFilters?: boolean;
   onClearFilters?: () => void;
 }) {
-  const [sortKey, setSortKey] = useState<SortKey>("score");
+  // Margin x volume, which is what both reference tools default to and the closest thing to a
+  // single honest answer to "where should I look first". Score used to be the default and was a
+  // near-duplicate of the margin column beside it.
+  const [sortKey, setSortKey] = useState<SortKey>("margin_x_volume");
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
   const [columnFilters, setColumnFilters] = useState<Partial<Record<SortKey, ColumnFilter>>>({});
   const [openFilterKey, setOpenFilterKey] = useState<SortKey | null>(null);
@@ -263,17 +403,16 @@ export function MarketTable({
       copy.sort((a, b) => a.name.localeCompare(b.name) * sortDir);
       return copy;
     }
-    copy.sort((a, b) => {
-      const av =
-        sortKey === "potential_profit"
-          ? (potentialProfit(a) ?? -Infinity)
-          : (a[sortKey] ?? -Infinity);
-      const bv =
-        sortKey === "potential_profit"
-          ? (potentialProfit(b) ?? -Infinity)
-          : (b[sortKey] ?? -Infinity);
-      return (av - bv) * sortDir;
-    });
+    // Two of the sort keys are derived rather than fields, so they cannot be read off the item.
+    // -Infinity for a missing value parks it at the bottom of a descending sort, which is right
+    // for money and wrong for age: an item that has never traded is the stalest thing there is,
+    // so it sorts as infinitely old rather than as the freshest row on the page.
+    const valueOf = (item: MarketItem): number => {
+      if (sortKey === "potential_profit") return potentialProfit(item) ?? -Infinity;
+      if (sortKey === "price_age") return priceAge(item) ?? Infinity;
+      return item[sortKey] ?? -Infinity;
+    };
+    copy.sort((a, b) => (valueOf(a) - valueOf(b)) * sortDir);
     return copy;
   }, [filtered, sortKey, sortDir]);
 
@@ -327,10 +466,10 @@ export function MarketTable({
       ? sortDir === 1
         ? "A → Z"
         : "Z → A"
-      : sortKey === "updated_at"
+      : sortKey === "price_age"
         ? sortDir === 1
-          ? "oldest → newest"
-          : "newest → oldest"
+          ? "freshest → stalest"
+          : "stalest → freshest"
         : sortDir === 1
           ? "low → high"
           : "high → low";
@@ -444,12 +583,10 @@ export function MarketTable({
                 </th>
               ))}
               <th
-                className="px-3 py-2.5 font-medium cursor-pointer select-none hover:text-white transition-colors"
-                onClick={() => toggleSort("updated_at")}
+                className="px-3 py-2.5 font-medium select-none"
+                title="Price over the last day, from this install's own history. Shape only: the numbers are in the columns to the left."
               >
-                <span className="inline-flex items-center gap-1">
-                  Updated <SortIcon active={sortKey === "updated_at"} dir={sortDir} />
-                </span>
+                Trend
               </th>
             </tr>
           </thead>
@@ -459,6 +596,7 @@ export function MarketTable({
               const isWatched = !!watched[item.id];
               const isBlocked = !!blocked[item.id];
               const potProfit = potentialProfit(item);
+              const mxv = item.margin_x_volume;
               return (
                 <tr
                   key={item.id}
@@ -529,37 +667,55 @@ export function MarketTable({
                   <td className="px-3 py-2 font-mono text-emerald-300 text-right">
                     {formatGp(item.high)}
                   </td>
-                  <td
-                    className={`px-3 py-2 font-mono text-right ${positive ? "text-emerald-400" : "text-rose-400"}`}
-                  >
-                    {formatGp(item.net_margin)}
+                  <td className="px-3 py-2 font-mono text-right">
+                    <div className={positive ? "text-emerald-400" : "text-rose-400"}>
+                      {formatGp(item.net_margin)}
+                    </div>
+                    <div
+                      className={`text-[10px] ${(item.roi_pct ?? 0) >= 0 ? "text-emerald-400/60" : "text-rose-400/60"}`}
+                    >
+                      {formatPct(item.roi_pct)}
+                    </div>
                   </td>
-                  <td className="px-3 py-2 font-mono text-gray-500 text-right">
-                    {item.tax ? `-${formatGp(item.tax)}` : "Free"}
-                  </td>
-                  <td
-                    className={`px-3 py-2 font-mono text-right ${(item.roi_pct ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}`}
-                  >
-                    {formatPct(item.roi_pct)}
-                  </td>
-                  <td className="px-3 py-2 font-mono text-gray-300 text-right">
-                    {Math.round(item.liquidity).toLocaleString()}
-                  </td>
-                  <td className="px-3 py-2 font-mono text-gray-400 text-right">
-                    {item.buy_limit != null ? item.buy_limit.toLocaleString() : "-"}
-                  </td>
-                  <td
-                    className={`px-3 py-2 font-mono text-right ${potProfit == null ? "text-gray-600" : potProfit > 0 ? "text-emerald-400" : "text-rose-400"}`}
-                  >
-                    {potProfit != null && potProfit > 0 ? formatGp(potProfit) : "-"}
+                  <td className="px-3 py-2 font-mono text-right">
+                    <div className="text-gray-300">
+                      {item.daily_volume != null ? compactCount(item.daily_volume) : "-"}
+                    </div>
+                    <div
+                      className="text-[10px] text-gray-600"
+                      title="Fillable per hour: the thinner side of the last hour of trade, so a burst of buying does not overstate how easily you get out."
+                    >
+                      {Math.round(item.liquidity).toLocaleString()}/hr
+                    </div>
                   </td>
                   <td
-                    className={`px-3 py-2 font-mono text-right ${positive ? "text-emerald-400" : "text-rose-400"}`}
+                    className={`px-3 py-2 font-mono text-right ${
+                      mxv == null ? "text-gray-600" : mxv > 0 ? "text-sky-300" : "text-rose-400"
+                    }`}
                   >
-                    {formatGp(item.score)}
+                    {mxv != null ? formatGp(mxv) : "-"}
                   </td>
-                  <td className="px-3 py-2 text-gray-500 text-xs whitespace-nowrap">
-                    {formatAgo(item.updated_at)}
+                  <td className="px-3 py-2 font-mono text-right">
+                    <div
+                      className={
+                        potProfit == null
+                          ? "text-gray-600"
+                          : potProfit > 0
+                            ? "text-emerald-400"
+                            : "text-rose-400"
+                      }
+                    >
+                      {potProfit != null && potProfit > 0 ? formatGp(potProfit) : "-"}
+                    </div>
+                    <div className="text-[10px] text-gray-600">
+                      {item.buy_limit != null ? `${item.buy_limit.toLocaleString()} limit` : "no limit"}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 font-mono text-right whitespace-nowrap">
+                    <AgeCell item={item} />
+                  </td>
+                  <td className="px-3 py-2">
+                    <Sparkline points={item.spark} />
                   </td>
                 </tr>
               );

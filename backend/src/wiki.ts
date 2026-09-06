@@ -11,6 +11,21 @@ async function get<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/**
+ * Units of each item traded over the last 24 hours, keyed by item id.
+ *
+ * Lives on the v1 API, not v2, which is why this bypasses `get` and its BASE. Checked live: 4,563
+ * items, and Air rune reads 119,613,657, matching what other trackers show for the same day.
+ */
+export async function fetchDailyVolumes(): Promise<Record<string, number>> {
+  const res = await fetch("https://prices.runescape.wiki/api/v1/osrs/volumes", {
+    headers: { "User-Agent": USER_AGENT },
+  });
+  if (!res.ok) throw new Error(`Wiki API /volumes failed: ${res.status} ${res.statusText}`);
+  const body = (await res.json()) as { data?: Record<string, number> };
+  return body.data ?? {};
+}
+
 export interface ItemMapping {
   id: number;
   name: string;

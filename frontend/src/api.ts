@@ -29,6 +29,15 @@ export interface MarketItem {
   execution_buy_price: number | null;
   execution_sell_price: number | null;
   execution_margin: number | null;
+  /** Units traded in the last 24h, from the wiki volumes endpoint. Null until the first poll. */
+  daily_volume: number | null;
+  /** Margin times daily volume: how much profit the market moved through this item in a day. */
+  margin_x_volume: number | null;
+  /** Seconds since the last trade on each side. A margin is only as real as the older of these. */
+  buy_age: number | null;
+  sell_age: number | null;
+  /** Up to twelve prices over the last day, for the row sparkline. Empty when history is thin. */
+  spark?: number[];
 }
 
 export interface ItemsResponse {

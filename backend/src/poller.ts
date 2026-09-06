@@ -1,5 +1,5 @@
-import { fetchMapping, fetchLatest, fetchWindow } from "./wiki.js";
-import { upsertItems, upsertSnapshots } from "./db.js";
+import { fetchMapping, fetchLatest, fetchWindow, fetchDailyVolumes } from "./wiki.js";
+import { upsertItems, upsertSnapshots, setDailyVolumes } from "./db.js";
 import { recordSampleAndCheck, checkVolumeAnomalies } from "./alerts.js";
 import { refreshVolatility } from "./volatility.js";
 import {
@@ -276,7 +276,23 @@ function runSlotProfileRefresh() {
     .catch((err) => console.error("[slots] profile refresh error", err));
 }
 
+// Daily volume moves on a daily cadence, so polling it every minute alongside prices would be
+// 4,563 numbers of pure waste per minute. Hourly is far more often than the underlying figure
+// changes and still recovers quickly from a restart.
+async function runDailyVolumePoll() {
+  try {
+    const volumes = await fetchDailyVolumes();
+    const updated = setDailyVolumes(volumes);
+    console.log(`[poller] daily volumes updated for ${updated} item(s)`);
+  } catch (err) {
+    console.error("[poller] daily volume error", err);
+  }
+}
+
 export function startPolling() {
+  void runDailyVolumePoll();
+  setInterval(runDailyVolumePoll, 60 * 60 * 1000);
+
   // Delayed so it never competes with the first price/mapping polls for startup bandwidth.
   setTimeout(runSlotProfileRefresh, 60 * 1000);
   setInterval(runSlotProfileRefresh, 60 * 60 * 1000);

@@ -226,6 +226,11 @@ for (const [table, column, type] of [
   // resolved outcome can be traced back to the exact timing claim rather than just the item.
   ["recommendation_snapshots", "buy_slot", "INTEGER"],
   ["recommendation_snapshots", "sell_slot", "INTEGER"],
+  // Units traded over the last 24 hours, from the wiki price API /volumes endpoint. The 5m and 1h
+  // volumes already on latest_snapshot answer "can I fill an offer right now"; this answers "does
+  // anybody trade this at all", which is a different question and the one every competing tool
+  // puts in its first sortable column.
+  ["items", "daily_volume", "INTEGER"],
 ] as const) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all() as unknown as { name: string }[];
   if (!cols.some((c) => c.name === column)) {
@@ -238,6 +243,29 @@ for (const [table, column, type] of [
 // leaving NULL keeps "WHERE strategy = 'signals'" honest instead of silently dropping 715 rows
 // of real history from the track record the moment it starts filtering.
 db.exec(`UPDATE recommendation_snapshots SET strategy = 'signals' WHERE strategy IS NULL`);
+
+// Daily traded volume, refreshed on its own slow cadence. Kept on `items` rather than
+// latest_snapshot because it is a property of the item over a day, not of the current tick, and
+// pinning it to the snapshot would make it look like it refreshes every minute when it does not.
+const setDailyVolumeStmt = db.prepare(`UPDATE items SET daily_volume = ? WHERE id = ?`);
+
+export function setDailyVolumes(volumes: Record<string, number>): number {
+  let n = 0;
+  // Explicit BEGIN/COMMIT, matching upsertItems: node:sqlite exposes no transaction() helper, and
+  // 4,563 unwrapped UPDATEs is 4,563 implicit transactions.
+  db.exec("BEGIN");
+  try {
+    for (const [id, vol] of Object.entries(volumes)) {
+      const res = setDailyVolumeStmt.run(vol, Number(id));
+      if (res.changes) n++;
+    }
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+  return n;
+}
 
 const upsertItemStmt = db.prepare(`
   INSERT INTO items (id, name, examine, members, lowalch, highalch, buy_limit, value, icon)
