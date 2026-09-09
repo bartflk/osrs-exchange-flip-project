@@ -288,3 +288,12 @@ export function countNeedsAction(views: SlotView[]): number {
     (v) => v.status === "collect" || v.status === "cancel" || v.status === "reprice",
   ).length;
 }
+
+// Direct request, matching the in-game GE window's own header total ("Grand Exchange
+// (333,933,584)"): the full value sitting across every occupied slot, buy and sell alike, at the
+// price the offer is actually set to (price * totalQuantity) -- not just the cash locked in
+// unfilled buys (that's ledger.ts's cashInBuyOffers, a different, already-used number for
+// "spendable bankroll"). This one answers "how much of my wealth is tied up on the GE right now."
+export function totalSlotValue(slots: GeSlot[]): number {
+  return slots.reduce((sum, s) => sum + s.price * s.totalQuantity, 0);
+}

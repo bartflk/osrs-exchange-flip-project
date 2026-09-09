@@ -189,7 +189,7 @@ async function build(window: HighlightWindow): Promise<HighlightsResponse> {
   const noHistory = movers.length === 0 && window !== "1d";
   const moversHint = (direction: "rise" | "fall") =>
     noHistory
-      ? `Not enough local price history for a ${WINDOW_LABEL[window]} window yet, the daily rollup needs to run that many days first.`
+      ? `Not enough local price history for the ${window} window yet, the daily rollup needs to run that many days first.`
       : `Biggest gp ${direction} over the last ${WINDOW_LABEL[window]}.`;
 
   const lists: HighlightList[] = [

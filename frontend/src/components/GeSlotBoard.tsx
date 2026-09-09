@@ -4,6 +4,7 @@ import type { SlotAssignment } from "../capitalAllocator";
 import {
   buildSlotViews,
   countNeedsAction,
+  totalSlotValue,
   STATUS_STYLE,
   type OvernightPlan,
   type SlotView,
@@ -61,6 +62,7 @@ export function GeSlotBoard({
 }) {
   const views = buildSlotViews(slots, suggestions, items, plans);
   const needsAction = countNeedsAction(views);
+  const totalValue = totalSlotValue(slots);
 
   function open(v: SlotView) {
     if (onSelectSlot) {
@@ -87,6 +89,12 @@ export function GeSlotBoard({
               </span>
             )}
           </h3>
+          {/* Same figure the in-game GE window shows in its own title bar ("Grand Exchange
+              (333,933,584)") -- sum of price * quantity across every occupied slot, buy and sell
+              alike, direct request to keep this visible while flipping. */}
+          {totalValue > 0 && (
+            <span className="font-mono text-sm text-gray-200">{formatGpFull(totalValue)}</span>
+          )}
         </div>
       )}
 

@@ -14,7 +14,7 @@ import { type Fill, loadFills, saveFills } from "../fills";
 import { GeOffersPanel } from "./GeOffersPanel";
 import { GeSlotBoard } from "./GeSlotBoard";
 import { ItemOfTheHour } from "./ItemOfTheHour";
-import { buildSlotViews, countNeedsAction } from "../geSlots";
+import { buildSlotViews, countNeedsAction, totalSlotValue } from "../geSlots";
 import { diffAndSnapshotSignals, type SignalsDiff } from "../signalsDiff";
 import { InfoTip } from "./InfoTip";
 
@@ -68,6 +68,21 @@ export function BuySignals({
   // rendered in full (up to 30 cards). Capped by default, same show-more pattern TrackRecord
   // already uses for its own recent list, since the GE board above is the actual plan now.
   const [showAllSignals, setShowAllSignals] = useState(false);
+
+  // Direct request: "have the 'idle' number adjustable so i can make it more accurate in keeping
+  // track." Idle is normally computed (bankroll − committed − suggested cost), but that can't see
+  // cash you're holding outside what's typed into Bankroll -- an editable override lets it double
+  // as a manually-corrected wealth tracker instead. Null means "not overridden, show the computed
+  // figure"; set once you've typed something, cleared by the reset button below.
+  const [idleOverride, setIdleOverrideRaw] = useState<number | null>(() => {
+    const raw = localStorage.getItem("idleOverrideSignals");
+    return raw != null ? Number(raw) : null;
+  });
+  function setIdleOverride(v: number | null) {
+    setIdleOverrideRaw(v);
+    if (v == null) localStorage.removeItem("idleOverrideSignals");
+    else localStorage.setItem("idleOverrideSignals", String(v));
+  }
 
   function updateTimeframe(key: string) {
     setTimeframe(key);
@@ -369,6 +384,12 @@ export function BuySignals({
   // Cash committed to open buy offers is already spent -- planning with it would double-spend the
   // same gp. Bankroll stays the user's number; this just nets off what the GE is holding.
   const committedGp = portfolio?.totals.cashInBuyOffers ?? 0;
+
+  // Direct request: the same total the in-game GE window shows in its own title bar ("Grand
+  // Exchange (333,933,584)") -- price * quantity summed across every occupied slot, buy and sell
+  // alike, not just the buy-side cash `committedGp` above (a different number used for bankroll
+  // math, not for "how much wealth is tied up on the GE right now").
+  const totalGeValue = totalSlotValue(portfolio?.slots ?? []);
   const availableBankroll = Math.max(0, bankroll - committedGp);
 
   const allocation = useMemo(
@@ -492,15 +513,38 @@ export function BuySignals({
               )}
             </h3>
             <div className="flex items-center gap-4 text-xs">
+              {totalGeValue > 0 && (
+                <span
+                  className="text-gray-500"
+                  title="Sum of price × quantity across every occupied slot, buy and sell alike -- the same total the in-game GE window shows in its own title bar"
+                >
+                  In GE{" "}
+                  <span className="text-gray-200 font-mono">{formatGp(totalGeValue)}</span>
+                </span>
+              )}
               <span className="text-gray-500">
                 Spent{" "}
                 <span className="text-gray-200 font-mono">{formatGp(allocation.totalCost)}</span>
               </span>
-              <span className="text-gray-500">
-                Idle{" "}
-                <span className="text-gray-200 font-mono">
-                  {formatGp(allocation.remainingBankroll)}
-                </span>
+              <span
+                className="text-gray-500 inline-flex items-center gap-1"
+                title="Editable -- corrects for cash the app can't see (bank/inventory not reflected in Bankroll). Defaults to bankroll − committed − suggested cost."
+              >
+                Idle
+                <GpInput
+                  value={idleOverride ?? allocation.remainingBankroll}
+                  onChange={setIdleOverride}
+                  className="w-20 px-1.5 text-xs"
+                />
+                {idleOverride != null && (
+                  <button
+                    onClick={() => setIdleOverride(null)}
+                    title="Reset to computed value"
+                    className="text-[10px] text-violet-400 hover:text-violet-300"
+                  >
+                    auto
+                  </button>
+                )}
               </span>
               <span className="text-gray-500 inline-flex items-center gap-1">
                 Projected profit

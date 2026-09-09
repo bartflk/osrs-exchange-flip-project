@@ -17,7 +17,6 @@ import { Flips } from "./components/Flips";
 import { ItemDetailModal } from "./components/ItemDetailModal";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { BankImport } from "./components/BankImport";
-import { Actions } from "./components/Actions";
 import { MarketAlerts } from "./components/MarketAlerts";
 import { TrackRecord } from "./components/TrackRecord";
 import { NewsFeed } from "./components/NewsFeed";
@@ -71,7 +70,6 @@ type Tab =
   | "portfolio"
   | "flips"
   | "bank"
-  | "actions"
   | "sets"
   | "news";
 
@@ -88,7 +86,6 @@ const TAB_LABELS: Record<Tab, string> = {
   portfolio: "Portfolio",
   flips: "Flips",
   bank: "Bank",
-  actions: "Actions",
   sets: "Sets",
   news: "News",
 };
@@ -98,10 +95,17 @@ const TAB_LABELS: Record<Tab, string> = {
 // (Dashboard / Analytics ▾ / Flipping Tools ▾ / Resources ▾). "Market" stays a plain link since
 // it's the default landing page; everything else groups by what it's actually for: finding/
 // acting on a flip right now, reviewing your own holdings, or background reading.
+//
+// DESIGN.md: the "Actions" tab (bad-holding alerts + a Buy Signals teaser + idle-time activity
+// suggestions) was removed -- direct feedback: none of its sections did anything the rest of the
+// app didn't already do better, and two of the three needed optional setup (Bank import, WOM
+// username) to show anything at all. A real, distinct replacement idea was floated -- an alert
+// when official news says an item is getting nerfed and you hold it -- but that's unbuilt, not a
+// port of what was here.
 const NAV_GROUPS: { label: string; tabs: Tab[] }[] = [
   {
     label: "Flipping Tools",
-    tabs: ["signals", "overnight", "moneymakers", "skilling", "actions", "sets", "lists"],
+    tabs: ["signals", "overnight", "moneymakers", "skilling", "sets", "lists"],
   },
   { label: "Analytics", tabs: ["portfolio", "flips", "bank"] },
   { label: "Resources", tabs: ["news"] },
@@ -163,7 +167,6 @@ function seedStarterLists(items: MarketItem[]): ItemList[] {
 function App() {
   const [tab, setTab] = useState<Tab>("market");
   const [items, setItems] = useState<MarketItem[]>([]);
-  const [heldItems, setHeldItems] = useState<MarketItem[]>([]);
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [search, setSearch] = useState("");
   const [settings, setSettingsRaw] = useState<Settings>(() => loadSettings());
@@ -230,8 +233,8 @@ function App() {
   }
 
   const marketItems = items.filter((i) => {
-    // Not filtered by index here: when one is active the fetch above already asked for exactly
-    // those ids, and re-filtering would be a second chance to get it wrong.
+    // Not filtered again here: when an index is active the fetch above already asked for exactly
+    // these ids, and re-filtering would be a second chance to get it wrong.
     if (preset === "volume" && (i.buy_limit ?? 0) < 10_000) return false;
     if (preset === "taxfree" && (i.tax ?? 0) !== 0) return false;
     // parseGpShorthand, not Number: the fields accept "10m" and "250k", and Number("10m") is NaN,
@@ -270,8 +273,7 @@ function App() {
   async function load() {
     try {
       const watchedIds = Object.keys(watched).map(Number);
-      const heldIds = Object.keys(holdings).map(Number);
-      const [itemsRes, statusRes, watchedRes, heldRes, alertsRes] = await Promise.all([
+      const [itemsRes, statusRes, watchedRes, alertsRes] = await Promise.all([
         // An index selection fetches its members BY ID rather than filtering the default page.
         // /api/items returns a capped 300 rows, so client-side filtering could only ever show the
         // basket's members that happened to be in that page -- 2 of the Chambers of Xeric 14,
@@ -287,12 +289,10 @@ function App() {
         watchedIds.length
           ? fetchItems({ ids: watchedIds })
           : Promise.resolve({ count: 0, items: [] }),
-        heldIds.length ? fetchItems({ ids: heldIds }) : Promise.resolve({ count: 0, items: [] }),
         fetchAlerts(),
       ]);
       setItems(itemsRes.items);
       setStatus(statusRes);
-      setHeldItems(heldRes.items);
       setAlerts(alertsRes.alerts);
       setError(null);
 
@@ -461,26 +461,10 @@ function App() {
               Dashboard
             </button>
             {NAV_GROUPS.map((group) => (
-              <NavDropdown
-                key={group.label}
-                label={group.label}
-                active={group.tabs.includes(tab)}
-                badge={
-                  group.tabs.includes("actions") && Object.keys(holdings).length > 0 ? (
-                    <span className="inline-flex items-center justify-center min-w-[1.1rem] h-[1.1rem] px-1 rounded-full text-[10px] font-semibold bg-violet-500/20 text-violet-300">
-                      {Object.keys(holdings).length}
-                    </span>
-                  ) : undefined
-                }
-              >
+              <NavDropdown key={group.label} label={group.label} active={group.tabs.includes(tab)}>
                 {group.tabs.map((key) => (
                   <NavDropdownItem key={key} active={tab === key} onClick={() => setTab(key)}>
                     {TAB_LABELS[key]}
-                    {key === "actions" && Object.keys(holdings).length > 0 && (
-                      <span className="ml-1.5 text-[10px] text-violet-300 font-semibold">
-                        {Object.keys(holdings).length}
-                      </span>
-                    )}
                   </NavDropdownItem>
                 ))}
               </NavDropdown>
@@ -720,16 +704,6 @@ function App() {
           <BankImport
             onUseAsBankroll={handleUseAsBankroll}
             onHoldingsChange={handleHoldingsChange}
-          />
-        )}
-        {tab === "actions" && (
-          <Actions
-            items={items}
-            heldItems={heldItems}
-            womUsername={settings.womUsername}
-            holdings={holdings}
-            onSelectItem={setSelectedItem}
-            onViewSignals={() => setTab("signals")}
           />
         )}
         {tab === "sets" && <Sets />}

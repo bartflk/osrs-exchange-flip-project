@@ -123,7 +123,9 @@ export function SlotShapeChart({
             stroke="rgb(96,165,250)"
             stroke-width="1.2"
             stroke-dasharray="3 2"
-          />
+          >
+            <title>{`Buy-side reference: ${formatGp(floor)}`}</title>
+          </line>
         )}
         {ceiling != null && (
           <line
@@ -134,11 +136,28 @@ export function SlotShapeChart({
             stroke="rgb(96,165,250)"
             stroke-width="1.2"
             stroke-dasharray="3 2"
-          />
+          >
+            <title>{`Sell-side reference: ${formatGp(ceiling)}`}</title>
+          </line>
         )}
 
-        <path d={pathFor(sells, min, max)} fill="none" stroke="rgb(52,211,153)" stroke-width="1.2" />
-        <path d={pathFor(buys, min, max)} fill="none" stroke="rgb(251,113,133)" stroke-width="1.2" />
+        {/* Dashed, same convention PriceChart uses for its own IQR forecast band -- this is a
+            median across several days, not a single real day's prints, so it should not read the
+            same as a solid, observed price line. */}
+        <path
+          d={pathFor(sells, min, max)}
+          fill="none"
+          stroke="rgb(52,211,153)"
+          stroke-width="1.2"
+          stroke-dasharray="4,2.5"
+        />
+        <path
+          d={pathFor(buys, min, max)}
+          fill="none"
+          stroke="rgb(251,113,133)"
+          stroke-width="1.2"
+          stroke-dasharray="4,2.5"
+        />
 
         {buyPoint != null && (
           <circle cx={xOf(buySlot)} cy={yOf(buyPoint, min, max)} r="3" fill="rgb(251,113,133)" stroke="#0f1015" stroke-width="1" />
@@ -154,6 +173,17 @@ export function SlotShapeChart({
         <span className="text-emerald-400">● sell {slotToLocalLabel(sellSlot)}</span>
         <span>24:00</span>
       </div>
+
+      {/* The blue lines are your own reference prices, not more model output, so they get their
+          own legend with the actual gp values rather than making the reader hover to find out. */}
+      {(floor != null || ceiling != null) && (
+        <div className="flex items-center gap-3 text-[9px] text-sky-400/80 mt-1">
+          <span className="inline-block w-3 border-t border-dashed border-sky-400" />
+          {floor != null && <span>buy-side {formatGp(floor)}</span>}
+          {floor != null && ceiling != null && <span className="text-gray-600">·</span>}
+          {ceiling != null && <span>sell-side {formatGp(ceiling)}</span>}
+        </div>
+      )}
 
       {/* One bar per measured day, in date order: the outcomes the median is a summary of. A
           reader can see three red days behind a green median without reading a number. */}

@@ -4,9 +4,11 @@ import {
   fetchItems,
   type HighlightEntry,
   type HighlightList,
+  type HighlightWindow,
   type MarketItem,
 } from "../api";
 import { formatGp } from "../format";
+import { Chip } from "./ui";
 
 // Market Highlights: nine curated leaderboards under the Market table, replacing the old
 // Trending movers / Sector indices / Substitution flags stack. The table above answers "what
@@ -16,6 +18,15 @@ import { formatGp } from "../format";
 // tracked universe (backend highlights.ts), not over the table's filtered top 300.
 
 const PREVIEW_ROWS = 8;
+
+// Day / week / month. The gainers and losers cards are the only ones this touches -- the rest of
+// the panel reads the current order book, where a window has no meaning -- so the control is
+// labelled as a movers window rather than sitting over the grid as if it filtered everything.
+const WINDOWS: { key: HighlightWindow; label: string }[] = [
+  { key: "1d", label: "1d" },
+  { key: "7d", label: "7d" },
+  { key: "30d", label: "30d" },
+];
 
 // Whole-market turnover runs into the trillions, which formatGp (billions at the top) would
 // render as "4921.00b". Only this one number is that large, so it gets a local formatter rather
@@ -33,10 +44,12 @@ function iconUrl(icon: string): string {
 function Row({
   entry,
   metric,
+  timeWindow,
   onClick,
 }: {
   entry: HighlightEntry;
   metric: HighlightList["metric"];
+  timeWindow: HighlightWindow;
   onClick: () => void;
 }) {
   const signed = metric === "change";
@@ -65,7 +78,7 @@ function Row({
             className={`text-xs font-mono w-20 text-right ${valueClass}`}
             title={
               entry.changePct != null
-                ? `${(entry.changePct * 100).toFixed(1)}% over 24h`
+                ? `${(entry.changePct * 100).toFixed(1)}% over ${timeWindow}`
                 : undefined
             }
           >
@@ -78,7 +91,15 @@ function Row({
   );
 }
 
-function Card({ list, onOpen }: { list: HighlightList; onOpen: (entry: HighlightEntry) => void }) {
+function Card({
+  list,
+  timeWindow,
+  onOpen,
+}: {
+  list: HighlightList;
+  timeWindow: HighlightWindow;
+  onOpen: (entry: HighlightEntry) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const shown = expanded ? list.entries : list.entries.slice(0, PREVIEW_ROWS);
   const canExpand = list.entries.length > PREVIEW_ROWS;
@@ -109,7 +130,13 @@ function Card({ list, onOpen }: { list: HighlightList; onOpen: (entry: Highlight
         <p className="text-xs text-gray-600 py-2 px-1.5">{list.hint}</p>
       ) : (
         shown.map((e) => (
-          <Row key={e.itemId} entry={e} metric={list.metric} onClick={() => onOpen(e)} />
+          <Row
+            key={e.itemId}
+            entry={e}
+            metric={list.metric}
+            timeWindow={timeWindow}
+            onClick={() => onOpen(e)}
+          />
         ))
       )}
     </div>
@@ -123,6 +150,7 @@ export function MarketHighlights({
   items: MarketItem[];
   onSelectItem: (item: MarketItem) => void;
 }) {
+  const [timeWindow, setTimeWindow] = useState<HighlightWindow>("1d");
   const [lists, setLists] = useState<HighlightList[]>([]);
   const [tradedValue, setTradedValue] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -130,7 +158,9 @@ export function MarketHighlights({
 
   useEffect(() => {
     let cancelled = false;
-    fetchHighlights()
+    setLoading(true);
+    setError(null);
+    fetchHighlights(timeWindow)
       .then((res) => {
         if (cancelled) return;
         setLists(res.lists);
@@ -141,7 +171,7 @@ export function MarketHighlights({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [timeWindow]);
 
   // A highlighted item is often outside whatever the Market table is currently filtered to, so
   // fall back to fetching it by id rather than silently doing nothing on click (same pattern the
@@ -159,18 +189,28 @@ export function MarketHighlights({
 
   return (
     <div>
-      <div className="mb-3">
-        <h3 className="text-base font-medium text-gray-100">Market highlights</h3>
-        <p className="text-xs text-gray-500">
-          The whole tracked market at a glance, ignoring the filters above.
-          {tradedValue != null && (
-            <>
-              {" "}
-              Rough 24h turnover:{" "}
-              <span className="text-gray-300 font-mono">{formatTurnover(tradedValue)}</span>.
-            </>
-          )}
-        </p>
+      <div className="mb-3 flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h3 className="text-base font-medium text-gray-100">Market highlights</h3>
+          <p className="text-xs text-gray-500">
+            The whole tracked market at a glance, ignoring the filters above.
+            {tradedValue != null && (
+              <>
+                {" "}
+                Rough 24h turnover:{" "}
+                <span className="text-gray-300 font-mono">{formatTurnover(tradedValue)}</span>.
+              </>
+            )}
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] uppercase tracking-wide text-gray-500">Movers window</span>
+          {WINDOWS.map((w) => (
+            <Chip key={w.key} active={timeWindow === w.key} onClick={() => setTimeWindow(w.key)}>
+              {w.label}
+            </Chip>
+          ))}
+        </div>
       </div>
 
       {loading && <p className="text-xs text-gray-500 py-2">Loading highlights…</p>}
@@ -178,7 +218,7 @@ export function MarketHighlights({
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
         {lists.map((list) => (
-          <Card key={list.key} list={list} onOpen={open} />
+          <Card key={list.key} list={list} timeWindow={timeWindow} onOpen={open} />
         ))}
       </div>
     </div>

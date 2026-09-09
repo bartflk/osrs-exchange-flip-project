@@ -1,11 +1,27 @@
 import { useEffect, useState } from "preact/hooks";
-import { fetchSlotProfile, type MarketItem, type SlotProfileResponse } from "../api";
+import {
+  fetchSlotProfile,
+  fetchTimeseries,
+  fetchForecast,
+  type ForecastPoint,
+  type Lookback,
+  type MarketItem,
+  type SlotProfileResponse,
+  type TimeseriesPoint,
+} from "../api";
 import { formatGp, formatGpFull, formatPct } from "../format";
 import { geTax, priceAtFill } from "../fillPricing";
 import { formatWait, msUntilSlot, slotToLocalLabel } from "../timeSlots";
 import { STATUS_STYLE, type OvernightPlan, type SlotView } from "../geSlots";
 import { SlotShapeChart } from "./SlotShapeChart";
+import { PriceChart } from "./PriceChart";
 import { Button } from "./ui";
+
+const REAL_CHART_LOOKBACKS: { key: Lookback; label: string }[] = [
+  { key: "24h", label: "1d" },
+  { key: "7d", label: "7d" },
+  { key: "30d", label: "30d" },
+];
 
 // The detail view for a POSITION, as distinct from the item.
 //
@@ -78,6 +94,40 @@ export function PositionModal({
       cancelled = true;
     };
   }, [itemId, buySlot, sellSlot]);
+
+  // Direct request: "I would like to have a real chart of the item as well to compare." The
+  // panel above (SlotShapeChart) is a MODEL, medians across several days, not any single day's
+  // real prints. This is the actual observed price series, the same PriceChart used in the item
+  // detail modal, so the two can be compared side by side rather than only trusting the model.
+  const [realLookback, setRealLookback] = useState<Lookback>("7d");
+  const [realPoints, setRealPoints] = useState<TimeseriesPoint[]>([]);
+  useEffect(() => {
+    if (itemId == null) return;
+    let cancelled = false;
+    setRealPoints([]);
+    fetchTimeseries(itemId, realLookback)
+      .then((res) => !cancelled && setRealPoints(res.points))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [itemId, realLookback]);
+
+  // Direct request: "on the chart below I want the prediction bands." Same IQR forecast
+  // (forecast.ts) already shown in the item detail modal, appended to the real series -- not
+  // tied to realLookback since a forecast always projects ~24h forward from now, independent of
+  // which historical window is currently selected.
+  const [forecast, setForecast] = useState<ForecastPoint[]>([]);
+  useEffect(() => {
+    if (itemId == null) return;
+    let cancelled = false;
+    fetchForecast(itemId)
+      .then((res) => !cancelled && setForecast(res.points))
+      .catch(() => !cancelled && setForecast([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [itemId]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -218,11 +268,21 @@ export function PositionModal({
           </div>
         )}
 
-        {/* The shape, at a readable size rather than a 54px sparkline. */}
+        {/* The shape, at a readable size rather than a 54px sparkline. Labeled "model" and drawn
+            with dashed lines, same convention PriceChart already uses for its own IQR forecast
+            band, since this is a median across several days, not any single day's real prints. */}
         {data ? (
           <div className="panel-inset rounded-xl p-3 mb-3">
-            <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">
-              Typical day · your price ruled
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <div className="text-[10px] uppercase tracking-wider text-gray-500">
+                Typical day · your price ruled
+              </div>
+              <span
+                className="text-[9px] uppercase tracking-wider text-sky-400/80"
+                title="Median buy/sell per half-hour slot across the stored sample, not a live price"
+              >
+                Model, median of {data.pairedDays || data.spanDays || "the"} days
+              </span>
             </div>
             <div className="[&_svg]:!h-[150px]">
               <SlotShapeChart
@@ -236,6 +296,45 @@ export function PositionModal({
           </div>
         ) : (
           <div className="h-[180px] rounded-xl bg-white/[0.03] animate-pulse mb-3" />
+        )}
+
+        {/* The real chart, so the model above can be checked against actual prints instead of
+            just trusted. Same PriceChart used everywhere else in the app, not a second
+            implementation. */}
+        {itemId != null && (
+          <div className="panel-inset rounded-xl p-3 mb-3">
+            <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+              <div className="text-[10px] uppercase tracking-wider text-gray-500">
+                Real price history
+              </div>
+              <div className="flex items-center gap-1">
+                <span
+                  className="text-[9px] uppercase tracking-wider text-emerald-400/80 mr-1"
+                  title="Actual observed prices, not a model"
+                >
+                  Real, not a model
+                </span>
+                {REAL_CHART_LOOKBACKS.map((lb) => (
+                  <button
+                    key={lb.key}
+                    onClick={() => setRealLookback(lb.key)}
+                    className={`px-2 py-0.5 rounded-md text-[10px] transition-colors ${
+                      realLookback === lb.key
+                        ? "bg-white/10 text-white"
+                        : "text-gray-500 hover:text-gray-300"
+                    }`}
+                  >
+                    {lb.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {realPoints.length > 0 ? (
+              <PriceChart points={realPoints} forecast={forecast} />
+            ) : (
+              <div className="h-[180px] rounded-xl bg-white/[0.03] animate-pulse" />
+            )}
+          </div>
         )}
 
         {/* Live market context -- the thing your price is being judged against. */}

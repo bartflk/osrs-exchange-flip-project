@@ -25,6 +25,7 @@ import { PositionModal } from "./PositionModal";
 import {
   buildSlotViews,
   countNeedsAction,
+  totalSlotValue,
   type OvernightPlan,
   type SlotView,
 } from "../geSlots";
@@ -150,6 +151,19 @@ export function OvernightTrading({
   function updateFillTarget(v: number) {
     setFillTarget(Math.max(10, Math.min(95, v)));
   }
+  // Direct request: "have the 'idle' number adjustable so i can make it more accurate in keeping
+  // track." Same override pattern as BuySignals.tsx's Idle field (separate localStorage key --
+  // Overnight's allocation runs against a different candidate set/window, so its computed idle
+  // figure is genuinely a different number, not a duplicate of Active flipping's).
+  const [idleOverride, setIdleOverrideRaw] = useState<number | null>(() => {
+    const raw = localStorage.getItem("idleOverrideOvernight");
+    return raw != null ? Number(raw) : null;
+  });
+  function setIdleOverride(v: number | null) {
+    setIdleOverrideRaw(v);
+    if (v == null) localStorage.removeItem("idleOverrideOvernight");
+    else localStorage.setItem("idleOverrideOvernight", String(v));
+  }
   // Persisted on a trailing timer rather than on every input event. localStorage.setItem is a
   // synchronous write, and dragging a range input fires it on every step -- with eight slot cards
   // re-rendering their SVGs on the same tick, that write lands right in the middle of the frame
@@ -248,6 +262,10 @@ export function OvernightTrading({
   const occupiedSlots = portfolio?.slots.length ?? 0;
   const suggestionSlots = Math.max(0, numSlots - occupiedSlots);
   const committedGp = portfolio?.totals.cashInBuyOffers ?? 0;
+  // Direct request: same total the in-game GE window shows in its own title bar -- price *
+  // quantity across every occupied slot, buy and sell alike, not just the buy-side committedGp
+  // above (that one is for bankroll math, this one is "how much wealth is on the GE right now").
+  const totalGeValue = totalSlotValue(portfolio?.slots ?? []);
   const availableBankroll = Math.max(0, bankroll - committedGp);
 
   useEffect(() => {
@@ -561,6 +579,14 @@ export function OvernightTrading({
               </span>
             )}
           </h3>
+          {totalGeValue > 0 && (
+            <span
+              className="font-mono text-sm text-gray-200"
+              title="Sum of price × quantity across every occupied slot, buy and sell alike -- the same total the in-game GE window shows in its own title bar"
+            >
+              In GE {formatGp(totalGeValue)}
+            </span>
+          )}
         </div>
 
         {error && <p className="text-xs text-rose-400">{error}</p>}
@@ -698,13 +724,32 @@ export function OvernightTrading({
                 sub="if it repeats"
                 tone={boardOutlook.suggested.worst < 0 ? "text-rose-400" : "text-gray-300"}
               />
-              <Figure
-                label="Idle"
-                value={formatGp(allocation.remainingBankroll)}
-                sub="unspent"
-                tone="text-gray-400"
-                explain="maximizeUtilization"
-              />
+              <div className="min-w-0">
+                <div className="flex items-center gap-1 text-[9px] uppercase tracking-wider text-gray-500">
+                  <span className="truncate">Idle</span>
+                  <InfoTip id="maximizeUtilization" />
+                </div>
+                <div
+                  className="flex items-center gap-1"
+                  title="Editable -- corrects for cash the app can't see (bank/inventory not reflected in Bankroll). Defaults to bankroll − committed − suggested cost."
+                >
+                  <GpInput
+                    value={idleOverride ?? allocation.remainingBankroll}
+                    onChange={setIdleOverride}
+                    className="w-20 px-1.5 font-mono text-sm font-semibold text-gray-200"
+                  />
+                  {idleOverride != null && (
+                    <button
+                      onClick={() => setIdleOverride(null)}
+                      title="Reset to computed value"
+                      className="text-[9px] text-violet-400 hover:text-violet-300 shrink-0"
+                    >
+                      auto
+                    </button>
+                  )}
+                </div>
+                <div className="text-[10px] text-gray-600 truncate">unspent</div>
+              </div>
             </div>
           </div>
         </div>
