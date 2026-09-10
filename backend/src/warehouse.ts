@@ -68,8 +68,27 @@ async function initSchema(conn: DuckDBConnection): Promise<void> {
   `);
 }
 
+/**
+ * Caps on DuckDB, which has none of its own worth having here.
+ *
+ * DuckDB defaults `memory_limit` to 80% of SYSTEM RAM and `threads` to the core count. Those are
+ * the right defaults for a dedicated analytics box and completely wrong for a background table
+ * inside a Fastify server that also has to answer a price poll every sixty seconds. Left alone its
+ * buffer manager is entitled to grow into most of the machine, and nothing in this file needs more
+ * than a few hundred megabytes: the largest thing it holds is a daily rollup of price history,
+ * which is a few thousand rows a day.
+ *
+ * 256MB and two threads. If a query ever genuinely needs more, DuckDB spills to disk rather than
+ * failing, which is the correct trade for an analytical cache that is never on the critical path.
+ */
+const DUCKDB_MEMORY_LIMIT = "256MB";
+const DUCKDB_THREADS = 2;
+
 async function openWarehouse(): Promise<DuckDBConnection> {
-  const instance = await DuckDBInstance.create(warehousePath);
+  const instance = await DuckDBInstance.create(warehousePath, {
+    memory_limit: DUCKDB_MEMORY_LIMIT,
+    threads: String(DUCKDB_THREADS),
+  });
   const conn = await instance.connect();
   await initSchema(conn);
   return conn;

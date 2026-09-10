@@ -1,4 +1,4 @@
-import { useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useState } from "preact/hooks";
 import type { MarketItem } from "../api";
 import { formatGp, formatPct } from "../format";
 import { type WatchEntry, toggleWatch } from "../watchlist";
@@ -35,6 +35,9 @@ type SortKey =
 // Sort keys whose "natural" first click is ascending (A-Z, soonest-first) rather than the
 // descending "biggest number first" every gp/pct/score column defaults to.
 const ASC_FIRST: Partial<Record<SortKey, true>> = { name: true, price_age: true };
+
+/** How many rows to draw at once, and how many more each click of the button adds. */
+const ROW_STEP = 150;
 
 // Potential profit = net margin over a full buy-limit cycle (the most you could pocket
 // flipping this item to its GE limit right now) -- not tracked server-side, since it's a
@@ -550,6 +553,14 @@ export function MarketTable({
   // single honest answer to "where should I look first". Score used to be the default and was a
   // near-duplicate of the margin column beside it.
   const [sortKey, setSortKey] = useState<SortKey>("rank");
+  // Rows are rendered in pages, not all at once.
+  //
+  // The server hands over about 1,100 rows and this table used to render every one: roughly 42,000
+  // DOM nodes, and on every re-render 1,100 rows worth of tooltip components and rebuilt sparkline
+  // paths. That is a lot of work for a list nobody scrolls past the top of, and it was the
+  // multiplier that turned a once-a-second re-render into an out-of-memory crash. The sort is
+  // still over ALL the rows, so the top of the list is the true top; only the drawing is capped.
+  const [rowLimit, setRowLimit] = useState(ROW_STEP);
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
   const [columnFilters, setColumnFilters] = useState<Partial<Record<SortKey, ColumnFilter>>>({});
   const [openFilterKey, setOpenFilterKey] = useState<SortKey | null>(null);
@@ -586,6 +597,14 @@ export function MarketTable({
     copy.sort((a, b) => (valueOf(a) - valueOf(b)) * sortDir);
     return copy;
   }, [filtered, sortKey, sortDir]);
+
+  const visible = useMemo(() => sorted.slice(0, rowLimit), [sorted, rowLimit]);
+
+  // Re-sorting or re-filtering means you are looking for something new, so the page count goes
+  // back to the top rather than leaving you scrolled into a list that has changed underneath you.
+  useEffect(() => {
+    setRowLimit(ROW_STEP);
+  }, [sortKey, sortDir, columnFilters]);
 
   function openFilter(key: SortKey) {
     const existing = columnFilters[key];
@@ -775,7 +794,7 @@ export function MarketTable({
             </tr>
           </thead>
           <tbody>
-            {sorted.map((item, idx) => {
+            {visible.map((item, idx) => {
               const positive = (item.net_margin ?? 0) >= 0;
               const isWatched = !!watched[item.id];
               const isBlocked = !!blocked[item.id];
@@ -910,6 +929,18 @@ export function MarketTable({
           </tbody>
         </table>
       </div>
+
+      {sorted.length > visible.length && (
+        <div className="px-3 py-3 flex items-center gap-3 border-t border-white/[0.06]">
+          <Button onClick={() => setRowLimit((n) => n + ROW_STEP)}>
+            Show {Math.min(ROW_STEP, sorted.length - visible.length).toLocaleString()} more
+          </Button>
+          <span className="text-[11px] text-gray-500">
+            Showing {visible.length.toLocaleString()} of {sorted.length.toLocaleString()} rows,
+            ranked across all of them.
+          </span>
+        </div>
+      )}
     </div>
   );
 }

@@ -45,6 +45,7 @@ import type { BankValueItem } from "./api";
 import { MoneyMakers } from "./components/MoneyMakers";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { PollCountdown } from "./components/PollCountdown";
 import { Skilling } from "./components/Skilling";
 import { Lists } from "./components/Lists";
 import { loadLists, createList, type ItemList } from "./lists";
@@ -401,7 +402,6 @@ function App() {
   // setInterval, clicking refresh wouldn't push back the *next* auto-fire, so you'd sometimes
   // see two loads a few seconds apart. The displayed countdown is driven by the backend's real
   // poll timestamp (status.nextPricePollAt below), not this tab's own fetch cadence.
-  const [nowTick, setNowTick] = useState<number>(Date.now());
   const [refreshing, setRefreshing] = useState(false);
   const refreshTimeoutRef = useRef<number | null>(null);
 
@@ -428,19 +428,9 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [minVolume, search, watched, holdings, settings, f2pOnly, indexItemIds]);
 
-  // UI-only ticker for the countdown display -- doesn't touch the actual poll schedule above.
-  useEffect(() => {
-    const id = setInterval(() => setNowTick(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  // DESIGN.md §14.22: driven by the backend's real poll timestamp (status.nextPricePollAt), not
-  // a frontend-side guess derived from this tab's own fetch cadence -- those two clocks have no
-  // fixed relationship to each other, which is exactly why the old version looked "out of sync."
-  const secondsUntilPricePoll =
-    status?.nextPricePollAt != null
-      ? Math.max(0, Math.round((status.nextPricePollAt - nowTick) / 1000))
-      : null;
+  // The once-a-second ticker that used to live here now lives inside PollCountdown, because a
+  // state change in THIS component re-renders the whole application, market table included, and
+  // doing that sixty times a minute was allocating about 20MB a second. See PollCountdown.
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_15%_-15%,rgba(168,85,247,0.20)_0%,transparent_40%),radial-gradient(circle_at_100%_0%,rgba(56,132,255,0.14)_0%,transparent_35%),radial-gradient(circle_at_20%_-10%,#1e2130_0%,#0b0c10_55%)]">
@@ -483,14 +473,7 @@ function App() {
             {status
               ? `${status.itemCount.toLocaleString()} items · ${formatAgo(status.lastUpdate)}`
               : "connecting…"}
-            {secondsUntilPricePoll != null && (
-              <>
-                <span className="text-gray-600">·</span>
-                <span title="Time until the backend's next real 60s Wiki API poll">
-                  data in {secondsUntilPricePoll}s
-                </span>
-              </>
-            )}
+            <PollCountdown nextPollAt={status?.nextPricePollAt ?? null} />
           </div>
           <IconButton
             onClick={runRefreshCycle}
