@@ -10,5 +10,7 @@
     "skipLibCheck": true,
     "resolveJsonModule": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  "_comment": "Tests are run by `npm test` through tsx, not compiled -- they would otherwise ship inside dist/ and be started by `npm start`.",
+  "exclude": ["src/**/*.test.ts"]
 }
