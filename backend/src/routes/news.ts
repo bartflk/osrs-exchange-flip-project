@@ -48,23 +48,37 @@ export async function newsRoutes(app: FastifyInstance) {
   // sent here per-request to be matched, never stored server-side. This endpoint reads the ids
   // and forgets them.
   app.post("/api/nerf-watch", async (req, reply) => {
-    const { itemIds, lookbackDays } = (req.body ?? {}) as {
+    const { itemIds, lookbackDays, chatterDays } = (req.body ?? {}) as {
       itemIds?: unknown;
       lookbackDays?: unknown;
+      chatterDays?: unknown;
     };
     if (!Array.isArray(itemIds)) {
       return reply.code(400).send({ error: "itemIds: number[] required" });
     }
     const ids = itemIds.filter((v): v is number => typeof v === "number" && Number.isFinite(v));
-    const days =
-      typeof lookbackDays === "number" && Number.isFinite(lookbackDays)
-        ? Math.min(180, Math.max(1, Math.round(lookbackDays)))
+
+    // Clamped rather than rejected: these are reading windows, and a nonsense value should quietly
+    // become the nearest sensible one instead of failing a request over a preference. Undefined
+    // means "whatever the scanner defaults to", which is not the same as zero days.
+    const clampDays = (v: unknown, max: number) =>
+      typeof v === "number" && Number.isFinite(v)
+        ? Math.min(max, Math.max(1, Math.round(v)))
         : undefined;
+
+    // Capped lower than the official window on purpose. Chatter is a signal only while it is
+    // still current: a year of Reddit is not a wider view of the market, it is a list of
+    // arguments that already resolved.
+    const chatterWindow = clampDays(chatterDays, 90);
+
     // Two lists, not one merged feed. Changelogs state facts about the game; Reddit states facts
     // about a conversation, and the caller renders them at different weights precisely because
     // they are worth different amounts. Merging here would throw that distinction away before the
     // UI ever got the chance to honour it.
-    return { matches: scanForHeldItems(ids, days), chatter: scanChatter(ids) };
+    return {
+      matches: scanForHeldItems(ids, clampDays(lookbackDays, 180)),
+      chatter: scanChatter(ids, chatterWindow),
+    };
   });
 
   // DESIGN.md §10 item 45: rank items by how much a given patch moved their price, before/after.

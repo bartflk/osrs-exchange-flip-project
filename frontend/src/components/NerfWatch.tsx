@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import { fetchNerfWatch, type ChatterItem, type MarketItem, type NerfWatchMatch } from "../api";
 import type { HoldingEntry } from "../bankHoldings";
 import { formatGp } from "../format";
+import { Chip } from "./ui";
 
 // Patch notes that name something you are holding.
 //
@@ -17,6 +18,26 @@ import { formatGp } from "../format";
 // urgent.
 
 const DISMISS_KEY = "nerfWatchDismissed";
+const CHATTER_DAYS_KEY = "nerfWatchChatterDays";
+
+// Offered as a few fixed windows rather than a free number, because the choice being made is
+// coarse -- "this week", "this fortnight", "this month" -- and a spinner would invite picking 23
+// as though the extra precision meant something.
+//
+// Each step is a different question. A week is what is being talked about right now; a fortnight
+// catches a story that built slowly; a month is mostly for looking back at whether the chatter
+// led the price, which is a research question rather than an alerting one.
+const CHATTER_WINDOWS = [7, 14, 30];
+const DEFAULT_CHATTER_DAYS = 14;
+
+function loadChatterDays(): number {
+  try {
+    const raw = Number(localStorage.getItem(CHATTER_DAYS_KEY));
+    return CHATTER_WINDOWS.includes(raw) ? raw : DEFAULT_CHATTER_DAYS;
+  } catch {
+    return DEFAULT_CHATTER_DAYS;
+  }
+}
 
 function loadDismissed(): Set<string> {
   try {
@@ -214,6 +235,16 @@ export function NerfWatch({
   const [dismissed, setDismissed] = useState<Set<string>>(loadDismissed);
   const [showMentions, setShowMentions] = useState(false);
   const [showChatter, setShowChatter] = useState(false);
+  const [chatterDays, setChatterDaysRaw] = useState<number>(loadChatterDays);
+
+  function setChatterDays(days: number) {
+    setChatterDaysRaw(days);
+    try {
+      localStorage.setItem(CHATTER_DAYS_KEY, String(days));
+    } catch {
+      // Same stance as the dismiss list: a blocked localStorage costs the preference, not the panel.
+    }
+  }
 
   // Sorted and joined so the dependency is the SET of held ids, not the holdings object. Bank
   // values are rewritten on every valuation refresh, so keying on the object itself would refetch
@@ -235,7 +266,7 @@ export function NerfWatch({
       setChatter([]);
       return;
     }
-    fetchNerfWatch(ids)
+    fetchNerfWatch(ids, chatterDays)
       .then((res) => {
         if (cancelled) return;
         setMatches(res.matches);
@@ -250,7 +281,7 @@ export function NerfWatch({
     return () => {
       cancelled = true;
     };
-  }, [heldKey]);
+  }, [heldKey, chatterDays]);
 
   function dismiss(key: string) {
     setDismissed((prev) => {
@@ -264,7 +295,12 @@ export function NerfWatch({
   const directional = visible.filter((m) => m.impact !== "unclear");
   const mentions = visible.filter((m) => m.impact === "unclear");
 
-  if (visible.length === 0 && chatter.length === 0) return null;
+  // The panel stays up when the window has been moved off its default, even with nothing to show.
+  // Otherwise narrowing to 7d and finding nothing would take the whole section away, chips
+  // included, leaving no way back to a wider view -- a setting you can turn on but not off. An
+  // untouched window that finds nothing still renders nothing, so the ordinary quiet day is quiet.
+  const windowChanged = chatterDays !== DEFAULT_CHATTER_DAYS;
+  if (visible.length === 0 && chatter.length === 0 && !windowChanged) return null;
 
   function exposureOf(m: NerfWatchMatch): number | null {
     return holdings[m.itemId]?.netValue ?? null;
@@ -332,38 +368,52 @@ export function NerfWatch({
       {/* Reddit, last. Below the changelog rows AND below the bare mentions, because the ordering
           of this panel is a ranking by how much each row is worth believing: a stated change, then
           a stated fact with no direction, then people talking. */}
-      {chatter.length > 0 && (
-        <div className="mt-3 pt-3 border-t border-white/[0.06]">
+      <div className="mt-3 pt-3 border-t border-white/[0.06]">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => setShowChatter((v) => !v)}
             className="text-[11px] text-gray-500 hover:text-gray-300"
           >
             {showChatter ? "Hide" : "Show"} Reddit chatter on {chatter.length} of your item
             {chatter.length === 1 ? "" : "s"}
-            <span className="text-gray-700"> · last 14 days</span>
+            <span className="text-gray-700"> · last {chatterDays} days</span>
           </button>
-          {showChatter && (
-            <div className="flex flex-col gap-2 mt-2">
-              <p className="text-[10px] text-gray-600 max-w-2xl">
-                Posts naming an item you hold. No direction is read from these: the classifier above
-                understands changelog grammar, and a post title is a different language. Chatter
-                often moves before the price does, so the count and the headlines are the signal.
-              </p>
-              {chatter.map((c) => (
-                <ChatterRow
-                  key={c.itemId}
-                  item={c}
-                  exposure={holdings[c.itemId]?.netValue ?? null}
-                  onOpen={() => {
-                    const item = items.find((i) => i.id === c.itemId);
-                    if (item) onSelectItem(item);
-                  }}
-                />
-              ))}
-            </div>
-          )}
+          {/* Visible whether or not the list is open, so the window can be widened by someone who
+              is looking at "chatter on 0 of your items" and wondering if that is the whole story. */}
+          <span className="ml-auto flex items-center gap-1">
+            {CHATTER_WINDOWS.map((d) => (
+              <Chip
+                key={d}
+                active={chatterDays === d}
+                onClick={() => setChatterDays(d)}
+                className="px-2 py-0.5 text-[10px]"
+              >
+                {d}d
+              </Chip>
+            ))}
+          </span>
         </div>
-      )}
+        {showChatter && (
+          <div className="flex flex-col gap-2 mt-2">
+            <p className="text-[10px] text-gray-600 max-w-2xl">
+              Posts naming an item you hold. No direction is read from these: the classifier above
+              understands changelog grammar, and a post title is a different language. Chatter often
+              moves before the price does, so the count and the headlines are the signal.
+            </p>
+            {chatter.map((c) => (
+              <ChatterRow
+                key={c.itemId}
+                item={c}
+                exposure={holdings[c.itemId]?.netValue ?? null}
+                onOpen={() => {
+                  const item = items.find((i) => i.id === c.itemId);
+                  if (item) onSelectItem(item);
+                }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

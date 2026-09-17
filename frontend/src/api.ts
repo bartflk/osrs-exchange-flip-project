@@ -361,12 +361,14 @@ export interface ChatterItem {
 
 export async function fetchNerfWatch(
   itemIds: number[],
+  /** Days of Reddit to read. Omitted leaves the backend's own default (14) in charge. */
+  chatterDays?: number,
 ): Promise<{ matches: NerfWatchMatch[]; chatter: ChatterItem[] }> {
   if (itemIds.length === 0) return { matches: [], chatter: [] };
   const res = await fetch("/api/nerf-watch", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ itemIds }),
+    body: JSON.stringify({ itemIds, chatterDays }),
   });
   if (!res.ok) throw new Error(`Failed to fetch nerf watch: ${res.status}`);
   return res.json();
