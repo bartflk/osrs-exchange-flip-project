@@ -17,18 +17,13 @@ import { TradingHoursPanel } from "./TradingHoursPanel";
 import { fetchTradingHours, type TradingHours } from "../api";
 import type { HoldingEntry } from "../bankHoldings";
 import type { WatchEntry } from "../watchlist";
-import {
-  type ItemList,
-  loadLists,
-  createList,
-  addItemToList,
-  removeItemFromList,
-} from "../lists";
+import { type ItemList, loadLists, createList, addItemToList, removeItemFromList } from "../lists";
 import { computeSizingTiers, type SizingTierName } from "../positionSizing";
 import { MarketIntelligencePanel } from "./MarketIntelligencePanel";
 import { TechnicalIndicatorsPanel } from "./TechnicalIndicatorsPanel";
 import { ItemMentions } from "./ItemMentions";
 import { OvernightVerdictPanel } from "./OvernightVerdict";
+import { computeDayLevels, type DayLevels } from "../dayLevels";
 import { InfoTip } from "./InfoTip";
 import type { ExplanationId } from "../explanations";
 
@@ -159,6 +154,23 @@ export function ItemDetailModal({
     }
     return out;
   }, [tradingHours]);
+
+  // The day's two offer levels. Keyed on item.id ONLY, and always fetched at 24h, for the same
+  // reason the forecast below is: the lines answer "where should I park an offer today", which
+  // does not change because you zoomed the chart out to 30d. Tying them to `lookback` would also
+  // make them unavailable at 6h, where the series simply does not contain a day.
+  const [dayPoints, setDayPoints] = useState<TimeseriesPoint[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    setDayPoints([]);
+    fetchTimeseries(item.id, "24h")
+      .then((res) => !cancelled && setDayPoints(res.points))
+      .catch(() => {}); // additive: the chart is fully usable without the lines
+    return () => {
+      cancelled = true;
+    };
+  }, [item.id]);
+  const dayLevels = useMemo(() => computeDayLevels(dayPoints), [dayPoints]);
 
   useEffect(() => {
     let cancelled = false;
@@ -341,7 +353,10 @@ export function ItemDetailModal({
                 </div>
               )}
             </div>
-            <button onClick={onClose} className="text-gray-500 hover:text-white text-lg leading-none">
+            <button
+              onClick={onClose}
+              className="text-gray-500 hover:text-white text-lg leading-none"
+            >
               ✕
             </button>
           </div>
@@ -416,16 +431,15 @@ export function ItemDetailModal({
             below.
           </p>
         )}
-        {/* The verdict sits ABOVE the chart. The chart is evidence; this is the conclusion, and a
-            reader looking at an item overnight wants the answer first and the shape of the data
-            second. */}
-        <OvernightVerdictPanel
-          itemId={item.id}
-          bankroll={bankroll}
-          forecast={forecast}
-          currentPrice={item.low ?? item.high ?? null}
-        />
+        {/* The verdict used to sit ABOVE the chart, on the reasoning that a reader wants the
+            conclusion first and the shape of the data second. That reasoning was sound and the
+            layout still lost: the panel was tall enough to push the chart most of a screen down,
+            so the thing people open this modal for needed a scroll to reach.
 
+            It is now a slim strip UNDER the chart, collapsed. The conclusion is not buried by
+            that -- the strip still states the verdict, the edge and the per-cycle profit on its
+            face. Only the working folds away, which is the part you go looking for rather than
+            the part you need at a glance. */}
         <PriceChart
           points={points}
           blended={blended}
@@ -433,6 +447,16 @@ export function ItemDetailModal({
           forecastMeta={forecast}
           events={chartEvents}
           hourMarkers={hourMarkers}
+          dayLevels={dayLevels}
+        />
+
+        {dayLevels && <DayLevelStrip levels={dayLevels} />}
+
+        <OvernightVerdictPanel
+          itemId={item.id}
+          bankroll={bankroll}
+          forecast={forecast}
+          currentPrice={item.low ?? item.high ?? null}
         />
 
         {/* Direct feedback (twice now): stop rendering this as separate boxes with gaps between
@@ -469,104 +493,106 @@ export function ItemDetailModal({
             </div>
           )}
 
-        {/* Ten stats in a five-wide grid, which is two full rows with no gaps.
+          {/* Ten stats in a five-wide grid, which is two full rows with no gaps.
             
             It used to be eleven in an eight-wide grid, so the second row was three numbers and
             five empty bordered boxes, which is most of the dead space in this panel. Four of the
             eleven were Buy at, Sell at, Net margin and ROI: the same four already printed twice
             the size above the chart. Repeating them bought nothing and cost the row that made the
             grid ragged. */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 divide-x divide-y divide-white/[0.06]">
-          <Stat
-            label="GE tax (2%)"
-            value={item.tax ? `-${formatGp(item.tax)}` : "-"}
-            positive={item.tax ? false : undefined}
-            explain="geTax"
-          />
-          <Stat
-            label="Buy limit (4h)"
-            value={item.buy_limit != null ? item.buy_limit.toLocaleString() : "-"}
-            explain="buyLimitWindow"
-          />
-          <Stat
-            label="Liquidity/hr"
-            value={Math.round(item.liquidity).toLocaleString()}
-            explain="liquidity"
-          />
-          <Stat
-            label="Buy/sell ratio (1h)"
-            value={
-              (item.vol_high_1h ?? 0) > 0
-                ? ((item.vol_low_1h ?? 0) / item.vol_high_1h!).toFixed(2)
-                : "-"
-            }
-            positive={
-              (item.vol_high_1h ?? 0) > 0
-                ? (item.vol_low_1h ?? 0) / item.vol_high_1h! >= 1
-                : undefined
-            }
-          />
-          <VolStat label="Vol 1h" buy={item.vol_low_1h} sell={item.vol_high_1h} />
-          <VolStat label="Vol 5m" buy={item.vol_low_5m} sell={item.vol_high_5m} />
-          <Stat
-            label="Volatility (24h)"
-            value={item.volatility_pct != null ? `${(item.volatility_pct * 100).toFixed(1)}%` : "-"}
-            positive={item.volatility_pct != null ? item.volatility_pct < 0.05 : undefined}
-            explain="volatility"
-          />
-          <Stat
-            label="Volume / day"
-            value={item.daily_volume != null ? item.daily_volume.toLocaleString() : "-"}
-          />
-          <Stat
-            label="Last trade"
-            value={
-              item.buy_age != null || item.sell_age != null
-                ? `${shortAge(Math.max(item.buy_age ?? 0, item.sell_age ?? 0))} ago`
-                : "-"
-            }
-            positive={
-              item.buy_age != null && item.sell_age != null
-                ? Math.max(item.buy_age, item.sell_age) < 3600
-                : undefined
-            }
-          />
-        </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 divide-x divide-y divide-white/[0.06]">
+            <Stat
+              label="GE tax (2%)"
+              value={item.tax ? `-${formatGp(item.tax)}` : "-"}
+              positive={item.tax ? false : undefined}
+              explain="geTax"
+            />
+            <Stat
+              label="Buy limit (4h)"
+              value={item.buy_limit != null ? item.buy_limit.toLocaleString() : "-"}
+              explain="buyLimitWindow"
+            />
+            <Stat
+              label="Liquidity/hr"
+              value={Math.round(item.liquidity).toLocaleString()}
+              explain="liquidity"
+            />
+            <Stat
+              label="Buy/sell ratio (1h)"
+              value={
+                (item.vol_high_1h ?? 0) > 0
+                  ? ((item.vol_low_1h ?? 0) / item.vol_high_1h!).toFixed(2)
+                  : "-"
+              }
+              positive={
+                (item.vol_high_1h ?? 0) > 0
+                  ? (item.vol_low_1h ?? 0) / item.vol_high_1h! >= 1
+                  : undefined
+              }
+            />
+            <VolStat label="Vol 1h" buy={item.vol_low_1h} sell={item.vol_high_1h} />
+            <VolStat label="Vol 5m" buy={item.vol_low_5m} sell={item.vol_high_5m} />
+            <Stat
+              label="Volatility (24h)"
+              value={
+                item.volatility_pct != null ? `${(item.volatility_pct * 100).toFixed(1)}%` : "-"
+              }
+              positive={item.volatility_pct != null ? item.volatility_pct < 0.05 : undefined}
+              explain="volatility"
+            />
+            <Stat
+              label="Volume / day"
+              value={item.daily_volume != null ? item.daily_volume.toLocaleString() : "-"}
+            />
+            <Stat
+              label="Last trade"
+              value={
+                item.buy_age != null || item.sell_age != null
+                  ? `${shortAge(Math.max(item.buy_age ?? 0, item.sell_age ?? 0))} ago`
+                  : "-"
+              }
+              positive={
+                item.buy_age != null && item.sell_age != null
+                  ? Math.max(item.buy_age, item.sell_age) < 3600
+                  : undefined
+              }
+            />
+          </div>
 
-        {item.flip && <FlipRankPanel flip={item.flip} />}
+          {item.flip && <FlipRankPanel flip={item.flip} />}
 
-        {/* DESIGN.md §10 item 46 (Execution Edge, from Design/new suggestions.txt): the raw
+          {/* DESIGN.md §10 item 46 (Execution Edge, from Design/new suggestions.txt): the raw
             Buy at/Sell at stats above assume instant fills at the last-traded price, which is
             optimistic -- this is a more realistic offer pair (nudged to jump the fill queue) and
             what you'd actually clear after tax at those prices. */}
-        {item.execution_buy_price != null && item.execution_sell_price != null && (
-          <div className="p-4">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs uppercase tracking-wide text-gray-500 inline-flex items-center gap-1">
-                Execution edge
-                <InfoTip id="executionMargin" />
-              </span>
-              <span
-                className="text-[10px] text-gray-600"
-                title="Nudge size is a %-of-price heuristic, not the real GE tick table -- treat as a starting offer, not a guarantee"
-              >
-                undercut/overcut, not the real GE tick table
-              </span>
+          {item.execution_buy_price != null && item.execution_sell_price != null && (
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs uppercase tracking-wide text-gray-500 inline-flex items-center gap-1">
+                  Execution edge
+                  <InfoTip id="executionMargin" />
+                </span>
+                <span
+                  className="text-[10px] text-gray-600"
+                  title="Nudge size is a %-of-price heuristic, not the real GE tick table -- treat as a starting offer, not a guarantee"
+                >
+                  undercut/overcut, not the real GE tick table
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <Stat label="Recommended buy" value={formatGp(item.execution_buy_price)} />
+                <Stat label="Recommended sell" value={formatGp(item.execution_sell_price)} />
+                <Stat
+                  label="Expected margin"
+                  value={formatGp(item.execution_margin)}
+                  positive={(item.execution_margin ?? 0) >= 0}
+                  explain="executionMargin"
+                />
+              </div>
             </div>
-            <div className="grid grid-cols-3 gap-3">
-              <Stat label="Recommended buy" value={formatGp(item.execution_buy_price)} />
-              <Stat label="Recommended sell" value={formatGp(item.execution_sell_price)} />
-              <Stat
-                label="Expected margin"
-                value={formatGp(item.execution_margin)}
-                positive={(item.execution_margin ?? 0) >= 0}
-                explain="executionMargin"
-              />
-            </div>
-          </div>
-        )}
+          )}
 
-        {/* DESIGN.md §10 item 7: quantity bands instead of one suggested qty, so the number
+          {/* DESIGN.md §10 item 7: quantity bands instead of one suggested qty, so the number
             itself communicates how sure the system is (a volatile item's bands shrink together). */}
           {sizingTiers && (
             <div className="grid grid-cols-3 divide-x divide-white/[0.06]">
@@ -667,7 +693,6 @@ export function ItemDetailModal({
             />
           </div>
         )}
-
       </div>
     </div>
   );
@@ -794,12 +819,58 @@ function FlipRankPanel({ flip }: { flip: FlipScore }) {
         </span>{" "}
         out after tax.
         {flip.weakest && (
-          <span className="text-amber-500/80">
-            {" "}
-            The rank is held back most by {flip.weakest}.
-          </span>
+          <span className="text-amber-500/80"> The rank is held back most by {flip.weakest}.</span>
         )}
       </p>
+    </div>
+  );
+}
+
+/**
+ * The arithmetic behind the two lines on the chart, spelled out.
+ *
+ * Direct framing from the request: "usually how it works is that you have 2% tax gap and then the
+ * rest is the margin/profit." So the strip is written as that subtraction rather than as four
+ * unrelated stats -- buy, sell, the tax bitten out of the sell, and what is left. A margin number
+ * on its own invites the question "is that before or after tax", and this answers it by showing
+ * the working instead of asserting a total.
+ */
+function DayLevelStrip({ levels }: { levels: DayLevels }) {
+  const viable = levels.netMargin > 0;
+  return (
+    <div className="panel rounded-xl mb-4 px-3 py-2 flex items-center gap-x-4 gap-y-1 flex-wrap text-[11px]">
+      <span
+        className="text-gray-500 shrink-0"
+        title="Computed from the last 24h at every lookback, so the lines mean the same thing however far the chart is zoomed out."
+      >
+        Day offer lines
+      </span>
+      <span className="text-gray-500">
+        buy <span className="font-mono text-rose-400">{formatGp(levels.buy)}</span>
+      </span>
+      <span className="text-gray-500">
+        sell <span className="font-mono text-emerald-400">{formatGp(levels.sell)}</span>
+      </span>
+      <span className="text-gray-600">
+        tax <span className="font-mono">-{formatGp(levels.tax)}</span>
+      </span>
+      <span className="text-gray-500">
+        margin{" "}
+        <span className={`font-mono ${viable ? "text-emerald-400" : "text-rose-400"}`}>
+          {formatGp(levels.netMargin)}
+        </span>{" "}
+        <span className={viable ? "text-emerald-500/70" : "text-rose-400/70"}>
+          ({formatPct(levels.roiPct)})
+        </span>
+      </span>
+      {/* Said plainly rather than left to be inferred from a red number. If tax is wider than the
+          skimmed spread there is no flip at these prices, and that is a fact about the item today,
+          not a failure of the lines. */}
+      {!viable && (
+        <span className="text-rose-400/80">
+          2% tax is wider than the spread here, so there is no flip at these prices today
+        </span>
+      )}
     </div>
   );
 }

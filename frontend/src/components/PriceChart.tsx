@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 // these come from Preact's own JSX namespace, which is the canonical source for DOM handler types.
 import type { JSX } from "preact";
 import type { TimeseriesPoint, ForecastPoint, ForecastResponse } from "../api";
+import type { DayLevels } from "../dayLevels";
 import { formatGp } from "../format";
 
 const WIDTH = 980;
@@ -69,6 +70,7 @@ export function PriceChart({
   events,
   trades,
   hourMarkers,
+  dayLevels,
 }: {
   points: TimeseriesPoint[];
   blended?: boolean;
@@ -84,6 +86,10 @@ export function PriceChart({
   forecastMeta?: ForecastResponse | null;
   // DESIGN.md §14.35: patch notes / Reddit posts, positioned the same way as TAX_MARKERS.
   events?: ChartEvent[];
+  // The day's two skimmed offer prices, drawn as horizontal reference lines. Always computed from
+  // the last 24h regardless of which lookback is displayed, so the line means one fixed thing at
+  // every zoom level -- see dayLevels.ts for why these are quantiles and not the day's extremes.
+  dayLevels?: DayLevels | null;
 }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   // Hovering the forecast region is a separate cursor from hovering the real series: one reads a
@@ -414,8 +420,7 @@ export function PriceChart({
   const HT_H = blended ? (hoveredVolume > 0 ? 50 : 38) : hoveredVolume > 0 ? 62 : 50;
   // Flips to the other side of the line near the right edge, so the box never runs off the plot
   // and never covers the very point being read.
-  const htX =
-    hx + 12 + HT_W > WIDTH - PAD_RIGHT ? Math.max(hx - HT_W - 12, PAD_LEFT) : hx + 12;
+  const htX = hx + 12 + HT_W > WIDTH - PAD_RIGHT ? Math.max(hx - HT_W - 12, PAD_LEFT) : hx + 12;
   const htY = Math.min(
     Math.max((hyHigh ?? hyLow ?? PAD_TOP) - 14, PAD_TOP + 2),
     PAD_TOP + plotH - HT_H - 2,
@@ -540,6 +545,67 @@ export function PriceChart({
             </g>
           );
         })}
+
+        {/* The day's two offer prices. Drawn UNDER the series so the data always wins a
+            collision: these are a suggestion about where to park an offer, and the prints are
+            the evidence you would judge that suggestion against. Dashed for the same reason --
+            a solid line at this weight reads as another measured series.
+
+            Skipped when a level falls outside the visible y-range, which happens on a long
+            lookback whose min/max is set by prices far from today. Clamping it to the edge would
+            draw a line at a price it does not mean. */}
+        {!blended && dayLevels && (
+          <>
+            {[
+              {
+                price: dayLevels.buy,
+                color: "#fb7185",
+                label: `Day buy ${formatGp(dayLevels.buy)}`,
+                title: `Bid here: a tenth of the last 24h traded at or below it. The day's true floor was ${formatGp(dayLevels.floor)}, so this gives up ${formatGp(dayLevels.buy - dayLevels.floor)} to get a price the market actually came back to.`,
+              },
+              {
+                price: dayLevels.sell,
+                color: "#34d399",
+                label: `Day sell ${formatGp(dayLevels.sell)}`,
+                title: `Ask here: a tenth of the last 24h traded at or above it. The day's true ceiling was ${formatGp(dayLevels.ceiling)}, so this gives up ${formatGp(dayLevels.ceiling - dayLevels.sell)} to get filled.`,
+              },
+            ]
+              .filter((l) => l.price >= min && l.price <= max)
+              .map((l) => (
+                <g key={l.label}>
+                  <title>{l.title}</title>
+                  <line
+                    x1={PAD_LEFT}
+                    x2={WIDTH - PAD_RIGHT}
+                    y1={y(l.price)}
+                    y2={y(l.price)}
+                    stroke={l.color}
+                    stroke-width={1}
+                    stroke-dasharray="5 4"
+                    opacity={0.55}
+                  />
+                  {/* Backing plate. Without it the label sits directly on the series it is
+                      describing, and on a busy day the buy label lands in the middle of the rose
+                      line and becomes unreadable. Width is estimated from the character count
+                      rather than measured -- at 10px in the chart's own font the estimate is
+                      within a couple of pixels, and measuring would mean a layout read per
+                      render for a rounded rectangle nobody looks at directly. */}
+                  <rect
+                    x={PAD_LEFT + 2}
+                    y={y(l.price) - 13}
+                    width={l.label.length * 5.4 + 7}
+                    height={12}
+                    rx={3}
+                    fill="#0b0f19"
+                    opacity={0.72}
+                  />
+                  <text x={PAD_LEFT + 5} y={y(l.price) - 4} fill={l.color} font-size="10">
+                    {l.label}
+                  </text>
+                </g>
+              ))}
+          </>
+        )}
 
         {blended ? (
           // Single blended price line -- avgHighPrice === avgLowPrice for every point here,
@@ -777,7 +843,10 @@ export function PriceChart({
               stroke="rgba(255,255,255,0.15)"
             />
             <text
-              x={Math.min(Math.max(eventGroups[hoveredEventGroup].cx - 90, PAD_LEFT), WIDTH - 190) + 6}
+              x={
+                Math.min(Math.max(eventGroups[hoveredEventGroup].cx - 90, PAD_LEFT), WIDTH - 190) +
+                6
+              }
               y={PAD_TOP + 17}
               font-size="9"
               className="fill-gray-100"
@@ -788,8 +857,10 @@ export function PriceChart({
             {eventGroups[hoveredEventGroup].items.length > 1 && (
               <text
                 x={
-                  Math.min(Math.max(eventGroups[hoveredEventGroup].cx - 90, PAD_LEFT), WIDTH - 190) +
-                  6
+                  Math.min(
+                    Math.max(eventGroups[hoveredEventGroup].cx - 90, PAD_LEFT),
+                    WIDTH - 190,
+                  ) + 6
                 }
                 y={PAD_TOP + 29}
                 font-size="8"
@@ -868,12 +939,7 @@ export function PriceChart({
               </>
             )}
             {hoveredVolume > 0 && (
-              <text
-                x={htX + 8}
-                y={htY + HT_H - 6}
-                font-size="8"
-                className="fill-gray-500"
-              >
+              <text x={htX + 8} y={htY + HT_H - 6} font-size="8" className="fill-gray-500">
                 {hoveredVolume.toLocaleString()} traded
               </text>
             )}
@@ -970,6 +1036,15 @@ export function PriceChart({
               <span className="w-3 h-0.5 bg-blue-300 inline-block" /> Median
             </span>
           </>
+        )}
+        {!blended && dayLevels && (
+          <span
+            className="flex items-center gap-1 text-gray-500"
+            title="Where to park an offer today: the 10th percentile of the last 24h of buy prints, and the 90th of sell prints. Deliberately inside the day's extremes -- the very best price of the day printed once and mostly does not fill."
+          >
+            <span className="w-3 border-t border-dashed border-gray-400 inline-block" /> Day offer
+            lines
+          </span>
         )}
         {events && events.length > 0 && (
           <span className="flex items-center gap-1 text-gray-500">
