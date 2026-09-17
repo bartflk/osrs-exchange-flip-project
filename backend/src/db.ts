@@ -217,6 +217,17 @@ for (const [table, column, type] of [
   // "[4151,11840]"), NULL until the linking pass has looked at it -- distinct from `tags`, which
   // is reserved for §11.3 item 1's separate (still unbuilt) exposure-category classification.
   ["events", "linked_item_ids", "TEXT"],
+  // The article body behind an official news link, plain text, fetched once and kept.
+  //
+  // The RSS carries a teaser and nothing else -- official summaries average 92 characters, which
+  // is a headline like "We've got improvements to pet behaviours, Z-buffer fixes and more!". The
+  // changelog that actually names items and says what happened to them lives on the linked page.
+  // Without this column there is simply no text in which an item could be found, which is why
+  // nerfWatch.ts exists as a body-level reader rather than a headline classifier.
+  //
+  // NULL means not fetched yet; empty string means fetched and nothing usable came back, which is
+  // a different state and stops the backfill retrying a page forever.
+  ["events", "body", "TEXT"],
   // Which feature produced a recommendation. Without it the Overnight page's picks would pool
   // into the same win rate as Buy Signals' 4-hour calls and neither number would describe
   // anything: they are different strategies over different horizons. Existing rows predate the
@@ -552,6 +563,43 @@ export function getRecentEvents(limit: number): EventRecord[] {
   return rows.filter((e) => !isRetired(e)).slice(0, limit);
 }
 
+// Official articles whose body has not been fetched yet. Newest first: a nerf in last week's
+// patch notes is worth knowing about, one from two years ago is history, so if the backfill is
+// only ever going to get through part of the list it should be the part that can still change a
+// decision. Reddit is excluded because its `summary` already IS the post body -- there is no
+// separate page to go and get.
+const eventsNeedingBodyStmt = db.prepare(`
+  SELECT id, event_date, title, summary, source, link, tags
+  FROM events
+  WHERE source = 'official' AND link IS NOT NULL AND body IS NULL
+  ORDER BY event_date DESC, id DESC
+  LIMIT ?
+`);
+
+export function getEventsNeedingBody(limit: number): EventRecord[] {
+  return eventsNeedingBodyStmt.all(limit) as unknown as EventRecord[];
+}
+
+const setEventBodyStmt = db.prepare(`UPDATE events SET body = ? WHERE id = ?`);
+
+export function setEventBody(eventId: number, body: string): void {
+  setEventBodyStmt.run(body, eventId);
+}
+
+// Official events that have a body to read. The nerf watch scans these in full, so it takes the
+// body rather than the summary; rows still awaiting a backfill are simply not there yet.
+const officialEventsWithBodyStmt = db.prepare(`
+  SELECT id, event_date, title, summary, source, link, tags, body
+  FROM events
+  WHERE source = 'official' AND body IS NOT NULL AND body <> ''
+  ORDER BY event_date DESC, id DESC
+  LIMIT ?
+`);
+
+export function getOfficialEventsWithBody(limit: number): (EventRecord & { body: string })[] {
+  return officialEventsWithBodyStmt.all(limit) as unknown as (EventRecord & { body: string })[];
+}
+
 // DESIGN.md §10 item 57: item-linking for already-collected events (Reddit posts have been live
 // since §14.35, but nothing tags which item(s) a post is actually about). Most-recent-first so a
 // slow/interrupted linking pass covers what's currently relevant before it works backward through
@@ -566,9 +614,7 @@ export function getEventsNeedingLinking(limit: number): EventRecord[] {
   return eventsNeedingLinkingStmt.all(limit) as unknown as EventRecord[];
 }
 
-const setEventLinkedItemsStmt = db.prepare(
-  `UPDATE events SET linked_item_ids = ? WHERE id = ?`,
-);
+const setEventLinkedItemsStmt = db.prepare(`UPDATE events SET linked_item_ids = ? WHERE id = ?`);
 
 // itemIds=[] (not null) is a real, valid result -- "this event mentions no specific item" -- and
 // is stored as "[]" so the event doesn't get re-queued by getEventsNeedingLinking() forever.

@@ -320,6 +320,37 @@ export async function fetchNews(): Promise<{ events: NewsEvent[] }> {
   return res.json();
 }
 
+// Official patch notes that name an item you are holding, nerfs first. Deliberately not a
+// classification the backend asserts on its own: every match carries the sentence it came from,
+// because the direction is read off keywords and the reader has to be able to check it.
+export type PriceImpact = "nerf" | "buff" | "unclear";
+
+export interface NerfWatchMatch {
+  itemId: number;
+  itemName: string;
+  eventId: number;
+  eventDate: string;
+  title: string;
+  link: string | null;
+  impact: PriceImpact;
+  basis: string;
+  quote: string;
+}
+
+// POST rather than GET: a real bank import is a few hundred ids, which is more than a URL should
+// carry, and holdings should not be written into request logs on every poll. They live in
+// localStorage and are sent per-request to be matched, never stored server-side.
+export async function fetchNerfWatch(itemIds: number[]): Promise<{ matches: NerfWatchMatch[] }> {
+  if (itemIds.length === 0) return { matches: [] };
+  const res = await fetch("/api/nerf-watch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ itemIds }),
+  });
+  if (!res.ok) throw new Error(`Failed to fetch nerf watch: ${res.status}`);
+  return res.json();
+}
+
 // DESIGN.md §10 item 45: rank items by how much a patch moved their price, before/after.
 export interface UpdateSensitivityEntry {
   itemId: number;
@@ -1477,7 +1508,12 @@ export async function fetchSessionPlan(
   username: string,
   minutes: number,
   goal: SessionGoal,
-): Promise<{ username: string; availableMinutes: number; goal: SessionGoal; plan: SessionPlanEntry[] }> {
+): Promise<{
+  username: string;
+  availableMinutes: number;
+  goal: SessionGoal;
+  plan: SessionPlanEntry[];
+}> {
   const q = new URLSearchParams({ username, minutes: String(minutes), goal });
   const res = await fetch(`/api/session-plan?${q}`);
   if (!res.ok) throw new Error(`session plan failed: ${res.status}`);

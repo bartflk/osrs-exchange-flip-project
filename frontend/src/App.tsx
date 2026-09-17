@@ -18,6 +18,7 @@ import { ItemDetailModal } from "./components/ItemDetailModal";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { BankImport } from "./components/BankImport";
 import { MarketAlerts } from "./components/MarketAlerts";
+import { NerfWatch } from "./components/NerfWatch";
 import { TrackRecord } from "./components/TrackRecord";
 import { NewsFeed } from "./components/NewsFeed";
 import { UpdateSensitivity } from "./components/UpdateSensitivity";
@@ -503,6 +504,12 @@ function App() {
         <ErrorBoundary key={tab} label={TAB_LABELS[tab]}>
         {tab === "market" && (
           <>
+            {/* Above the market table, because it is about money already committed. The table is
+                a list of trades you might open; this is a warning about positions you are already
+                in, and that ordering is the same one the Overnight board uses for the same reason.
+                Renders nothing at all when no held item is named, so the dashboard is unchanged
+                on the ordinary day. */}
+            <NerfWatch holdings={holdings} items={items} onSelectItem={setSelectedItem} />
             <div className="mb-3">
               <MarketTemperatureGauge />
             </div>

@@ -20,6 +20,7 @@ import {
   refreshSlotProfiles,
 } from "./slotProfiles.js";
 import { linkPendingEvents } from "./eventItemLinking.js";
+import { backfillEventBodies } from "./newsArticles.js";
 
 // DESIGN.md §14.22: the frontend's own "next refresh" countdown (§14.21) was a guess based on
 // its own independent fetch cycle, not the real thing -- the backend polls the Wiki API on its
@@ -254,6 +255,23 @@ async function runEventLinking() {
   }
 }
 
+// The article text behind official news links, without which nothing can be found in a patch note
+// -- the RSS stores a one-line teaser and the changelog lives on the page. Runs alongside the
+// linking pass rather than inside it: linking asks a model about every event, this fetches pages
+// for official ones only, and neither should be able to stall the other.
+async function runNewsBodyBackfill() {
+  try {
+    const result = await backfillEventBodies();
+    if (result.attempted) {
+      console.log(
+        `[news] fetched ${result.stored} article body(s), ${result.empty} empty, ${result.failed} failed`,
+      );
+    }
+  } catch (err) {
+    console.error("[news] body backfill error", err);
+  }
+}
+
 // DESIGN.md §14.40: GE trade ledger. Reads local files written by an already-installed RuneLite
 // plugin -- no network call, no rate limit, no game interaction -- so this can run far more often
 // than any of the polls above. Frequency matters here in a way it doesn't elsewhere: the only
@@ -277,9 +295,7 @@ function runSlotProfileRefresh() {
   refreshSlotProfiles()
     .then((r) => {
       if (!r.skipped) {
-        console.log(
-          `[slots] profiled ${r.profiled}/${r.attempted} items (${r.failed} failed)`,
-        );
+        console.log(`[slots] profiled ${r.profiled}/${r.attempted} items (${r.failed} failed)`);
       }
     })
     .catch((err) => console.error("[slots] profile refresh error", err));
@@ -371,4 +387,11 @@ export function startPolling() {
   // to wait as long as the collectors themselves do.
   setTimeout(runEventLinking, 10 * 1000);
   setInterval(runEventLinking, 15 * 60 * 1000);
+
+  // news article bodies: staggered off the linking pass so a cold start does not fire a model
+  // call and six outbound page fetches in the same second. The archive is a few dozen posts and
+  // each body is fetched exactly once, so this drains its backlog over the first few passes and
+  // then does nothing until Jagex publishes again -- hence the unhurried interval.
+  setTimeout(runNewsBodyBackfill, 30 * 1000);
+  setInterval(runNewsBodyBackfill, 30 * 60 * 1000);
 }
