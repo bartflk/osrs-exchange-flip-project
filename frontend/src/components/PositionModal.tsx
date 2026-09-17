@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useMemo, useState } from "preact/hooks";
 import {
   fetchSlotProfile,
   fetchTimeseries,
@@ -15,6 +15,7 @@ import { formatWait, msUntilSlot, slotToLocalLabel } from "../timeSlots";
 import { STATUS_STYLE, type OvernightPlan, type SlotView } from "../geSlots";
 import { SlotShapeChart } from "./SlotShapeChart";
 import { PriceChart } from "./PriceChart";
+import { computeDayLevels } from "../dayLevels";
 import { Button } from "./ui";
 
 const REAL_CHART_LOOKBACKS: { key: Lookback; label: string }[] = [
@@ -47,7 +48,9 @@ function Figure({
   return (
     <div className="px-3 py-2 min-w-0">
       <div className="text-[10px] uppercase tracking-wider text-gray-500 truncate">{label}</div>
-      <div className={`font-mono text-lg font-semibold tabular-nums leading-tight truncate ${tone}`}>
+      <div
+        className={`font-mono text-lg font-semibold tabular-nums leading-tight truncate ${tone}`}
+      >
         {value}
       </div>
       {sub && <div className="text-[10px] text-gray-600 truncate">{sub}</div>}
@@ -112,6 +115,25 @@ export function PositionModal({
       cancelled = true;
     };
   }, [itemId, realLookback]);
+
+  // The day's two offer prices, same lines the item detail modal draws. Worth having here even
+  // though this modal is about one slot: the question it answers is whether the bid you already
+  // placed sits anywhere near where the day actually traded, and that is exactly what the lines
+  // show against your own price. Fetched at 24h and keyed on itemId alone, not realLookback --
+  // the levels describe today regardless of which window is on screen.
+  const [dayPoints, setDayPoints] = useState<TimeseriesPoint[]>([]);
+  useEffect(() => {
+    if (itemId == null) return;
+    let cancelled = false;
+    setDayPoints([]);
+    fetchTimeseries(itemId, "24h")
+      .then((res) => !cancelled && setDayPoints(res.points))
+      .catch(() => {}); // additive: the chart is fully usable without the lines
+    return () => {
+      cancelled = true;
+    };
+  }, [itemId]);
+  const dayLevels = useMemo(() => computeDayLevels(dayPoints), [dayPoints]);
 
   // Direct request: "on the chart below I want the prediction bands." Same IQR forecast
   // (forecast.ts) already shown in the item detail modal, appended to the real series -- not
@@ -189,7 +211,10 @@ export function PositionModal({
             >
               {style.label}
             </span>
-            <button onClick={onClose} className="text-gray-500 hover:text-white text-lg leading-none">
+            <button
+              onClick={onClose}
+              className="text-gray-500 hover:text-white text-lg leading-none"
+            >
               ✕
             </button>
           </div>
@@ -330,7 +355,7 @@ export function PositionModal({
               </div>
             </div>
             {realPoints.length > 0 ? (
-              <PriceChart points={realPoints} forecast={forecast} />
+              <PriceChart points={realPoints} forecast={forecast} dayLevels={dayLevels} />
             ) : (
               <div className="h-[180px] rounded-xl bg-white/[0.03] animate-pulse" />
             )}
