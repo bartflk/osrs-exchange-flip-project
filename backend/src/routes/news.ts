@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { getRecentEvents } from "../db.js";
 import { computeUpdateSensitivity } from "../updateSensitivity.js";
-import { scanForHeldItems } from "../nerfWatch.js";
+import { scanChatter, scanForHeldItems } from "../nerfWatch.js";
 import { backfillEventBodies } from "../newsArticles.js";
 
 export async function newsRoutes(app: FastifyInstance) {
@@ -60,7 +60,11 @@ export async function newsRoutes(app: FastifyInstance) {
       typeof lookbackDays === "number" && Number.isFinite(lookbackDays)
         ? Math.min(180, Math.max(1, Math.round(lookbackDays)))
         : undefined;
-    return { matches: scanForHeldItems(ids, days) };
+    // Two lists, not one merged feed. Changelogs state facts about the game; Reddit states facts
+    // about a conversation, and the caller renders them at different weights precisely because
+    // they are worth different amounts. Merging here would throw that distinction away before the
+    // UI ever got the chance to honour it.
+    return { matches: scanForHeldItems(ids, days), chatter: scanChatter(ids) };
   });
 
   // DESIGN.md §10 item 45: rank items by how much a given patch moved their price, before/after.

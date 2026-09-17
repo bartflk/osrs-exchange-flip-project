@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
-import { fetchNerfWatch, type MarketItem, type NerfWatchMatch } from "../api";
+import { fetchNerfWatch, type ChatterItem, type MarketItem, type NerfWatchMatch } from "../api";
 import type { HoldingEntry } from "../bankHoldings";
 import { formatGp } from "../format";
 
@@ -127,6 +127,79 @@ function Row({
   );
 }
 
+/**
+ * One held item and what Reddit said about it.
+ *
+ * Rendered at a visibly lower weight than the changelog rows above: no impact chip, smaller type,
+ * behind a toggle. That is the whole point of keeping it separate. A changelog states a fact about
+ * the game and a thread states a fact about a conversation, and if the two looked alike the weaker
+ * one would borrow the stronger one's authority just by sitting next to it.
+ *
+ * The count leads, because with no direction being claimed the volume IS the signal. One post
+ * about an item is somebody typing; six in a fortnight is the market noticing something.
+ */
+function ChatterRow({
+  item,
+  exposure,
+  onOpen,
+}: {
+  item: ChatterItem;
+  exposure: number | null;
+  onOpen: () => void;
+}) {
+  return (
+    <div className="border-l-2 border-l-white/10 pl-3 py-1.5">
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={onOpen}
+          className="text-[13px] text-gray-200 hover:text-white hover:underline"
+        >
+          {item.itemName}
+        </button>
+        <span className="text-[10px] text-gray-500">
+          {item.posts.length} post{item.posts.length === 1 ? "" : "s"}
+        </span>
+        {exposure != null && exposure > 0 && (
+          <span className="text-[10px] text-gray-600">
+            you hold <span className="font-mono">{formatGp(exposure)}</span>
+          </span>
+        )}
+      </div>
+      <ul className="mt-1 flex flex-col gap-0.5">
+        {item.posts.map((p) => (
+          <li key={p.eventId} className="text-[11px] text-gray-500 flex gap-1.5">
+            <span className="text-gray-700 shrink-0 font-mono">{p.eventDate.slice(5)}</span>
+            {p.link ? (
+              <a
+                href={p.link}
+                target="_blank"
+                rel="noreferrer"
+                className="hover:text-gray-300 truncate"
+                title={p.tags ?? undefined}
+              >
+                {p.title}
+              </a>
+            ) : (
+              <span className="truncate">{p.title}</span>
+            )}
+            {/* Slang only ever lands via the model, so when it is unavailable this tag simply
+                stops appearing -- worth distinguishing, because a name match and a model match
+                are not equally trustworthy and the reader should be able to tell which they got. */}
+            {p.viaModel && (
+              <span
+                className="text-gray-700 shrink-0"
+                title="Linked by the local model, not by an exact name match"
+              >
+                ~
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function NerfWatch({
   holdings,
   items,
@@ -137,8 +210,10 @@ export function NerfWatch({
   onSelectItem: (item: MarketItem) => void;
 }) {
   const [matches, setMatches] = useState<NerfWatchMatch[]>([]);
+  const [chatter, setChatter] = useState<ChatterItem[]>([]);
   const [dismissed, setDismissed] = useState<Set<string>>(loadDismissed);
   const [showMentions, setShowMentions] = useState(false);
+  const [showChatter, setShowChatter] = useState(false);
 
   // Sorted and joined so the dependency is the SET of held ids, not the holdings object. Bank
   // values are rewritten on every valuation refresh, so keying on the object itself would refetch
@@ -157,11 +232,21 @@ export function NerfWatch({
     const ids = heldKey ? heldKey.split(",").map(Number) : [];
     if (ids.length === 0) {
       setMatches([]);
+      setChatter([]);
       return;
     }
     fetchNerfWatch(ids)
-      .then((res) => !cancelled && setMatches(res.matches))
-      .catch(() => !cancelled && setMatches([])); // additive: the app is fine without it
+      .then((res) => {
+        if (cancelled) return;
+        setMatches(res.matches);
+        setChatter(res.chatter);
+      })
+      .catch(() => {
+        // additive: the app is fine without any of this
+        if (cancelled) return;
+        setMatches([]);
+        setChatter([]);
+      });
     return () => {
       cancelled = true;
     };
@@ -179,7 +264,7 @@ export function NerfWatch({
   const directional = visible.filter((m) => m.impact !== "unclear");
   const mentions = visible.filter((m) => m.impact === "unclear");
 
-  if (visible.length === 0) return null;
+  if (visible.length === 0 && chatter.length === 0) return null;
 
   function exposureOf(m: NerfWatchMatch): number | null {
     return holdings[m.itemId]?.netValue ?? null;
@@ -238,6 +323,41 @@ export function NerfWatch({
                   exposure={exposureOf(m)}
                   onOpen={() => open(m)}
                   onDismiss={() => dismiss(matchKey(m))}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {/* Reddit, last. Below the changelog rows AND below the bare mentions, because the ordering
+          of this panel is a ranking by how much each row is worth believing: a stated change, then
+          a stated fact with no direction, then people talking. */}
+      {chatter.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-white/[0.06]">
+          <button
+            onClick={() => setShowChatter((v) => !v)}
+            className="text-[11px] text-gray-500 hover:text-gray-300"
+          >
+            {showChatter ? "Hide" : "Show"} Reddit chatter on {chatter.length} of your item
+            {chatter.length === 1 ? "" : "s"}
+            <span className="text-gray-700"> · last 14 days</span>
+          </button>
+          {showChatter && (
+            <div className="flex flex-col gap-2 mt-2">
+              <p className="text-[10px] text-gray-600 max-w-2xl">
+                Posts naming an item you hold. No direction is read from these: the classifier above
+                understands changelog grammar, and a post title is a different language. Chatter
+                often moves before the price does, so the count and the headlines are the signal.
+              </p>
+              {chatter.map((c) => (
+                <ChatterRow
+                  key={c.itemId}
+                  item={c}
+                  exposure={holdings[c.itemId]?.netValue ?? null}
+                  onOpen={() => {
+                    const item = items.find((i) => i.id === c.itemId);
+                    if (item) onSelectItem(item);
+                  }}
                 />
               ))}
             </div>

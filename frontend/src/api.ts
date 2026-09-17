@@ -340,8 +340,29 @@ export interface NerfWatchMatch {
 // POST rather than GET: a real bank import is a few hundred ids, which is more than a URL should
 // carry, and holdings should not be written into request logs on every poll. They live in
 // localStorage and are sent per-request to be matched, never stored server-side.
-export async function fetchNerfWatch(itemIds: number[]): Promise<{ matches: NerfWatchMatch[] }> {
-  if (itemIds.length === 0) return { matches: [] };
+// Reddit posts naming a held item, grouped by item. Deliberately carries no direction: the
+// backend reads changelog grammar, and a post title is a different language ("OCCULT AMULETS TO
+// MOON?"). The signal is how much is being said, plus the headlines themselves.
+export interface ChatterPost {
+  eventId: number;
+  eventDate: string;
+  title: string;
+  link: string | null;
+  tags: string | null;
+  /** Linked by the local model rather than by an exact name match -- the only way slang lands. */
+  viaModel: boolean;
+}
+
+export interface ChatterItem {
+  itemId: number;
+  itemName: string;
+  posts: ChatterPost[];
+}
+
+export async function fetchNerfWatch(
+  itemIds: number[],
+): Promise<{ matches: NerfWatchMatch[]; chatter: ChatterItem[] }> {
+  if (itemIds.length === 0) return { matches: [], chatter: [] };
   const res = await fetch("/api/nerf-watch", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

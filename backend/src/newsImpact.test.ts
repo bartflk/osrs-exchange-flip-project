@@ -3,9 +3,11 @@ import { describe, it } from "node:test";
 import {
   classifySentence,
   isDistinctiveName,
+  isTitleWorthyName,
   isWholeItemMention,
   IS_CHANGELOG,
   sentenceAround,
+  titleMentionsItem,
 } from "./newsImpact.js";
 
 // Every case below is a real sentence from OSRS patch notes, or the shape of one.
@@ -140,6 +142,55 @@ describe("isWholeItemMention", () => {
 
   it("accepts a genuine standalone mention", () => {
     assert.equal(check("The Rune essence market has been quiet.", "Rune essence"), true);
+  });
+});
+
+describe("titleMentionsItem", () => {
+  const catalogue = new Set(["coal", "rune essence", "snape grass", "dragon bolts (e)"]);
+
+  it("matches a short name a changelog scan would have to reject", () => {
+    // The reason titles get their own, looser rule. "Coal" is four characters and would collide
+    // constantly inside a 28,000-character article, but a post title is a topic label: this one
+    // is ABOUT coal, and it is exactly the kind of thing a coal holder wants to see.
+    assert.equal(titleMentionsItem("Coal near all time lows", "Coal", catalogue), true);
+  });
+
+  it("splits a title naming several items", () => {
+    // Real post: one headline, three separate positions to think about.
+    const title = "Sapphire, emerald and ruby low";
+    assert.equal(titleMentionsItem(title, "Emerald", catalogue), true);
+    assert.equal(titleMentionsItem(title, "Ruby", catalogue), true);
+  });
+
+  it("is case-insensitive, because nobody capitalises correctly on Reddit", () => {
+    assert.equal(titleMentionsItem("Tormented Synapse and Raids 4", "Tormented synapse", catalogue), true);
+  });
+
+  it("still refuses a name swallowed by a longer one", () => {
+    // The title rules are looser about length, not about correctness.
+    assert.equal(titleMentionsItem("Rune Essence Pouch prices?", "Rune essence", catalogue), false);
+  });
+
+  it("rejects names below the floor", () => {
+    assert.equal(titleMentionsItem("Got a new pet today", "Pet", catalogue), false);
+  });
+
+  it("does not match a name that is not there", () => {
+    assert.equal(titleMentionsItem("Coal near all time lows", "Snape grass", catalogue), false);
+  });
+});
+
+describe("isTitleWorthyName", () => {
+  it("keeps the short staple names the changelog rule drops", () => {
+    // isDistinctiveName rejects all of these, deliberately, and the title rule must not.
+    for (const name of ["Coal", "Bones", "Rope"]) {
+      assert.equal(isTitleWorthyName(name), true, `${name} should pass the title floor`);
+      assert.equal(isDistinctiveName(name), false, `${name} should fail the article floor`);
+    }
+  });
+
+  it("still rejects very short names", () => {
+    assert.equal(isTitleWorthyName("Pot"), false);
   });
 });
 

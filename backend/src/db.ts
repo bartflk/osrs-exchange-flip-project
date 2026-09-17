@@ -586,6 +586,31 @@ export function setEventBody(eventId: number, body: string): void {
   setEventBodyStmt.run(body, eventId);
 }
 
+// Recent Reddit posts, with whatever item links the model pass managed to attach.
+//
+// linked_item_ids comes along because it is the only thing that can catch slang: r/OSRSflipping
+// writes "tbow" and "the new amulet", which exact matching will never find, and the model pass
+// resolves those. It is a bonus rather than the mechanism -- only 27 of 286 stored posts have
+// links, and none at all when Ollama is down -- so the caller matches titles itself and treats
+// these as extra hits on top.
+const recentRedditEventsStmt = db.prepare(`
+  SELECT id, event_date, title, summary, source, link, tags, linked_item_ids
+  FROM events
+  WHERE source = 'reddit' AND event_date >= ?
+  ORDER BY event_date DESC, id DESC
+  LIMIT ?
+`);
+
+export function getRecentRedditEvents(
+  since: string,
+  limit: number,
+): (EventRecord & { linked_item_ids: string | null })[] {
+  const rows = recentRedditEventsStmt.all(since, limit) as unknown as (EventRecord & {
+    linked_item_ids: string | null;
+  })[];
+  return rows.filter((r) => !isRetired(r));
+}
+
 // Official events that have a body to read. The nerf watch scans these in full, so it takes the
 // body rather than the summary; rows still awaiting a backfill are simply not there yet.
 const officialEventsWithBodyStmt = db.prepare(`

@@ -41,6 +41,43 @@ export function isDistinctiveName(name: string): boolean {
   return trimmed.length >= MIN_SINGLE_WORD_LENGTH;
 }
 
+// A Reddit post title is scanned under looser rules than a changelog, and the reason is the
+// amount of text, not the source's quality.
+//
+// isDistinctiveName above exists because a 28,000-character article will contain the word "Shark"
+// for reasons having nothing to do with the item. A post title is twenty characters and is a
+// TOPIC LABEL: "Coal near all time lows" is not prose that happens to contain "Coal", it is a post
+// about coal. The collision risk that justified the longer floor is mostly absent, and applying
+// that floor here would throw away the clearest signals on the board -- Coal, Bones and Yew logs
+// are staples people post about precisely because they are flipped constantly.
+//
+// A floor remains, because two- and three-letter names would match initialisms and stray words.
+const MIN_TITLE_NAME_LENGTH = 4;
+
+export function isTitleWorthyName(name: string): boolean {
+  return name.trim().length >= MIN_TITLE_NAME_LENGTH;
+}
+
+/**
+ * Is this item the subject of a post title?
+ *
+ * Deliberately no sentiment reading. The classifier below is tuned on changelog grammar -- "we
+ * have reduced the drop rate of X" -- and a Reddit title is a different language: "OCCULT AMULETS
+ * TO MOON?", "Snape grass fomo", "Do we think Yew Logs will ever make a comeback?". Running
+ * patch-note rules over that would produce confident nonsense, and the honest signal is the one
+ * that needs no interpretation: people are posting about a thing you own, and here are the
+ * headlines. The reader can weigh a title faster than any keyword rule could.
+ */
+export function titleMentionsItem(title: string, name: string, catalogue: Set<string>): boolean {
+  if (!isTitleWorthyName(name)) return false;
+  const re = new RegExp(`\\b${escapeRegex(name)}\\b`, "gi");
+  let m: RegExpExecArray | null = null;
+  while ((m = re.exec(title)) != null) {
+    if (isWholeItemMention(title, m.index, m[0].length, name, catalogue)) return true;
+  }
+  return false;
+}
+
 /**
  * Does this update push the price up or down?
  *
