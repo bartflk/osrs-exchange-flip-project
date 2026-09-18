@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { getTrackRecord, getItemTrackRecord } from "../scorekeeping.js";
 import { computeHorizonTrackRecord } from "../trackRecordHorizons.js";
+import { computePickPerformance } from "../pickPerformanceData.js";
 
 export async function scorekeepingRoutes(app: FastifyInstance) {
   // ?strategy=overnight scopes the record to the Overnight page's picks. Defaults to "signals"
@@ -20,4 +21,9 @@ export async function scorekeepingRoutes(app: FastifyInstance) {
   // DESIGN.md §14.22: multi-horizon backtest -- how the same logged picks would have gone at
   // 2/3/6/12/24h hold periods, not just the fixed 4h resolution.
   app.get("/api/track-record/horizons", async () => ({ horizons: computeHorizonTrackRecord() }));
+
+  // The other half of a track record. Everything above grades the app's calls against where the
+  // market went; this grades them against what you actually bought and sold, and compares the
+  // trades that followed a pick with the ones that did not.
+  app.get("/api/pick-performance", async () => computePickPerformance());
 }

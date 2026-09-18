@@ -20,6 +20,7 @@ import { BankImport } from "./components/BankImport";
 import { MarketAlerts } from "./components/MarketAlerts";
 import { NerfWatch } from "./components/NerfWatch";
 import { TrackRecord } from "./components/TrackRecord";
+import { PickPerformancePanel } from "./components/PickPerformance";
 import { NewsFeed } from "./components/NewsFeed";
 import { UpdateSensitivity } from "./components/UpdateSensitivity";
 import { ResearchReport } from "./components/ResearchReport";
@@ -677,6 +678,7 @@ function App() {
               onSelectItem={setSelectedItem}
             />
             <TrackRecord />
+            <PickPerformancePanel />
           </>
         )}
         {tab === "overnight" && (

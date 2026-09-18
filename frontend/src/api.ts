@@ -272,6 +272,46 @@ export interface TrackRecordEntry {
   outcome: TrackRecordOutcome;
 }
 
+// Your real trades, split by whether each one followed a live pick. Mirrors the backend's
+// pickPerformance.ts; see there for why every rate is weighted by capital rather than counted.
+export interface PickGroupStats {
+  lots: number;
+  items: number;
+  units: number;
+  cost: number;
+  profit: number;
+  roi: number | null;
+  capitalWinRate: number | null;
+}
+
+export interface PickPerformance {
+  followed: PickGroupStats;
+  independent: PickGroupStats;
+  byStrategy: { signals: PickGroupStats; overnight: PickGroupStats };
+  execution: {
+    predictedRoi: number | null;
+    realizedRoi: number | null;
+    lots: number;
+    excludedGlitches: number;
+  };
+  followedItems: {
+    itemId: number;
+    name: string;
+    icon: string | null;
+    cost: number;
+    profit: number;
+    roi: number | null;
+  }[];
+  excluded: { unmatchedSellUnits: number; openUnits: number; openCost: number };
+  range: { from: number | null; to: number | null };
+}
+
+export async function fetchPickPerformance(): Promise<PickPerformance> {
+  const res = await fetch("/api/pick-performance");
+  if (!res.ok) throw new Error(`Failed to fetch pick performance: ${res.status}`);
+  return res.json();
+}
+
 export async function fetchTrackRecord(): Promise<{
   summary: TrackRecordSummary;
   recent: TrackRecordEntry[];
